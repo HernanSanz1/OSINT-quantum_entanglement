@@ -1,4 +1,4 @@
-"""Tool registry — all 25 tools in one place."""
+"""Tool registry — all 25+ tools in one place."""
 from .google_dorks import GoogleDorksTool
 from .hunter import HunterTool
 from .social_tools import SherlockTool, HoleheTool, GHuntTool, SnscrapeYoutubeTool, InstagramTool
@@ -7,6 +7,7 @@ from .network_tools import (
     TheHarvesterTool, PhoneNumbersTool,
 )
 from .wayback import WaybackMachineTool
+from .web_search import WebSearchTool, GitHubOSINTTool, UsernameVariantsTool
 
 from .heavy_tools import (
     SubfinderTool, AmassTool, SpiderFootTool,
@@ -17,6 +18,10 @@ from .threat_intel import (
 )
 
 ALL_TOOLS = [
+    # ── Web search (always available) ──────────────────────────────────────
+    WebSearchTool,
+    GitHubOSINTTool,
+    UsernameVariantsTool,
     # ── Light tools (no binary required) ───────────────────────────────────
     GoogleDorksTool,
     HunterTool,

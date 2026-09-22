@@ -114,12 +114,13 @@ class SearchResult:
     relevance_score: int = 0
     category: str = "General"
     raw_data: Dict[str, Any] = field(default_factory=dict)
+    extra_data: Dict[str, Any] = field(default_factory=dict)  # For avatars, metadata, etc.
 
     def to_dict(self) -> Dict:
         return {
             "title": self.title, "url": self.url, "snippet": self.snippet,
             "source_tool": self.source_tool, "relevance_score": self.relevance_score,
-            "category": self.category,
+            "category": self.category, "extra_data": self.extra_data,
         }
 
 

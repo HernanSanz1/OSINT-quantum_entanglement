@@ -2,6 +2,41 @@
 
 Plataforma unificada de inteligencia: perfilamiento de personas, reconocimiento de infraestructura (EAMS), y Cyber Threat Intelligence.
 
+## Perfilamiento Inteligente (SmartProfiler)
+
+El SmartProfiler hace correlación automática: solo guarda datos que coincidan con el objetivo.
+
+```python
+from osint_app.smart_profiler import smart_profile
+
+# Buscar persona con contexto
+result = smart_profile(
+    name='Juan Riofrio',
+    context='UDLA Ecuador nacido 2006',  # El año ayuda a generar variantes
+    country='Ecuador'
+)
+
+# Con username conocido (lo pone primero en las variantes)
+result = smart_profile(
+    name='Juan Riofrio',
+    context='UDLA Ecuador',
+    country='Ecuador',
+    username='jdriofrio2006'
+)
+```
+
+### Qué hace:
+1. Genera variantes inteligentes de username (jriofrio, jdriofrio, juanriofrio2006, etc.)
+2. Busca cada variante en GitHub
+3. Evalúa cada candidato contra los datos semilla
+4. Rechaza automáticamente perfiles que no coinciden (ej: Juan Ramos de España)
+5. Solo guarda datos con alta correlación
+
+### Reglas de rechazo automático:
+- Nombre completamente diferente
+- País claramente diferente (España vs Ecuador)
+- Perfil profesional cuando buscamos estudiante
+
 ## Cuándo usar este skill
 
 Invocar cuando el usuario pida:
