@@ -21,6 +21,8 @@ from .tab_data import DataTab
 from .tab_tools import ToolsTab
 from .tab_reports import ReportsTab
 from .tab_ai import AITab
+from .tab_cti import CTITab
+from .tab_correlation import CorrelationTab
 
 class OSINTGUI(QMainWindow):
     """Main application window — Sentinel PySide6 Qt Edition."""
@@ -222,8 +224,10 @@ class OSINTGUI(QMainWindow):
             ("Casos", CasesTab(self)),
             ("Datos", DataTab(self)),
             ("Herramientas", ToolsTab(self)),
+            ("Correlación", CorrelationTab(self)),
+            ("CTI", CTITab(self)),
             ("Reportes", ReportsTab(self)),
-            ("Correlational Intelligence IA", AITab(self))
+            ("IA", AITab(self))
         ]
         
         self.tab_btns = []
