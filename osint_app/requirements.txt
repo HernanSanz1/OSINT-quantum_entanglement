@@ -1,0 +1,51 @@
+# OSINT App v2 — Dependencies
+# Install: pip install -r requirements.txt
+
+# ── Core HTTP & scraping ──────────────────────────────────────────────────────
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# ── Network & DNS ─────────────────────────────────────────────────────────────
+dnspython>=2.4.0
+ipwhois>=1.2.0
+
+# ── Phone number analysis ─────────────────────────────────────────────────────
+phonenumbers>=8.13.0
+
+# ── System resource monitoring ────────────────────────────────────────────────
+psutil>=5.9.0
+
+# ── AI / LLM (optional — for GPT correlation) ────────────────────────────────
+openai>=1.10.0       # optional: remove if not using GPT
+
+# ── Social scraping ───────────────────────────────────────────────────────────
+# snscrape is installed via: pip install git+https://github.com/JustAnotherArchivist/snscrape.git
+
+# ── Data analysis ────────────────────────────────────────────────────────────
+pandas>=2.0.0
+networkx>=3.1
+
+# ── CENSYS (optional — requires API key at censys.io) ────────────────────────
+# censys>=2.2.0      # uncomment if using CENSYS
+
+# ── GUI ───────────────────────────────────────────────────────────────────────
+# tkinter — included in Python stdlib, no install needed
+
+# ── Dev / testing ─────────────────────────────────────────────────────────────
+pytest>=7.4.0
+pytest-timeout>=2.1.0
+mypy>=1.5.0
+bandit>=1.7.0
+
+# ── External binary tools (installed separately, NOT via pip) ─────────────────
+# subfinder    → go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+# amass        → go install -v github.com/owasp-amass/amass/v4/...@master
+# theHarvester → pip install theHarvester  (separate env recommended)
+# sherlock     → pip install sherlock-project
+# holehe       → pip install holehe
+# maigret      → pip install maigret
+# ghunt        → https://github.com/mxrch/GHunt
+# recon-ng     → pip install recon-ng
+# sn0int       → https://github.com/kpcyrd/sn0int
+# spiderfoot   → pip install spiderfoot

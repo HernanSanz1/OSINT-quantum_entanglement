@@ -1,0 +1,7 @@
+# Define dueños por defecto para todo el repo
+* @Sentinel-EC/Desarrollo
+
+# Puedes asignar dueños específicos por extensión o carpeta
+# *.js    @Sentinel-EC/Desarrollo
+# /docs/  @Sentinel-EC/Desarrollo
+

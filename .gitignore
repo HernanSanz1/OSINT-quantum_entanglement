@@ -1,0 +1,57 @@
+# OSINT App v2 — git ignore rules
+# This file protects secrets and build artifacts from being committed to git.
+
+# ── Databases (contain case data) ─────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+osint_app/data/*.db
+
+# ── API key / config files ────────────────────────────────────────────────────
+osint_app/data/osint_config.json
+.env
+.env.*
+*.key
+*.secret
+*_keys.json
+
+# ── Python build artifacts ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+env/
+.venv/
+.env/
+
+# ── Reports / generated files ─────────────────────────────────────────────────
+osint_app/data/results_legacy/
+osint_app/reports/output/
+*.html_report
+
+# ── OS files ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE files ─────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Test artifacts ────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/

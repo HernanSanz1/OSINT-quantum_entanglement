@@ -1,0 +1,113 @@
+REPORTE FORENSE DE INTELIGENCIA (OSINT)
+Objetivo: Gabriela Vaca Garzón
+Fecha: 2026-01-21 20:43:40.534417
+============================================================
+
+🚨 HALLAZGOS DE ALTA CONFIANZA (13)
+(Coincidencias fuertes de nombre + empresa/cargo/ubicación)
+------------------------------------------------------------
+[Score: 11] Motivo: Empresa, Ubicación, Cargo
+Título: Grupo Mavesa - ¡GUAYAQUIL, ESTAMOS AQUÍ! Nueva ... - Facebook
+URL: https://www.facebook.com/GrupoMavesaEcuador/posts/-guayaquil-estamos-aqu%C3%AD-nueva-sucursal-guayaquil-estrenamos-nuestra-nueva-sucurs/1019506866876122/
+Contexto: Contamos con la presencia de la Ing.Gabriela Vaca, Presidente Ejecutivo de GrupoMavesa, junto a Jorge Flores, Director Nacional de Vehículos Livianos; Manuel Intriago, Jefe Comercial; Miguel Naranjo, Gerente de Sucursal; además de autoridades locales, directivos, gerentes de importantes empresas de la ciudad, influencers de la ciudad e influyentes líderes de opinión que hicieron de esta ...
+
+[Score: 8] Motivo: Empresa, Cargo
+Título: Gabriela Vaca Rodríguez - Presidente Ejecutivo | LinkedIn
+URL: https://ec.linkedin.com/in/gabrielavacarodr%C3%ADguez
+Contexto: Presidente Ejecutivo · Con más de una década de experiencia profesional, actualmente lidero como Presidente Ejecutiva en GrupoMavesa, enfocándome en fortalecer equipos y fomentar negociaciones estratégicas que impulsen el crecimiento comercial y posicionamiento de marcas siendo líderes en el mercado automotriz. Anteriormente, colaboré durante más de seis años como Human Resources ...
+
+[Score: 8] Motivo: Empresa, Ubicación
+Título: Gabriela Vaca Rodríguez Email & Phone Number | Grupo Mavesa Presidenta ...
+URL: https://rocketreach.co/gabriela-vaca-rodriguez-email_855191044
+Contexto: Gabriela VacaRodríguez, based in Guayaquil, EC, is currently a Presidenta at GrupoMavesa.Gabriela VacaRodríguez brings experience from previous roles at Maquinarias y Vehiculos SA, Maquinarias y Vehiculos S.A.Mavesa, Maquinarias y Vehículos S.A. and Maquinaría y Vehiculos S.A.Gabriela VacaRodríguez holds a 2009 - 2010 CERTIFICACIÓN INTERNACIONAL in ADMINISTRACIÓN DEL TALENTO ...
+
+[Score: 8] Motivo: Empresa, Cargo
+Título: Grupo Mavesa, AV. PEDRO VICENTE MALDONADO Y CUSUBAMBA, Quito (2025)
+URL: https://www.findglocal.com/EC/Quito/109284061473821/Grupo-Mavesa
+Contexto: Gabriela Vaca, Presidente Ejecutivo de GrupoMavesa, junto a Jorge Flores, Director Nacional de Vehículos Livianos; Manuel Intriago, Jefe Comercial; Miguel Naranjo, Gerente de Sucursal; además de autoridades locales, directivos, gerentes de importantes empresas de la ciudad, influencers de la ciudad e influyentes líderes de opinión que ...
+
+[Score: 5] Motivo: Empresa
+Título: Grupo Mavesa amplía su portafolio eléctrico con el Nammi 01 de Dongfeng
+URL: https://www.motorterra.com/grupo-mavesa-amplia-su-portafolio-electrico-con-el-nammi-01-de-dongfeng/
+Contexto: Hoy, junto con Dongfeng, apostamos sólidamente por la movilidad sostenible con el Nammi 01". Por su parte,Gabriela Vaca, presidenta ejecutiva de GrupoMavesa, resaltó la visión del grupo hacia un futuro más responsable con el entorno: "En GrupoMavesaseguimos apostando por la innovación y la sostenibilidad.
+
+[Score: 5] Motivo: Empresa
+Título: Con una mirada puesta en el futuro, líderes de Grupo Mavesa se ...
+URL: https://es.linkedin.com/posts/grupo-mavesa_con-una-mirada-puesta-en-el-futuro-l%C3%ADderes-activity-7407910625101840384-euhr
+Contexto: Con una mirada puesta en el futuro, líderes de GrupoMavesase reunieron junto a nuestra presidenta ejecutiva, Ing.Gabriela Vaca, para alinear la visión y proyectar las principales acciones que impulsarán a la organización en 2026.
+
+[Score: 5] Motivo: Empresa
+Título: Me encantó este ejercicio con los directores y gerentes de Grupo Mavesa ...
+URL: https://www.linkedin.com/feed/update/urn:li:activity:7368772217326841857/
+Contexto: Me encantó este ejercicio con los directores y gerentes de GrupoMavesa, gracias aGabriela VacaRodríguez Adrian Lozano Gutiérrez Eduardo Viamonte Diaz y equipo por abrir este espacio. 😊 ...
+
+[Score: 5] Motivo: Empresa
+Título: Gabriela Vaca email address & phone number - RocketReach
+URL: https://rocketreach.co/gabriela-vaca-email_7502226
+Contexto: Gabriela VacaEmail Address Found 2 email address listings: @mavesa.com.ec @gmail.com
+
+[Score: 5] Motivo: Empresa
+Título: 300+ "Gabriela Vaca" profiles | LinkedIn
+URL: https://www.linkedin.com/pub/dir/Gabriela/Vaca+
+Contexto: Gabriela VacaAsesor Corporativo Ecuador Maquinarias y Vehiculos S.A.Mavesa, +4 more Instituto Tecnológico y de Estudios Superiores de Monterrey / ITESM, +2 more
+
+[Score: 5] Motivo: Empresa
+Título: Gabriela Vaca posted on LinkedIn
+URL: https://www.linkedin.com/posts/gabriela-vaca-37060529_activity-6754850534886273025--P_U
+Contexto: Aplica con nosotros al correo selecciongrupomavesa@mavesa.com.ec #pasionporlasventas #nuevasmetas #oportunidad #crecimiento #fuerzadeventas 46Gabriela Vacareposted this GrupoMavesa231,248 ...
+
+[Score: 5] Motivo: Empresa
+Título: Gabriela Vaca posted on LinkedIn
+URL: https://www.linkedin.com/posts/gabriela-vaca-37060529_activity-6522588310806814720-9DvO
+Contexto: Aplica con nosotros al correo selecciongrupomavesa@mavesa.com.ec #pasionporlasventas #nuevasmetas #oportunidad #crecimiento #fuerzadeventas 46Gabriela Vacareposted this GrupoMavesa227,588 ...
+
+[Score: 5] Motivo: Empresa
+Título: Gabriela Vaca Rodríguez posted on LinkedIn
+URL: https://www.linkedin.com/posts/gabriela-vaca-37060529_deseas-ser-parte-de-nuestro-equipo-estrat%C3%A9gico-activity-6892461945212280832-PEoB
+Contexto: Gabriela VacaRodríguez posted images on LinkedIn Deseas ser parte de nuestro equipo estratégico de Talento Humano en GrupoMavesa. Buscamos Analista de Talento Humano, postula al correo ...
+
+[Score: 5] Motivo: Empresa
+Título: Gabriela Vaca posted on LinkedIn
+URL: https://www.linkedin.com/posts/gabriela-vaca-37060529_unidossomosmas-marca-marketing-activity-6975661745671446528-9zjN
+Contexto: Gabriela Vacaposted images on LinkedIn En GrupoMavesanos encontramos en la búsqueda de un Especialista de Fidelización y Marca para la ciudad de Quito. Si cuentas con experiencia en el cargo ...
+
+
+============================================================
+⚠️ HALLAZGOS DE MEDIA CONFIANZA (7)
+(Posibles coincidencias parciales, verificar manualmente)
+------------------------------------------------------------
+[Score: 3] Motivo: Ubicación
+Título: Gabriela Vaca - CEO- FOUNDER en Espectravel Agencia de Viajes y ...
+URL: https://ec.linkedin.com/in/gabriela-vaca-733020142
+Contexto: CEO- FOUNDER en Espectravel Agencia de Viajes y Estudios · Ingeniera en administración de empresas turísticas y hoteleras por la Universidad Catolica Santiago deGuayaquil(2015) y Master (MBA in Hospitality and Tourism Management 2019) Con más de 8 años de experiencia en el sector turístico realizando lo que me apasiona; liderando talento humano para cumplir los objetivos empresariales ...
+
+[Score: 3] Motivo: Ubicación
+Título: Gabriela Vaca - Ejecutiva Seguros Genera.. - RSA Grupo | ZoomInfo
+URL: https://www.zoominfo.com/p/Gabriela-Vaca/2818033123
+Contexto: Gabriela Vacais an Ejecutiva Seguros Generales at RSA Grupo based inGuayaquil, Guayas. Previously, Gabriela was an Ejecutiva Operativa at Tecnis eguros Ecuador and also held positions at Cidescol.
+
+[Score: 3] Motivo: Ubicación
+Título: #LaborSocial #reinaug2022 Nuestra Candidata a Reina de ... - Facebook
+URL: https://www.facebook.com/bienestarestudiantilug/videos/797974534604042/
+Contexto: #LaborSocial #reinaug2022 Nuestra Candidata a Reina de la Universidad deGuayaquilrepresentante de la Facultad de Ciencias Médicas,Gabriela VacaLlerena, nos presenta su labor social en la...
+
+[Score: 3] Motivo: Ubicación
+Título: 50 Receptores Virales, Celulares Y Celulas Diana ( Gabriela VACA)
+URL: https://www.studocu.com/ec/document/universidad-de-guayaquil/virologia/50-receptores-virales-celulares-y-celulas-diana-gabriela-vaca/76582340
+Contexto: Virologia Universidad deGuayaquil666Documentos Ir al curso 9 Cuerpos de inclusión Virologia100% (7) 8 Lineas celulares virologia Virologia100% (7) 4 HISTORIA DE LA VIROLOGÍA Virologia100% (5) 3 Receptores Virales Y Celulares Virologia100% (5) 4 Más de 50 receptores virales y celulares, clasificados de acuerdo con la familia a la que ...
+
+[Score: 3] Motivo: Ubicación
+Título: Gabriela Vaca Zamora - Asistente contable en Galarmobil | LinkedIn
+URL: https://ec.linkedin.com/in/gabriela-vaca-zamora-b74470351
+Contexto: Asistente contable en Galarmobil · Experiencia: Galarmobil · Ubicación:Guayaquil. Mira el perfil deGabriela VacaZamora en LinkedIn, una red profesional de más de 1.000 millones de miembros.
+
+[Score: 3] Motivo: Ubicación
+Título: Ana Gabriela Vaca Herrera - Ingeniería en Universidad Ecotec | LinkedIn
+URL: https://ec.linkedin.com/in/ana-gabriela-vaca-herrera-5554a11a2
+Contexto: Ingeniería en Universidad Ecotec · Experiencia: Banco del Pacífico · Educación: Universidad ECOTEC · Ubicación:Guayaquil· 12 contactos en LinkedIn. Mira el perfil de AnaGabriela VacaHerrera en LinkedIn, una red profesional de más de 1.000 millones de miembros.
+
+[Score: 3] Motivo: Ubicación
+Título: #LaborSocial #reinaug2022 Nuestra Candidata a Reina de ... - Facebook
+URL: https://www.facebook.com/bienestaruniversitarioug/videos/laborsocial-reinaug2022-nuestra-candidata-a-reina-de-la-universidad-de-guayaquil/797974534604042/
+Contexto: #LaborSocial #reinaug2022 📌Nuestra Candidata a Reina de la Universidad deGuayaquilrepresentante de la Facultad de Ciencias Médicas,Gabriela Vaca... | By Bienestar Universitario UG | Hello hello how are you ? My name isGabriela Vacacandidate for queen of the University ofGuayaquilrepresentative of the Faculty of Medical Sciences today we are at the Ecuadorian Foundation of the Deaf ...
+
