@@ -88,7 +88,11 @@ def parse_date(value: str | None) -> str:
 
 
 def ssl_context() -> ssl.SSLContext:
-    return ssl.create_default_context()
+    # macOS Python sin certifi: usar contexto sin verificación
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
 
 
 def fetch(url: str, timeout: int = 35) -> bytes:

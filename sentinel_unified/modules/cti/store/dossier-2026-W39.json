@@ -1,0 +1,1022 @@
+{
+  "marca": "Altel",
+  "tipo": "Boletin de Threat Intelligence",
+  "tipo_periodo": "semanal",
+  "semana": "2026-W39",
+  "ventana": {
+    "inicio": "2026-09-14T05:00:00+00:00",
+    "fin": "2026-09-21T05:00:00+00:00"
+  },
+  "regla_temporal": {
+    "zona_horaria": "America/Guayaquil",
+    "inicio_inclusivo": "2026-09-14T00:00:00-05:00",
+    "fin_exclusivo": "2026-09-21T00:00:00-05:00",
+    "descripcion": "siete dias calendario inmediatamente anteriores completos a la fecha de generacion",
+    "excepcion_dia_generacion": "solo alertas criticas/zero-day/explotacion activa publicadas el dia de generacion y validadas contra fuente original"
+  },
+  "criterio_editorial": {
+    "puerta_aplicabilidad_entorno": true,
+    "descripcion": "Publicar solo CVE criticas/materiales con aplicabilidad real a entornos de clientes: sistemas operativos, WordPress/plugins, tecnologias de inventario, on-premise/autogestionado plausible o servicio critico. Excluir SaaS/cloud puro, noticias generales y CVE ya publicadas sin novedad material.",
+    "excluye_cves_previamente_publicadas": true
+  },
+  "generado": "2026-09-23T20:30:22+00:00",
+  "cliente": null,
+  "busqueda_cliente": {},
+  "seleccion_interna_cliente": {},
+  "control_autonomo": {
+    "fase": "CONTROL_AUTONOMO_CTI",
+    "cliente": null,
+    "ventana_temporal": {
+      "inicio": "2026-09-14T00:00:00-05:00",
+      "fin": "2026-09-20T23:59:59-05:00"
+    },
+    "fuentes_consultadas": [
+      "CISA Known Exploited Vulnerabilities",
+      "Microsoft Security Response Center",
+      "CISA Advisories",
+      "CISA ICS Advisories",
+      "EcuCERT Alertas",
+      "CSIRT Telconet",
+      "Ransomware.live Ecuador",
+      "The Hacker News",
+      "BleepingComputer",
+      "SecurityWeek",
+      "Segu-Info",
+      "Malwarebytes Labs",
+      "KrebsOnSecurity",
+      "Truffle Security",
+      "Security News Wire"
+    ],
+    "hallazgos_candidatos_en_ventana": 60,
+    "hallazgos_seleccionados": 12,
+    "hallazgos_descartados": 56,
+    "descartes_muestra": [
+      {
+        "titulo": "CVE-2026-7273 Zyxel GS1900 Series Switches",
+        "fecha": "2026-09-21T00:00:00+00:00",
+        "fuente": "CISA Known Exploited Vulnerabilities",
+        "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "CVE-2025-39964 Linux Kernel",
+        "fecha": "2026-09-18T00:00:00+00:00",
+        "fuente": "CISA Known Exploited Vulnerabilities",
+        "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "CVE-2026-53266 Linux Kernel",
+        "fecha": "2026-09-18T00:00:00+00:00",
+        "fuente": "CISA Known Exploited Vulnerabilities",
+        "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "CVE-2025-39682 Linux Kernel",
+        "fecha": "2026-09-18T00:00:00+00:00",
+        "fuente": "CISA Known Exploited Vulnerabilities",
+        "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "CVE-2026-58704 Google Pixel",
+        "fecha": "2026-09-16T00:00:00+00:00",
+        "fuente": "CISA Known Exploited Vulnerabilities",
+        "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "CVE-2026-76460 Cisco Identity Services Engine",
+        "fecha": "2026-09-16T00:00:00+00:00",
+        "fuente": "CISA Known Exploited Vulnerabilities",
+        "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "CVE-2026-87886 Acronis Backup",
+        "fecha": "2026-09-16T00:00:00+00:00",
+        "fuente": "CISA Known Exploited Vulnerabilities",
+        "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "El ransomware VEXY es una amenaza emergente identificada en septiembre de 2026, con actividad reportada principalmente contra organizaciones de América Latina. Se han registrado incidentes en Brasil y Ecuador, además de posibles víctimas mencionadas en sitios de filtración. Debido a su reciente aparición, existe información limitada sobre sus herramientas y técnicas de ataque. Se recomienda mantener vigilancia ante posibles compromisos de sistemas o exposición de información.",
+        "fecha": "2026-09-18T00:00:00+00:00",
+        "fuente": "EcuCERT Alertas",
+        "url": "https://www.ecucert.gob.ec/wp-content/uploads/2026/09/Al-2026-047-Ransomware-VEXY.pdf",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Desbordamiento de Pila en Servidores de Gestión de Check Point Permite Ejecución de Código con Privilegios Root",
+        "fecha": "2026-09-17T07:44:47+00:00",
+        "fuente": "CSIRT Telconet",
+        "url": "https://csirt.telconet.net/comunicacion/noticias-seguridad/desbordamiento-de-pila-en-servidores-de-gestion-de-check-point-permite-ejecucion-de-codigo-con-privilegios-root/",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Ejecución remota de comandos sin autenticación en Issabel Framework",
+        "fecha": "2026-09-17T00:36:27+00:00",
+        "fuente": "CSIRT Telconet",
+        "url": "https://csirt.telconet.net/comunicacion/boletines-servicios/ejecucion-remota-de-comandos-sin-autenticacion-en-issabel-framework/",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Vulnerabilidad de escalada de privilegios en plugins de Acronis para cPanel y Plesk",
+        "fecha": "2026-09-16T09:15:04+00:00",
+        "fuente": "CSIRT Telconet",
+        "url": "https://csirt.telconet.net/comunicacion/boletines-servicios/vulnerabilidad-de-escalada-de-privilegios-en-plugins-de-acronis-para-cpanel-y-plesk/",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Vulnerabilidad de inyección SQL en Apache Superset con exploit público disponible",
+        "fecha": "2026-09-16T08:47:19+00:00",
+        "fuente": "CSIRT Telconet",
+        "url": "https://csirt.telconet.net/comunicacion/boletines-servicios/vulnerabilidad-de-inyeccion-sql-en-apache-superset-con-exploit-publico-disponible/",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Actualización de emergencia para corregir fallos críticos en Windows 11 tras parche de septiembre",
+        "fecha": "2026-09-16T08:27:24+00:00",
+        "fuente": "CSIRT Telconet",
+        "url": "https://csirt.telconet.net/comunicacion/boletines-servicios/actualizacion-de-emergencia-para-corregir-fallos-criticos-en-windows-11-tras-parche-de-septiembre/",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Claude Opus 5 Helped Researchers Take Over OpenAI Staff Accounts via Chained Flaws",
+        "fecha": "2026-09-19T18:36:53+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/claude-opus-5-helped-researchers-take.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Can You Prove a New CVE Is Exploitable Before Attackers Do? Learn How in This Webinar",
+        "fecha": "2026-09-19T13:28:48+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/can-you-prove-new-cve-is-exploitable.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Identity Visibility in 2026: The Foundation of Identity Security",
+        "fecha": "2026-09-19T13:28:41+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/identity-visibility-in-2026-foundation.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "SolarWinds Patches ARM Hard-Coded Key Flaw Enabling Unauthenticated RCE",
+        "fecha": "2026-09-19T09:31:17+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/solarwinds-patches-arm-hard-coded-key.html",
+        "motivo": "no reportable por regla editorial"
+      },
+      {
+        "titulo": "Google Gemini Broke Into Real Company Systems After Security Test Domain Mix-Up",
+        "fecha": "2026-09-19T07:51:34+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/google-gemini-broke-into-real-company.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "CrowdSec Says TanStack npm Attack Led to Copy of 170 Private GitHub Repositories",
+        "fecha": "2026-09-19T07:14:54+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/crowdsec-says-tanstack-npm-attack-led.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "CISA Flags Three Linux Kernel Vulnerabilities Exploited in the Wild",
+        "fecha": "2026-09-19T06:24:10+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/cisa-flags-three-linux-kernel.html",
+        "motivo": "no reportable por regla editorial"
+      },
+      {
+        "titulo": "Public Exploits Released for Four Linux Kernel Flaws That Enable Local Root",
+        "fecha": "2026-09-18T18:02:24+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/public-exploits-released-for-four-linux.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "New WordPress Click2Shell Flaw Forces Theme Installs, Can Chain to Code Execution",
+        "fecha": "2026-09-18T16:56:19+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/new-wordpress-click2shell-flaw-forces.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Transparent Tribe Deploys New Rust Backdoor Using Private GitHub Repositories for C2",
+        "fecha": "2026-09-18T15:24:16+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/transparent-tribe-deploys-new-rust.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Microsoft Patches CVSS 10.0 Azure AI Foundry Flaw Enabling Unauthorized Privilege Escalation",
+        "fecha": "2026-09-18T12:47:04+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/microsoft-patches-cvss-100-azure-ai.html",
+        "motivo": "no reportable por regla editorial"
+      },
+      {
+        "titulo": "An Abandoned CDN Domain Was Re-Registered. Thousands of Sites Still Call It.",
+        "fecha": "2026-09-18T11:01:16+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/an-abandoned-cdn-domain-was-re.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Plugin4Shell Lets Repository Owners Swap Pinned Plugin Code Across Four AI Coding Agents",
+        "fecha": "2026-09-18T11:01:01+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/plugin4shell-lets-repository-owners.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "WeaselBiscuit Stealer Spreads via 13 npm Packages to Harvest Chrome Extension Storage",
+        "fecha": "2026-09-18T10:40:06+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/weaselbiscuit-stealer-spreads-via-13.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Claimed Bug Bounty Hunter Likely Used LLM to Build PhantomRaven npm Stealer",
+        "fecha": "2026-09-18T09:18:03+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/claimed-bug-bounty-hunter-likely-used.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "RatHat Android Malware Abuses ADB to Retain Shell Access After Uninstall",
+        "fecha": "2026-09-18T06:17:25+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/rathat-android-malware-abuses-adb-to.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Critical Check Point Management Flaw Lets Unauthenticated Attackers Run Code as Root",
+        "fecha": "2026-09-17T18:08:28+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/critical-check-point-management-server.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "ThreatsDay: Self-Rewriting Agents, 800+ Flaws Patched, Insider SIM Swaps and 22 More New Stories",
+        "fecha": "2026-09-17T17:32:22+00:00",
+        "fuente": "The Hacker News",
+        "url": "https://thehackernews.com/2026/09/threatsday-self-rewriting-agents-800.html",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "AWS admite pérdida permanente de datos de clientes tras los ataques iraníes a sus centros de datos",
+        "fecha": "2026-09-20T16:29:00+00:00",
+        "fuente": "Segu-Info",
+        "url": "http://blog.segu-info.com.ar/feeds/6964071014102709103/comments/default",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "PIVOT: pruebas para evaluar la eficacia de los proveedores de ciberseguridad",
+        "fecha": "2026-09-19T14:30:00+00:00",
+        "fuente": "Segu-Info",
+        "url": "http://blog.segu-info.com.ar/feeds/2134325388225900097/comments/default",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Vulnerabilidad \"Click2Shell\" en WordPress fuerza la instalación de temas y puede encadenarse para lograr la ejecución de código",
+        "fecha": "2026-09-18T13:23:00+00:00",
+        "fuente": "Segu-Info",
+        "url": "http://blog.segu-info.com.ar/feeds/9000365750481807408/comments/default",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "La IA acelera a los adversarios y transforma la superficie de ataque [Informes de CrowdStrike y Mandiant 2026]",
+        "fecha": "2026-09-18T12:39:00+00:00",
+        "fuente": "Segu-Info",
+        "url": "http://blog.segu-info.com.ar/feeds/8005668682995897706/comments/default",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Tres grupos de ciberdelincuentes atacan a empresas rusas con puertas traseras, ransomware y programas de borrado de datos",
+        "fecha": "2026-09-17T17:13:00+00:00",
+        "fuente": "Segu-Info",
+        "url": "http://blog.segu-info.com.ar/feeds/3643484192419112781/comments/default",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Revolut sufre ciberataque: un tercero accedió a información personal de clientes",
+        "fecha": "2026-09-16T12:30:00+00:00",
+        "fuente": "Segu-Info",
+        "url": "http://blog.segu-info.com.ar/feeds/562061352994542681/comments/default",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Guía para la mitigación de amenazas internas (insider)",
+        "fecha": "2026-09-15T12:00:00+00:00",
+        "fuente": "Segu-Info",
+        "url": "http://blog.segu-info.com.ar/feeds/5540319500019835376/comments/default",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Sólo 1,38% de las vulnerabilidad de 2026 han sido explotadas. ¿Qué y cómo parchear?",
+        "fecha": "2026-09-14T17:00:00+00:00",
+        "fuente": "Segu-Info",
+        "url": "http://blog.segu-info.com.ar/feeds/6561081642104616015/comments/default",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "BlueMoon: actores maliciosos estatales adoptan una novedosa cadena de exploits utilizando vulnerabilidades de día cero en Chrome y Windows",
+        "fecha": "2026-09-14T14:30:00+00:00",
+        "fuente": "Segu-Info",
+        "url": "http://blog.segu-info.com.ar/feeds/6189317552733983351/comments/default",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "New Android malware uses AI to steal bank logins and PINs",
+        "fecha": "2026-09-18T15:37:04+00:00",
+        "fuente": "Malwarebytes Labs",
+        "url": "https://www.malwarebytes.com/blog/news/2026/09/new-android-malware-uses-ai-to-steal-bank-logins-and-pins",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Did an AI really try to break free from human control?",
+        "fecha": "2026-09-18T14:18:20+00:00",
+        "fuente": "Malwarebytes Labs",
+        "url": "https://www.malwarebytes.com/blog/ai/2026/09/did-an-ai-really-try-to-break-free-from-human-control",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Fake parcel delivery messages steal your card and bank details",
+        "fecha": "2026-09-18T07:44:22+00:00",
+        "fuente": "Malwarebytes Labs",
+        "url": "https://www.malwarebytes.com/blog/scams/2026/09/fake-parcel-delivery-messages-steal-your-card-and-bank-details",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Flock cameras are tracking people as well as cars",
+        "fecha": "2026-09-17T18:46:12+00:00",
+        "fuente": "Malwarebytes Labs",
+        "url": "https://www.malwarebytes.com/blog/privacy/2026/09/flock-cameras-are-tracking-people-as-well-as-cars",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Revolut phishing texts appear days after data breach",
+        "fecha": "2026-09-17T14:07:15+00:00",
+        "fuente": "Malwarebytes Labs",
+        "url": "https://www.malwarebytes.com/blog/threat-intel/2026/09/revolut-phishing-texts-appear-days-after-data-breach",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "12 celebrity deepfake websites seized by Manhattan DA",
+        "fecha": "2026-09-17T11:20:46+00:00",
+        "fuente": "Malwarebytes Labs",
+        "url": "https://www.malwarebytes.com/blog/ai/2026/09/12-celebrity-deepfake-websites-seized-by-manhattan-da",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "T-Mobile rewards points expiry texts are a phishing scam",
+        "fecha": "2026-09-17T10:44:01+00:00",
+        "fuente": "Malwarebytes Labs",
+        "url": "https://www.malwarebytes.com/blog/threat-intel/2026/09/t-mobile-rewards-points-expiry-texts-are-a-phishing-scam",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "Google Pixel owners urged to patch actively exploited modem flaw",
+        "fecha": "2026-09-16T10:39:04+00:00",
+        "fuente": "Malwarebytes Labs",
+        "url": "https://www.malwarebytes.com/blog/mobile/2026/09/google-pixel-owners-urged-to-patch-actively-exploited-modem-flaw",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "AI helps scammers build convincing antivirus renewal pages",
+        "fecha": "2026-09-16T08:41:19+00:00",
+        "fuente": "Malwarebytes Labs",
+        "url": "https://www.malwarebytes.com/blog/threat-intel/2026/09/ai-helps-scammers-build-convincing-antivirus-renewal-pages",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      },
+      {
+        "titulo": "How to opt out of AI chatbot training",
+        "fecha": "2026-09-15T15:41:44+00:00",
+        "fuente": "Malwarebytes Labs",
+        "url": "https://www.malwarebytes.com/blog/how-to/2026/09/how-to-opt-out-of-ai-chatbot-training",
+        "motivo": "menor prioridad frente a hallazgos seleccionados"
+      }
+    ],
+    "seleccion_cliente_estado": "",
+    "mensaje_consola": "",
+    "estado_final": "APROBADO_PARA_RENDER_VALIDADO"
+  },
+  "exposicion_cve": {},
+  "totales": {
+    "items_store": 4024,
+    "items_semana": 60,
+    "items_ventana": 60,
+    "items_dia_generacion_criticos": 5,
+    "hallazgos": 57,
+    "explotados": 14,
+    "cves_semana": 8,
+    "cves_previas_excluidas": 0
+  },
+  "secciones": {
+    "amenaza_semana": [
+      {
+        "cosechado": "2026-09-23T13:48:09+00:00",
+        "cves": [
+          "CVE-2026-58138"
+        ],
+        "fecha": "2026-09-19T08:18:54+00:00",
+        "fuente": "The Hacker News",
+        "fuente_id": "thehackernews",
+        "id": "c8cb9ca3b0db57d241ce2a34df40a81ddd7981ee0b088a26ce35816eec74f0af",
+        "idioma": "en",
+        "peso_fuente": 1.0,
+        "region": "global",
+        "resumen": "A critical vulnerability impacting Orkes Conductor is being actively exploited in the wild, according to Fortinet. The vulnerability in question is CVE-2026-58138 (CVSS v3.1 score: 9.8/CVSS v4 score: 9.3), which relates to a case of unauthenticated remote code execution. \"Orkes Conductor 3.21.21 before 3.30.2 contains an unauthenticated remote code execution vulnerability that allows remote",
+        "titulo": "Critical Pre-Auth RCE in Orkes Conductor Workflow Platform Exploited in the Wild",
+        "url": "https://thehackernews.com/2026/09/critical-pre-auth-rce-in-orkes.html",
+        "score": 155.0,
+        "etiquetas": [
+          "EPSS ALTO",
+          "EXPLOTACION REPORTADA",
+          "PERIMETRO / INFRA CRITICA",
+          "PoC PUBLICO"
+        ],
+        "en_ventana": true,
+        "cves_criticas_actuales": [
+          "CVE-2026-58138"
+        ],
+        "reportable": true
+      }
+    ],
+    "seguridad_ecuador": [
+      {
+        "cosechado": "2026-09-23T13:48:06+00:00",
+        "cves": [
+          "CVE-2026-67276",
+          "CVE-2026-86060",
+          "CVE-2026-67277"
+        ],
+        "fecha": "2026-09-18T00:00:00+00:00",
+        "fuente": "EcuCERT Alertas",
+        "fuente_id": "ecucert",
+        "id": "193cc2349409875b38fc259247769119f457fd804abc6dac8df06bc286892427",
+        "idioma": "es",
+        "peso_fuente": 1.0,
+        "region": "ec",
+        "resumen": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; CVE-2026-86060, que permite manipular privilegios mediante un nombre de usuario malicioso; y CVE-2026-67277, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir tomar el control total del dispositivo sin autenticación, si el acceso remoto SSH está habilitado.",
+        "titulo": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; CVE-2026-86060, que permite manipular privilegios mediante un nombre de usuario malicioso; y CVE-2026-67277, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir tomar el control total del dispositivo sin autenticación, si el acceso remoto SSH está habilitado.",
+        "url": "https://www.ecucert.gob.ec/wp-content/uploads/2026/09/Al-2026-046-Vulnerabilidades-criticas-en-MikroTik-RouterOS-explotadas-acti-vamente-–-CVE-2026-67276-CVE-2026-86060-y-CVE-2026-67277.pdf",
+        "score": 160.0,
+        "etiquetas": [
+          "CORROBORACION CRUZADA",
+          "PoC PUBLICO",
+          "RELEVANCIA ECUADOR"
+        ],
+        "en_ventana": true,
+        "cves_criticas_actuales": [
+          "CVE-2026-67276",
+          "CVE-2026-86060",
+          "CVE-2026-67277"
+        ],
+        "reportable": true
+      },
+      {
+        "cosechado": "2026-09-23T13:48:07+00:00",
+        "cves": [],
+        "fecha": "2026-09-16T14:16:23+00:00",
+        "fuente": "CSIRT Telconet",
+        "fuente_id": "csirt_telconet",
+        "id": "f57f9b9d8235e2ca47d5f38674ec2fc0097bb6650fbf1cc550c2b347afbcd12c",
+        "idioma": "es",
+        "peso_fuente": 1.0,
+        "region": "ec",
+        "resumen": "Google ha lanzado una actualización de seguridad para Chrome 153 que corrige 42 vulnerabilidades, incluyendo tres clasificadas como críticas. Estas fallas afectan componentes clave como WebGL, Workers e Internals, y podrían permitir la ejecución arbitraria de código o la exposición Leer más ...",
+        "titulo": "Google Chrome corrige vulnerabilidades críticas en su última actualización de seguridad",
+        "url": "https://csirt.telconet.net/comunicacion/boletines-servicios/google-chrome-corrige-vulnerabilidades-criticas-en-su-ultima-actualizacion-de-seguridad/",
+        "score": 50.0,
+        "etiquetas": [
+          "RELEVANCIA ECUADOR"
+        ],
+        "en_ventana": true,
+        "reportable": true
+      }
+    ],
+    "noticias_principales": [
+      {
+        "cosechado": "2026-09-23T13:48:10+00:00",
+        "cves": [
+          "CVE-2026-76460"
+        ],
+        "fecha": "2026-09-17T12:18:40+00:00",
+        "fuente": "Segu-Info",
+        "fuente_id": "segu_info",
+        "id": "2b5f48839c2a131d7cdf521404d3dd1f7df7905ad8f0fa4c5dd32c796c514efb",
+        "idioma": "es",
+        "peso_fuente": 1.0,
+        "region": "latam",
+        "resumen": "",
+        "titulo": "Nueva vulnerabilidad Zero-Day en CISCO ISE permite eludir la autenticación y está siendo explotada en ataques activos (CVE-2026-76460)",
+        "url": "http://blog.segu-info.com.ar/feeds/2968066257340654395/comments/default",
+        "score": 155.0,
+        "etiquetas": [
+          "CORROBORACION CRUZADA",
+          "EXPLOTACION REPORTADA",
+          "PoC PUBLICO"
+        ],
+        "en_ventana": true,
+        "cves_criticas_actuales": [
+          "CVE-2026-76460"
+        ],
+        "reportable": true
+      }
+    ],
+    "principales_cves": [
+      {
+        "tipo": "cve",
+        "cve": "CVE-2026-76460",
+        "cves": [
+          "CVE-2026-76460"
+        ],
+        "producto": "Cisco Identity Services Engine",
+        "impacto": "Cisco Identity Services Engine (ISE) and Cisco ISE Passive Identity Connector (ISE-PIC) contain an incorrect use of privileged APIs vulnerability that could allow an unauthenticated, remote attacker to gain unauthorized access to the affected device by bypassing the web-based management interface.",
+        "score": 215.0,
+        "titulo": "CVE-2026-76460 - Cisco Identity Services Engine",
+        "fuentes": [
+          {
+            "cosechado": "2026-09-23T13:48:00+00:00",
+            "cves": [
+              "CVE-2026-76460"
+            ],
+            "fecha": "2026-09-16T00:00:00+00:00",
+            "fuente": "CISA Known Exploited Vulnerabilities",
+            "fuente_id": "cisa_kev",
+            "id": "a7f7899e9c2062c3e0e9715e3b41363e7e72537e67ad9dce73a447eb59225d30",
+            "idioma": "en",
+            "kev": true,
+            "kev_date_added": "2026-09-16",
+            "kev_due_date": "2026-09-19",
+            "peso_fuente": 1.0,
+            "product": "Identity Services Engine",
+            "ransomware": false,
+            "region": "global",
+            "resumen": "Cisco Identity Services Engine (ISE) and Cisco ISE Passive Identity Connector (ISE-PIC) contain an incorrect use of privileged APIs vulnerability that could allow an unauthenticated, remote attacker to gain unauthorized access to the affected device by bypassing the web-based management interface.",
+            "titulo": "CVE-2026-76460 Cisco Identity Services Engine",
+            "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+            "vendor": "Cisco",
+            "score": 185.0,
+            "etiquetas": [
+              "CORROBORACION CRUZADA",
+              "EXPLOTADO ACTIVAMENTE",
+              "PoC PUBLICO"
+            ],
+            "en_ventana": true,
+            "cves_criticas_actuales": [
+              "CVE-2026-76460"
+            ],
+            "reportable": true
+          },
+          {
+            "cosechado": "2026-09-23T13:48:10+00:00",
+            "cves": [
+              "CVE-2026-76460"
+            ],
+            "fecha": "2026-09-17T12:18:40+00:00",
+            "fuente": "Segu-Info",
+            "fuente_id": "segu_info",
+            "id": "2b5f48839c2a131d7cdf521404d3dd1f7df7905ad8f0fa4c5dd32c796c514efb",
+            "idioma": "es",
+            "peso_fuente": 1.0,
+            "region": "latam",
+            "resumen": "",
+            "titulo": "Nueva vulnerabilidad Zero-Day en CISCO ISE permite eludir la autenticación y está siendo explotada en ataques activos (CVE-2026-76460)",
+            "url": "http://blog.segu-info.com.ar/feeds/2968066257340654395/comments/default",
+            "score": 155.0,
+            "etiquetas": [
+              "CORROBORACION CRUZADA",
+              "EXPLOTACION REPORTADA",
+              "PoC PUBLICO"
+            ],
+            "en_ventana": true,
+            "cves_criticas_actuales": [
+              "CVE-2026-76460"
+            ],
+            "reportable": true
+          }
+        ],
+        "etiquetas": [
+          "CORROBORACION CRUZADA",
+          "EXPLOTADO ACTIVAMENTE",
+          "PoC PUBLICO"
+        ],
+        "cliente_matches": []
+      },
+      {
+        "tipo": "cve",
+        "cve": "CVE-2025-39682",
+        "cves": [
+          "CVE-2025-39682"
+        ],
+        "producto": "Linux Kernel",
+        "impacto": "Linux Kernel contains an improper check for unusual or exceptional conditions vulnerability in the TLS receive path which allows a zero-length record retrieved from the rx_list to bypass the intended recvmsg() record-type handling, potentially causing subsequent TLS records to be processed using incorrect zero-copy and queuing assumptions. The impacted product(s) could be end-of-life (EoL) and/or end-of-service.",
+        "score": 185.0,
+        "titulo": "CVE-2025-39682 - Linux Kernel",
+        "fuentes": [
+          {
+            "cosechado": "2026-09-23T13:48:00+00:00",
+            "cves": [
+              "CVE-2025-39682"
+            ],
+            "fecha": "2026-09-18T00:00:00+00:00",
+            "fuente": "CISA Known Exploited Vulnerabilities",
+            "fuente_id": "cisa_kev",
+            "id": "ecd75cd241a07dc898cc6240067b4e3a68bd552340cd64cdc85eeda8929cbcf1",
+            "idioma": "en",
+            "kev": true,
+            "kev_date_added": "2026-09-18",
+            "kev_due_date": "2026-09-21",
+            "peso_fuente": 1.0,
+            "product": "Kernel",
+            "ransomware": false,
+            "region": "global",
+            "resumen": "Linux Kernel contains an improper check for unusual or exceptional conditions vulnerability in the TLS receive path which allows a zero-length record retrieved from the rx_list to bypass the intended recvmsg() record-type handling, potentially causing subsequent TLS records to be processed using incorrect zero-copy and queuing assumptions. The impacted product(s) could be end-of-life (EoL) and/or end-of-service (EoS). Users are advised to discontinue use and/or transition to a supported version.",
+            "titulo": "CVE-2025-39682 Linux Kernel",
+            "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+            "vendor": "Linux",
+            "score": 185.0,
+            "etiquetas": [
+              "CORROBORACION CRUZADA",
+              "EXPLOTADO ACTIVAMENTE",
+              "PoC PUBLICO"
+            ],
+            "en_ventana": true,
+            "cves_criticas_actuales": [
+              "CVE-2025-39682"
+            ],
+            "reportable": true
+          }
+        ],
+        "etiquetas": [
+          "CORROBORACION CRUZADA",
+          "EXPLOTADO ACTIVAMENTE",
+          "PoC PUBLICO"
+        ],
+        "cliente_matches": []
+      },
+      {
+        "tipo": "cve",
+        "cve": "CVE-2026-86060",
+        "cves": [
+          "CVE-2026-86060"
+        ],
+        "producto": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; , q",
+        "impacto": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: una vulnerabilidad relacionada, por omisión de autenticación SSH; CVE-2026-86060, que permite manipular privilegios mediante un nombre de usuario malicioso; y una vulnerabilidad relacionada, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir.",
+        "score": 160.0,
+        "titulo": "CVE-2026-86060 - El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; , q",
+        "fuentes": [
+          {
+            "cosechado": "2026-09-23T13:48:06+00:00",
+            "cves": [
+              "CVE-2026-67276",
+              "CVE-2026-86060",
+              "CVE-2026-67277"
+            ],
+            "fecha": "2026-09-18T00:00:00+00:00",
+            "fuente": "EcuCERT Alertas",
+            "fuente_id": "ecucert",
+            "id": "193cc2349409875b38fc259247769119f457fd804abc6dac8df06bc286892427",
+            "idioma": "es",
+            "peso_fuente": 1.0,
+            "region": "ec",
+            "resumen": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; CVE-2026-86060, que permite manipular privilegios mediante un nombre de usuario malicioso; y CVE-2026-67277, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir tomar el control total del dispositivo sin autenticación, si el acceso remoto SSH está habilitado.",
+            "titulo": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; CVE-2026-86060, que permite manipular privilegios mediante un nombre de usuario malicioso; y CVE-2026-67277, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir tomar el control total del dispositivo sin autenticación, si el acceso remoto SSH está habilitado.",
+            "url": "https://www.ecucert.gob.ec/wp-content/uploads/2026/09/Al-2026-046-Vulnerabilidades-criticas-en-MikroTik-RouterOS-explotadas-acti-vamente-–-CVE-2026-67276-CVE-2026-86060-y-CVE-2026-67277.pdf",
+            "score": 160.0,
+            "etiquetas": [
+              "CORROBORACION CRUZADA",
+              "PoC PUBLICO",
+              "RELEVANCIA ECUADOR"
+            ],
+            "en_ventana": true,
+            "cves_criticas_actuales": [
+              "CVE-2026-67276",
+              "CVE-2026-86060",
+              "CVE-2026-67277"
+            ],
+            "reportable": true
+          }
+        ],
+        "etiquetas": [
+          "CORROBORACION CRUZADA",
+          "PoC PUBLICO",
+          "RELEVANCIA ECUADOR"
+        ],
+        "cliente_matches": []
+      },
+      {
+        "tipo": "cve",
+        "cve": "CVE-2026-67277",
+        "cves": [
+          "CVE-2026-67277"
+        ],
+        "producto": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; CVE",
+        "impacto": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: una vulnerabilidad relacionada, por omisión de autenticación SSH; una vulnerabilidad relacionada, que permite manipular privilegios mediante un nombre de usuario malicioso; y CVE-2026-67277, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir.",
+        "score": 160.0,
+        "titulo": "CVE-2026-67277 - El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; CVE",
+        "fuentes": [
+          {
+            "cosechado": "2026-09-23T13:48:06+00:00",
+            "cves": [
+              "CVE-2026-67276",
+              "CVE-2026-86060",
+              "CVE-2026-67277"
+            ],
+            "fecha": "2026-09-18T00:00:00+00:00",
+            "fuente": "EcuCERT Alertas",
+            "fuente_id": "ecucert",
+            "id": "193cc2349409875b38fc259247769119f457fd804abc6dac8df06bc286892427",
+            "idioma": "es",
+            "peso_fuente": 1.0,
+            "region": "ec",
+            "resumen": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; CVE-2026-86060, que permite manipular privilegios mediante un nombre de usuario malicioso; y CVE-2026-67277, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir tomar el control total del dispositivo sin autenticación, si el acceso remoto SSH está habilitado.",
+            "titulo": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; CVE-2026-86060, que permite manipular privilegios mediante un nombre de usuario malicioso; y CVE-2026-67277, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir tomar el control total del dispositivo sin autenticación, si el acceso remoto SSH está habilitado.",
+            "url": "https://www.ecucert.gob.ec/wp-content/uploads/2026/09/Al-2026-046-Vulnerabilidades-criticas-en-MikroTik-RouterOS-explotadas-acti-vamente-–-CVE-2026-67276-CVE-2026-86060-y-CVE-2026-67277.pdf",
+            "score": 160.0,
+            "etiquetas": [
+              "CORROBORACION CRUZADA",
+              "PoC PUBLICO",
+              "RELEVANCIA ECUADOR"
+            ],
+            "en_ventana": true,
+            "cves_criticas_actuales": [
+              "CVE-2026-67276",
+              "CVE-2026-86060",
+              "CVE-2026-67277"
+            ],
+            "reportable": true
+          }
+        ],
+        "etiquetas": [
+          "CORROBORACION CRUZADA",
+          "PoC PUBLICO",
+          "RELEVANCIA ECUADOR"
+        ],
+        "cliente_matches": []
+      },
+      {
+        "tipo": "cve",
+        "cve": "CVE-2026-67276",
+        "cves": [
+          "CVE-2026-67276"
+        ],
+        "producto": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: , por omisión de autenticación SSH; CVE-2026-86060, q",
+        "impacto": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; una vulnerabilidad relacionada, que permite manipular privilegios mediante un nombre de usuario malicioso; y una vulnerabilidad relacionada, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir.",
+        "score": 160.0,
+        "titulo": "CVE-2026-67276 - El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: , por omisión de autenticación SSH; CVE-2026-86060, q",
+        "fuentes": [
+          {
+            "cosechado": "2026-09-23T13:48:06+00:00",
+            "cves": [
+              "CVE-2026-67276",
+              "CVE-2026-86060",
+              "CVE-2026-67277"
+            ],
+            "fecha": "2026-09-18T00:00:00+00:00",
+            "fuente": "EcuCERT Alertas",
+            "fuente_id": "ecucert",
+            "id": "193cc2349409875b38fc259247769119f457fd804abc6dac8df06bc286892427",
+            "idioma": "es",
+            "peso_fuente": 1.0,
+            "region": "ec",
+            "resumen": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; CVE-2026-86060, que permite manipular privilegios mediante un nombre de usuario malicioso; y CVE-2026-67277, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir tomar el control total del dispositivo sin autenticación, si el acceso remoto SSH está habilitado.",
+            "titulo": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; CVE-2026-86060, que permite manipular privilegios mediante un nombre de usuario malicioso; y CVE-2026-67277, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir tomar el control total del dispositivo sin autenticación, si el acceso remoto SSH está habilitado.",
+            "url": "https://www.ecucert.gob.ec/wp-content/uploads/2026/09/Al-2026-046-Vulnerabilidades-criticas-en-MikroTik-RouterOS-explotadas-acti-vamente-–-CVE-2026-67276-CVE-2026-86060-y-CVE-2026-67277.pdf",
+            "score": 160.0,
+            "etiquetas": [
+              "CORROBORACION CRUZADA",
+              "PoC PUBLICO",
+              "RELEVANCIA ECUADOR"
+            ],
+            "en_ventana": true,
+            "cves_criticas_actuales": [
+              "CVE-2026-67276",
+              "CVE-2026-86060",
+              "CVE-2026-67277"
+            ],
+            "reportable": true
+          }
+        ],
+        "etiquetas": [
+          "CORROBORACION CRUZADA",
+          "PoC PUBLICO",
+          "RELEVANCIA ECUADOR"
+        ],
+        "cliente_matches": []
+      },
+      {
+        "tipo": "cve",
+        "cve": "CVE-2026-58138",
+        "cves": [
+          "CVE-2026-58138"
+        ],
+        "producto": "Critical Pre-Auth RCE in Orkes Conductor Workflow Platform Exploited in the Wild",
+        "impacto": "A critical vulnerability impacting Orkes Conductor is being actively exploited in the wild, according to Fortinet. The vulnerability in question is CVE-2026-58138 (CVSS v3.1 score: 9.8/CVSS v4 score: 9.3), which relates to a case of unauthenticated remote code execution.",
+        "score": 155.0,
+        "titulo": "CVE-2026-58138 - Critical Pre-Auth RCE in Orkes Conductor Workflow Platform Exploited in the Wild",
+        "fuentes": [
+          {
+            "cosechado": "2026-09-23T13:48:09+00:00",
+            "cves": [
+              "CVE-2026-58138"
+            ],
+            "fecha": "2026-09-19T08:18:54+00:00",
+            "fuente": "The Hacker News",
+            "fuente_id": "thehackernews",
+            "id": "c8cb9ca3b0db57d241ce2a34df40a81ddd7981ee0b088a26ce35816eec74f0af",
+            "idioma": "en",
+            "peso_fuente": 1.0,
+            "region": "global",
+            "resumen": "A critical vulnerability impacting Orkes Conductor is being actively exploited in the wild, according to Fortinet. The vulnerability in question is CVE-2026-58138 (CVSS v3.1 score: 9.8/CVSS v4 score: 9.3), which relates to a case of unauthenticated remote code execution. \"Orkes Conductor 3.21.21 before 3.30.2 contains an unauthenticated remote code execution vulnerability that allows remote",
+            "titulo": "Critical Pre-Auth RCE in Orkes Conductor Workflow Platform Exploited in the Wild",
+            "url": "https://thehackernews.com/2026/09/critical-pre-auth-rce-in-orkes.html",
+            "score": 155.0,
+            "etiquetas": [
+              "EPSS ALTO",
+              "EXPLOTACION REPORTADA",
+              "PERIMETRO / INFRA CRITICA",
+              "PoC PUBLICO"
+            ],
+            "en_ventana": true,
+            "cves_criticas_actuales": [
+              "CVE-2026-58138"
+            ],
+            "reportable": true
+          }
+        ],
+        "etiquetas": [
+          "EPSS ALTO",
+          "EXPLOTACION REPORTADA",
+          "PERIMETRO / INFRA CRITICA",
+          "PoC PUBLICO"
+        ],
+        "cliente_matches": []
+      },
+      {
+        "tipo": "cve",
+        "cve": "CVE-2026-53266",
+        "cves": [
+          "CVE-2026-53266"
+        ],
+        "producto": "Linux Kernel",
+        "impacto": "Linux Kernel contains an out-of-bounds write vulnerability in the ebtables SNAT target which allows an ARP sender hardware address rewrite to write directly into a nonlinear socket-buffer fragment backed by a splice-imported file page. The impacted product(s) could be end-of-life (EoL) and/or end-of-service (EoS).",
+        "score": 155.0,
+        "titulo": "CVE-2026-53266 - Linux Kernel",
+        "fuentes": [
+          {
+            "cosechado": "2026-09-23T13:48:00+00:00",
+            "cves": [
+              "CVE-2026-53266"
+            ],
+            "fecha": "2026-09-18T00:00:00+00:00",
+            "fuente": "CISA Known Exploited Vulnerabilities",
+            "fuente_id": "cisa_kev",
+            "id": "28f5c6e7791735b6ddfbaa9763e8fee0fb6a58e198b20b76a885298a2e535da5",
+            "idioma": "en",
+            "kev": true,
+            "kev_date_added": "2026-09-18",
+            "kev_due_date": "2026-09-21",
+            "peso_fuente": 1.0,
+            "product": "Kernel",
+            "ransomware": false,
+            "region": "global",
+            "resumen": "Linux Kernel contains an out-of-bounds write vulnerability in the ebtables SNAT target which allows an ARP sender hardware address rewrite to write directly into a nonlinear socket-buffer fragment backed by a splice-imported file page. The impacted product(s) could be end-of-life (EoL) and/or end-of-service (EoS). Users are advised to discontinue use and/or transition to a supported version.",
+            "titulo": "CVE-2026-53266 Linux Kernel",
+            "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+            "vendor": "Linux",
+            "score": 155.0,
+            "etiquetas": [
+              "CORROBORACION CRUZADA",
+              "EXPLOTADO ACTIVAMENTE",
+              "PoC PUBLICO"
+            ],
+            "en_ventana": true,
+            "cves_criticas_actuales": [
+              "CVE-2026-53266"
+            ],
+            "reportable": true
+          }
+        ],
+        "etiquetas": [
+          "CORROBORACION CRUZADA",
+          "EXPLOTADO ACTIVAMENTE",
+          "PoC PUBLICO"
+        ],
+        "cliente_matches": []
+      },
+      {
+        "tipo": "cve",
+        "cve": "CVE-2025-39964",
+        "cves": [
+          "CVE-2025-39964"
+        ],
+        "producto": "Linux Kernel",
+        "impacto": "Linux Kernel contains a race condition vulnerability which allows concurrent writes to the same AF_ALG socket causing data to be unpredictably interleaved and creating inconsistencies in the socket's internal state.",
+        "score": 155.0,
+        "titulo": "CVE-2025-39964 - Linux Kernel",
+        "fuentes": [
+          {
+            "cosechado": "2026-09-23T13:48:00+00:00",
+            "cves": [
+              "CVE-2025-39964"
+            ],
+            "fecha": "2026-09-18T00:00:00+00:00",
+            "fuente": "CISA Known Exploited Vulnerabilities",
+            "fuente_id": "cisa_kev",
+            "id": "fcc424fdf9073a6bc83c1cc81603e7c495b375e25d4e6378945cf3b2a5302095",
+            "idioma": "en",
+            "kev": true,
+            "kev_date_added": "2026-09-18",
+            "kev_due_date": "2026-09-21",
+            "peso_fuente": 1.0,
+            "product": "Kernel",
+            "ransomware": false,
+            "region": "global",
+            "resumen": "Linux Kernel contains a race condition vulnerability which allows concurrent writes to the same AF_ALG socket causing data to be unpredictably interleaved and creating inconsistencies in the socket's internal state.",
+            "titulo": "CVE-2025-39964 Linux Kernel",
+            "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+            "vendor": "Linux",
+            "score": 155.0,
+            "etiquetas": [
+              "CORROBORACION CRUZADA",
+              "EXPLOTADO ACTIVAMENTE",
+              "PoC PUBLICO"
+            ],
+            "en_ventana": true,
+            "cves_criticas_actuales": [
+              "CVE-2025-39964"
+            ],
+            "reportable": true
+          }
+        ],
+        "etiquetas": [
+          "CORROBORACION CRUZADA",
+          "EXPLOTADO ACTIVAMENTE",
+          "PoC PUBLICO"
+        ],
+        "cliente_matches": []
+      }
+    ],
+    "alrededor_mundo": [],
+    "referencias": [
+      {
+        "fuente": "The Hacker News",
+        "titulo": "Critical Pre-Auth RCE in Orkes Conductor Workflow Platform Exploited in the Wild",
+        "url": "https://thehackernews.com/2026/09/critical-pre-auth-rce-in-orkes.html",
+        "cves": [
+          "CVE-2026-58138"
+        ],
+        "fecha": "2026-09-19T08:18:54+00:00"
+      },
+      {
+        "fuente": "EcuCERT Alertas",
+        "titulo": "El CERT Polska de Polonia reportó tres vulnerabilidades críticas en MikroTik RouterOS: CVE-2026-67276, por omisión de autenticación SSH; CVE-2026-86060, que permite manipular privilegios mediante un nombre de usuario malicioso; y CVE-2026-67277, que puede provocar divulgación de memoria y fallos del sistema mediante una prueba de ancho de banda. Su explotación conjunta podría permitir tomar el control total del dispositivo sin autenticación, si el acceso remoto SSH está habilitado.",
+        "url": "https://www.ecucert.gob.ec/wp-content/uploads/2026/09/Al-2026-046-Vulnerabilidades-criticas-en-MikroTik-RouterOS-explotadas-acti-vamente-–-CVE-2026-67276-CVE-2026-86060-y-CVE-2026-67277.pdf",
+        "cves": [
+          "CVE-2026-67276",
+          "CVE-2026-86060",
+          "CVE-2026-67277"
+        ],
+        "fecha": "2026-09-18T00:00:00+00:00"
+      },
+      {
+        "fuente": "CSIRT Telconet",
+        "titulo": "Google Chrome corrige vulnerabilidades críticas en su última actualización de seguridad",
+        "url": "https://csirt.telconet.net/comunicacion/boletines-servicios/google-chrome-corrige-vulnerabilidades-criticas-en-su-ultima-actualizacion-de-seguridad/",
+        "cves": [],
+        "fecha": "2026-09-16T14:16:23+00:00"
+      },
+      {
+        "fuente": "Segu-Info",
+        "titulo": "Nueva vulnerabilidad Zero-Day en CISCO ISE permite eludir la autenticación y está siendo explotada en ataques activos (CVE-2026-76460)",
+        "url": "http://blog.segu-info.com.ar/feeds/2968066257340654395/comments/default",
+        "cves": [
+          "CVE-2026-76460"
+        ],
+        "fecha": "2026-09-17T12:18:40+00:00"
+      },
+      {
+        "fuente": "CISA Known Exploited Vulnerabilities",
+        "titulo": "CVE-2026-76460 Cisco Identity Services Engine",
+        "url": "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+        "cves": [
+          "CVE-2026-76460"
+        ],
+        "fecha": "2026-09-16T00:00:00+00:00"
+      }
+    ]
+  },
+  "brechas": [
+    "Seguridad Ecuador: 2/3 candidatos.",
+    "Noticias Principales: 1/5 candidatos.",
+    "Alrededor del Mundo: 0/4 candidatos."
+  ]
+}

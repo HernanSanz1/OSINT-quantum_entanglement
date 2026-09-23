@@ -44,11 +44,14 @@ class HarvestThread(QThread):
 
             self.progress.emit("Iniciando recoleccion de feeds CTI...")
 
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(self.cti_path) + ":" + env.get("PYTHONPATH", "")
             result = subprocess.run(
                 ["python3", str(harvest_py), "--dry-run"],
                 capture_output=True,
                 text=True,
                 cwd=str(self.cti_path),
+                env=env,
                 timeout=120
             )
 
@@ -91,11 +94,14 @@ class DossierThread(QThread):
             if self.fecha:
                 args.extend(["--fecha", self.fecha])
 
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(self.cti_path) + ":" + env.get("PYTHONPATH", "")
             result = subprocess.run(
                 args,
                 capture_output=True,
                 text=True,
                 cwd=str(self.cti_path),
+                env=env,
                 timeout=180
             )
 
@@ -107,6 +113,50 @@ class DossierThread(QThread):
 
         except subprocess.TimeoutExpired:
             self.error.emit("Timeout: el dossier tardo mas de 3 minutos")
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class RenderThread(QThread):
+    """Thread para ejecutar render.py y abrir el HTML"""
+    progress = Signal(str)
+    finished_ok = Signal(str)  # Emite la ruta del HTML generado
+    error = Signal(str)
+
+    def __init__(self, cti_path):
+        super().__init__()
+        self.cti_path = cti_path
+
+    def run(self):
+        try:
+            render_py = self.cti_path / "render.py"
+            if not render_py.exists():
+                self.error.emit(f"No existe {render_py}")
+                return
+
+            self.progress.emit("Renderizando HTML del boletin...")
+
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(self.cti_path) + ":" + env.get("PYTHONPATH", "")
+            result = subprocess.run(
+                ["python3", str(render_py)],
+                capture_output=True,
+                text=True,
+                cwd=str(self.cti_path),
+                env=env,
+                timeout=120
+            )
+
+            if result.returncode == 0:
+                # El output es la ruta del HTML generado
+                html_path = result.stdout.strip().split('\n')[0]
+                self.progress.emit(f"HTML generado: {html_path}")
+                self.finished_ok.emit(html_path)
+            else:
+                self.error.emit(result.stderr or "Error renderizando HTML")
+
+        except subprocess.TimeoutExpired:
+            self.error.emit("Timeout: el render tardo mas de 2 minutos")
         except Exception as e:
             self.error.emit(str(e))
 
@@ -314,9 +364,27 @@ class CTITab(QWidget):
         self.app.toast.show("Dossier CTI generado", kind="success")
 
     def _on_render(self):
-        """Ejecutar render.py"""
-        self._log("Render HTML en desarrollo...")
-        self.app.toast.show("Render HTML: funcionalidad en desarrollo", kind="info")
+        """Ejecutar render.py y abrir el HTML"""
+        self._set_busy(True)
+        self._log("Renderizando HTML del boletin...")
+
+        self.render_thread = RenderThread(CTI_BASE)
+        self.render_thread.progress.connect(self._log)
+        self.render_thread.finished_ok.connect(self._on_render_done)
+        self.render_thread.error.connect(self._on_error)
+        self.render_thread.start()
+
+    def _on_render_done(self, html_path):
+        """Abrir el HTML generado en el navegador"""
+        self._set_busy(False)
+        self._log(f"✅ HTML generado: {html_path}")
+        self.app.toast.show("Boletin HTML generado", kind="success")
+
+        # Abrir en el navegador
+        if html_path and Path(html_path).exists():
+            import webbrowser
+            webbrowser.open(f"file://{html_path}")
+            self._log(f"Abierto en navegador: {html_path}")
 
     def _on_validate(self):
         """Ejecutar validar.py"""

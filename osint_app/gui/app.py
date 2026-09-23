@@ -23,6 +23,7 @@ from .tab_reports import ReportsTab
 from .tab_ai import AITab
 from .tab_cti import CTITab
 from .tab_correlation import CorrelationTab
+from .tab_profiling import ProfilingTab
 
 class OSINTGUI(QMainWindow):
     """Main application window — Sentinel PySide6 Qt Edition."""
@@ -224,6 +225,7 @@ class OSINTGUI(QMainWindow):
             ("Casos", CasesTab(self)),
             ("Datos", DataTab(self)),
             ("Herramientas", ToolsTab(self)),
+            ("Perfilamiento", ProfilingTab(self)),
             ("Correlación", CorrelationTab(self)),
             ("CTI", CTITab(self)),
             ("Reportes", ReportsTab(self)),

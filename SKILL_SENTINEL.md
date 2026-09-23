@@ -193,7 +193,7 @@ shared = correlator.find_cross_correlations()
 | fuentes.py | Registro de fuentes CTI |
 | dossier.py | Generador de dossiers por cliente |
 | clientes.py | Inventarios y pesos por cliente |
-| render.py | Plantilla HTML Altel |
+| render.py | Plantilla HTML corporativa |
 
 ## Flujo completo: Investigación de organización
 

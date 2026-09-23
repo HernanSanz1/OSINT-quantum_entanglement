@@ -351,42 +351,237 @@ class UsernameVariantsTool(OSINTTool):
     def check_available(self) -> bool:
         return True
 
-    def _generate_variants(self, name: str, year: str = None) -> List[str]:
-        """Genera variantes de username."""
-        variants = []
+    def _generate_variants(self, name: str, year: str = None, context: str = "") -> List[str]:
+        """
+        Genera variantes exhaustivas de username.
 
-        # Clean and split name
-        name = name.lower().strip()
-        parts = name.replace('-', ' ').replace('_', ' ').split()
+        Patrones incluidos:
+        - Combinaciones nombre/apellido: ivanortiz, ivan.ortiz, ivan_ortiz, ortizivan
+        - Iniciales: iortiz, i.ortiz, io, i_ortiz
+        - Con años: ivanortiz2000, ivanortiz00, ivan.ortiz.00
+        - Con contexto: ivanortiz_udla, ivan.udla
+        - Leet speak: iv4n0rt1z, 1van0rt1z
+        - Diminutivos latinos: ivancho, ivancito
+        - Sufijos comunes: ivan_dev, ivan.ec, ivanortizoficial
+        - Separadores múltiples: ivan--ortiz, ivan__ortiz
+        - Truncados: ivanort, iortiz99
+        """
+        variants = set()
 
-        if len(parts) >= 2:
-            first = parts[0]
-            last = parts[-1]
+        # Limpiar y separar nombre
+        name_clean = name.lower().strip()
+        # Remover acentos comunes
+        replacements = {'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ñ': 'n', 'ü': 'u'}
+        for old, new in replacements.items():
+            name_clean = name_clean.replace(old, new)
 
-            # Basic variants
-            variants.extend([
+        parts = name_clean.replace('-', ' ').replace('_', ' ').replace('.', ' ').split()
+
+        if len(parts) == 0:
+            return []
+
+        first = parts[0]
+        last = parts[-1] if len(parts) >= 2 else ""
+        middle = parts[1] if len(parts) >= 3 else ""
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # COMBINACIONES BÁSICAS
+        # ═══════════════════════════════════════════════════════════════════════
+        if last:
+            # Orden normal
+            variants.update([
                 f"{first}{last}",
                 f"{first}.{last}",
                 f"{first}_{last}",
                 f"{first}-{last}",
+                f"{first}{last}",
+                # Orden invertido
                 f"{last}{first}",
-                f"{first[0]}{last}",
-                f"{first}{last[0]}",
-                f"{first[0]}.{last}",
-                f"{first[0]}_{last}",
+                f"{last}.{first}",
+                f"{last}_{first}",
+                f"{last}-{first}",
+                # Solo apellido
+                last,
+            ])
+        variants.add(first)
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # VARIANTES CON INICIALES
+        # ═══════════════════════════════════════════════════════════════════════
+        if last:
+            f1 = first[0]
+            l1 = last[0]
+            variants.update([
+                f"{f1}{last}",       # iortiz
+                f"{f1}.{last}",      # i.ortiz
+                f"{f1}_{last}",      # i_ortiz
+                f"{f1}-{last}",      # i-ortiz
+                f"{first}{l1}",      # ivano
+                f"{f1}{l1}",         # io
+                f"{f1}{last}{l1}",   # iortizo
+                f"{last}{f1}",       # ortizi
+            ])
+            # Con iniciales de dos primeras letras
+            if len(first) >= 2:
+                variants.update([
+                    f"{first[:2]}{last}",   # ivortiz
+                    f"{first[:2]}_{last}",  # iv_ortiz
+                    f"{first[:2]}.{last}",  # iv.ortiz
+                ])
+            if len(last) >= 2:
+                variants.update([
+                    f"{first}{last[:2]}",   # ivanor
+                    f"{f1}{last[:3]}",      # iort
+                ])
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # CON MIDDLE NAME
+        # ═══════════════════════════════════════════════════════════════════════
+        if middle and last:
+            variants.update([
+                f"{first}{middle[0]}{last}",   # ivanaortiz
+                f"{first}.{middle[0]}.{last}", # ivan.a.ortiz
+                f"{first}_{middle[0]}_{last}", # ivan_a_ortiz
+                f"{first[0]}{middle[0]}{last}",# iaortiz
             ])
 
-            # With year
-            if year:
-                for v in variants.copy():
-                    variants.append(f"{v}{year}")
-                    variants.append(f"{v}{year[-2:]}")
+        # ═══════════════════════════════════════════════════════════════════════
+        # CON AÑOS (si se proporciona o común)
+        # ═══════════════════════════════════════════════════════════════════════
+        years = []
+        if year:
+            years.append(year)
+            years.append(year[-2:])  # 2000 -> 00
+        # Años comunes de nacimiento para adultos jóvenes
+        for y in ['85', '86', '87', '88', '89', '90', '91', '92', '93', '94', '95',
+                  '96', '97', '98', '99', '00', '01', '02', '03', '04', '05']:
+            years.append(y)
+            years.append(f"19{y}" if int(y) > 50 else f"20{y}")
 
-            # With common suffixes
-            for suffix in ['_', '1', '01', '123', '_oficial', 'ec']:
-                variants.append(f"{first}{last}{suffix}")
+        base_variants = list(variants)[:15]  # Top bases para no explotar
+        for base in base_variants:
+            for y in years[:10]:  # Limitar años
+                variants.add(f"{base}{y}")
+                variants.add(f"{base}_{y}")
+                variants.add(f"{base}.{y}")
 
-        return list(set(variants))
+        # ═══════════════════════════════════════════════════════════════════════
+        # CON CONTEXTO (universidad, empresa, país)
+        # ═══════════════════════════════════════════════════════════════════════
+        context_words = []
+        ctx = (context or "").lower()
+        # Extraer palabras clave del contexto
+        if 'udla' in ctx:
+            context_words.extend(['udla', 'udlaec', 'udelasamericas'])
+        if 'ecuador' in ctx or 'ec' in ctx:
+            context_words.extend(['ec', 'ecu', 'ecuador', '593'])
+        if 'quito' in ctx:
+            context_words.extend(['quito', 'qto', 'uio'])
+        if 'guayaquil' in ctx or 'gye' in ctx:
+            context_words.extend(['gye', 'guayaquil'])
+        if 'ingenier' in ctx:
+            context_words.extend(['dev', 'developer', 'ing', 'engineer'])
+        if 'seguridad' in ctx or 'security' in ctx or 'cyber' in ctx:
+            context_words.extend(['sec', 'security', 'cyber', 'hacker', 'infosec'])
+
+        for base in base_variants[:10]:
+            for ctx_word in context_words[:5]:
+                variants.update([
+                    f"{base}_{ctx_word}",
+                    f"{base}.{ctx_word}",
+                    f"{base}{ctx_word}",
+                    f"{ctx_word}_{base}",
+                    f"{ctx_word}{base}",
+                ])
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # LEET SPEAK
+        # ═══════════════════════════════════════════════════════════════════════
+        leet_map = {'a': '4', 'e': '3', 'i': '1', 'o': '0', 's': '5', 't': '7'}
+        if last:
+            base_leet = f"{first}{last}"
+            leet_version = base_leet
+            for char, leet in leet_map.items():
+                leet_version = leet_version.replace(char, leet)
+            if leet_version != base_leet:
+                variants.add(leet_version)
+            # Solo vocales en leet
+            partial_leet = base_leet
+            for char in ['a', 'e', 'i', 'o']:
+                partial_leet = partial_leet.replace(char, leet_map[char])
+            if partial_leet != base_leet:
+                variants.add(partial_leet)
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # DIMINUTIVOS LATINOS
+        # ═══════════════════════════════════════════════════════════════════════
+        diminutivos = {
+            'ivan': ['ivancho', 'ivancito', 'ivo', 'vani'],
+            'juan': ['juancho', 'juanito', 'juani'],
+            'carlos': ['carlitos', 'carl', 'charly'],
+            'jose': ['pepe', 'joselo', 'chepe'],
+            'francisco': ['paco', 'pancho', 'fran', 'cisco'],
+            'roberto': ['beto', 'robert', 'rob'],
+            'manuel': ['manu', 'manolo', 'manuelito'],
+            'gabriel': ['gabo', 'gabi', 'gabito'],
+            'daniel': ['dani', 'dan', 'danielito'],
+            'miguel': ['migue', 'mike', 'miguelito'],
+            'antonio': ['toño', 'tony', 'anto'],
+            'fernando': ['fer', 'nando', 'fercho'],
+            'luis': ['lucho', 'luisito', 'luchito'],
+            'david': ['dave', 'davo', 'davidcito'],
+            'andres': ['andy', 'andresito'],
+            'pablo': ['pablito', 'paul'],
+            'pedro': ['pete', 'pedrito'],
+            'jorge': ['coque', 'jorgito'],
+            'alejandro': ['alex', 'ale', 'alejito'],
+            'ricardo': ['ricky', 'rick', 'richard'],
+            'eduardo': ['edu', 'lalo', 'eddy'],
+            'hernan': ['nani', 'herni'],
+        }
+
+        if first in diminutivos:
+            for dim in diminutivos[first]:
+                variants.add(dim)
+                if last:
+                    variants.update([
+                        f"{dim}{last}",
+                        f"{dim}_{last}",
+                        f"{dim}.{last}",
+                    ])
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # SUFIJOS COMUNES DE REDES SOCIALES
+        # ═══════════════════════════════════════════════════════════════════════
+        suffixes = [
+            'oficial', '_oficial', '.oficial',
+            'real', '_real', '.real', 'thereal',
+            '_', '__', '1', '01', '001', '123',
+            '_dev', 'dev', '.dev',
+            '_ec', 'ec', '.ec',
+            '_gt', '_co', '_mx', '_pe', '_cl', '_ar',
+            'x', 'xx', 'xd', '_xd',
+            '_ok', 'ok',
+        ]
+
+        for base in base_variants[:8]:
+            for suffix in suffixes:
+                variants.add(f"{base}{suffix}")
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # PREFIJOS COMUNES
+        # ═══════════════════════════════════════════════════════════════════════
+        prefixes = ['the', 'el', 'la', 'soy', 'im', 'mr', 'real', 'its', 'just']
+        for base in [first, f"{first}{last}" if last else first][:2]:
+            for prefix in prefixes:
+                variants.update([
+                    f"{prefix}{base}",
+                    f"{prefix}_{base}",
+                    f"{prefix}.{base}",
+                ])
+
+        # Limitar a 200 variantes máximo para no explotar
+        return list(variants)[:200]
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         results = []
@@ -403,7 +598,10 @@ class UsernameVariantsTool(OSINTTool):
         if year_match:
             year = year_match.group()
 
-        variants = self._generate_variants(name, year)
+        # Construir contexto desde los parámetros disponibles
+        context = f"{observable} {query_params.company or ''} {query_params.domain or ''}"
+
+        variants = self._generate_variants(name, year, context)
 
         results.append(SearchResult(
             title=f"Variantes de username para: {name}",

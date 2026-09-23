@@ -1,0 +1,85 @@
+{
+  "started": "2026-09-23T13:47:59+00:00",
+  "sources_expected": 15,
+  "sources": {
+    "cisa_kev": {
+      "leidos": 1721,
+      "segundos": 0.9,
+      "nuevos": 1721
+    },
+    "microsoft_msrc": {
+      "leidos": 2000,
+      "segundos": 4.54,
+      "nuevos": 2000
+    },
+    "cisa_advisories": {
+      "leidos": 30,
+      "segundos": 0.91,
+      "nuevos": 30
+    },
+    "cisa_ics": {
+      "leidos": 30,
+      "segundos": 0.92,
+      "nuevos": 7
+    },
+    "ecucert": {
+      "leidos": 41,
+      "segundos": 0.25,
+      "nuevos": 41
+    },
+    "csirt_telconet": {
+      "leidos": 50,
+      "segundos": 0.92,
+      "nuevos": 50
+    },
+    "ransomware_ec": {
+      "leidos": 0,
+      "segundos": 0.57,
+      "nuevos": 0
+    },
+    "thehackernews": {
+      "leidos": 50,
+      "segundos": 0.65,
+      "nuevos": 50
+    },
+    "bleepingcomputer": {
+      "leidos": 15,
+      "segundos": 0.26,
+      "nuevos": 15
+    },
+    "securityweek": {
+      "leidos": 10,
+      "segundos": 0.35,
+      "nuevos": 10
+    },
+    "segu_info": {
+      "leidos": 25,
+      "segundos": 0.55,
+      "nuevos": 25
+    },
+    "malwarebytes": {
+      "leidos": 20,
+      "segundos": 0.48,
+      "nuevos": 20
+    },
+    "krebs": {
+      "leidos": 10,
+      "segundos": 0.53,
+      "nuevos": 10
+    },
+    "trufflesecurity": {
+      "leidos": 45,
+      "segundos": 0.36,
+      "nuevos": 45
+    },
+    "snwire": {
+      "leidos": 0,
+      "segundos": 0.39,
+      "nuevos": 0
+    }
+  },
+  "errors": [],
+  "total_leidos": 4047,
+  "total_nuevos": 4024,
+  "finished": "2026-09-23T13:48:12+00:00"
+}

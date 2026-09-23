@@ -25,7 +25,7 @@ Cada archivo incluye: descripción, instalación, parámetros, ejemplos de uso, 
 ### Threat Intelligence (CTI)
 - [Harvest](cti_harvest.md) - Recolector de feeds (KEV, ransomware, abuse.ch)
 - [Dossier](cti_dossier.md) - Generador de informes por cliente
-- [Render](cti_render.md) - Boletines HTML con plantilla Altel
+- [Render](cti_render.md) - Boletines HTML con plantilla corporativa
 
 ## Estado de herramientas
 
