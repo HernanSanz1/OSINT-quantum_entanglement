@@ -1,0 +1,49 @@
+name: Tests Python
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows es donde se usa la app; Ubuntu es lo habitual en servidores.
+        # 3.12 (laptop) y 3.14 (PC de escritorio).
+        os: [ ubuntu-latest, windows-latest ]
+        python: [ "3.12", "3.14" ]
+    env:
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: osint_app/requirements.txt
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r osint_app/requirements.txt ruff
+
+      # Solo errores graves: sintaxis y nombres no definidos (como el bug de IpWhoisTool).
+      # El estilo del código no bloquea.
+      - name: Revisar errores graves (ruff)
+        run: python -m ruff check osint_app --select E9,F63,F7,F82 --output-format github
+
+      - name: Ejecutar tests (pytest)
+        run: python -m pytest osint_app/tests -q --timeout 120
