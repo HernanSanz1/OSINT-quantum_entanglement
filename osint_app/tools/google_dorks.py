@@ -65,6 +65,21 @@ USER_AGENTS = [
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/119.0 Safari/537.36',
 ]
 
+# Agregadores "people-search" que generan ruido (perfiles automáticos sin valor).
+# Se excluyen de las búsquedas de contexto de identidad.
+PEOPLE_SEARCH_NOISE = [
+    "spokeo.com", "whitepages.com", "beenverified.com", "radaris.com",
+]
+
+# Plataformas donde suele reutilizarse el mismo username.
+USERNAME_REUSE_SITES = [
+    "instagram.com", "tiktok.com", "reddit.com", "t.me",
+    "pinterest.com", "twitter.com",
+]
+
+# Registros públicos de Ecuador (debida diligencia / verificación de identidad).
+EC_REGISTRY_SITES = ["sri.gob.ec", "supercias.gob.ec", "funcionjudicial.gob.ec"]
+
 
 class GoogleDorksTool(OSINTTool):
     def __init__(self):
@@ -342,6 +357,24 @@ class GoogleDorksTool(OSINTTool):
             _add_q(f'"{username}" site:github.com OR site:gitlab.com', 9, "Identity/Code")
             _add_q(f'"{username}" site:pastebin.com OR site:justpaste.it', 10, "Leaks")
             _add_q(f'"{username}" (password OR token OR secret)', 11, "Leaks")
+            # Reutilización del mismo username en otras plataformas sociales.
+            reuse = " OR ".join(f'site:{s}' for s in USERNAME_REUSE_SITES)
+            _add_q(f'({reuse}) "{username}"', 8, "Social/Username")
+            # Contexto limpio: excluye agregadores people-search que solo dan ruido.
+            noise = " ".join(f'-site:{s}' for s in PEOPLE_SEARCH_NOISE)
+            _add_q(f'"{username}" {noise}', 7, "Identity/Clean")
+
+        # --- CONTEXTO LIMPIO DE EMAIL (sin agregadores de datos personales) ---
+        if email:
+            noise = " ".join(f'-site:{s}' for s in PEOPLE_SEARCH_NOISE)
+            _add_q(f'"{email}" (foro OR forum OR comentario OR perfil) {noise}', 9, "Identity/Clean")
+
+        # --- REGISTROS PÚBLICOS DE ECUADOR (identidad / debida diligencia) ---
+        ec_registry = "(" + " OR ".join(f'site:{s}' for s in EC_REGISTRY_SITES) + ")"
+        if name_perms:
+            _add_q(f'{name_perms[0]} {ec_registry}', 6, "Registros EC")
+        if company:
+            _add_q(f'{company} {ec_registry}', 6, "Registros EC")
 
         for p_perm in phone_perms:
             _add_q(f'{p_perm}', 9, "Identity")
