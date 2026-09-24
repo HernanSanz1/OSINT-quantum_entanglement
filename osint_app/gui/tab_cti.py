@@ -3,6 +3,7 @@ CTI Tab — Threat Intelligence integrado.
 Recoleccion de feeds, dossiers por cliente, boletines HTML.
 """
 import os
+import sys
 import json
 import subprocess
 import threading
@@ -25,6 +26,29 @@ CTI_BASE = Path(__file__).parent.parent.parent / "sentinel_unified" / "modules" 
 CTI_STORE = Path(__file__).parent.parent / "data"
 
 
+def _run_cti_script(cti_path: Path, script: str, args: list, timeout: int) -> subprocess.CompletedProcess:
+    """Ejecuta un script del módulo CTI con el mismo Python que SENTINEL.
+
+    - sys.executable: "python3" no existe en Windows (abre la Microsoft Store).
+    - os.pathsep: el separador de PYTHONPATH es ";" en Windows y ":" en Linux/Mac.
+    - UTF-8 en ambos sentidos: los scripts imprimen acentos y emojis, y la
+      consola de Windows (cp1252) no los admite.
+    """
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (str(cti_path), env.get("PYTHONPATH", "")) if p)
+    env["PYTHONIOENCODING"] = "utf-8"
+    return subprocess.run(
+        [sys.executable, str(cti_path / script), *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=str(cti_path),
+        env=env,
+        timeout=timeout,
+    )
+
+
 class HarvestThread(QThread):
     """Thread para ejecutar harvest.py"""
     progress = Signal(str)
@@ -44,16 +68,7 @@ class HarvestThread(QThread):
 
             self.progress.emit("Iniciando recoleccion de feeds CTI...")
 
-            env = os.environ.copy()
-            env["PYTHONPATH"] = str(self.cti_path) + ":" + env.get("PYTHONPATH", "")
-            result = subprocess.run(
-                ["python3", str(harvest_py), "--dry-run"],
-                capture_output=True,
-                text=True,
-                cwd=str(self.cti_path),
-                env=env,
-                timeout=120
-            )
+            result = _run_cti_script(self.cti_path, "harvest.py", ["--dry-run"], timeout=120)
 
             if result.returncode == 0:
                 self.progress.emit(result.stdout)
@@ -88,22 +103,13 @@ class DossierThread(QThread):
 
             self.progress.emit(f"Generando dossier{' para ' + self.client if self.client else ''}...")
 
-            args = ["python3", str(dossier_py), "--resumen"]
+            args = ["--resumen"]
             if self.client and self.client != "GLOBAL":
                 args.extend(["--cliente", self.client])
             if self.fecha:
                 args.extend(["--fecha", self.fecha])
 
-            env = os.environ.copy()
-            env["PYTHONPATH"] = str(self.cti_path) + ":" + env.get("PYTHONPATH", "")
-            result = subprocess.run(
-                args,
-                capture_output=True,
-                text=True,
-                cwd=str(self.cti_path),
-                env=env,
-                timeout=180
-            )
+            result = _run_cti_script(self.cti_path, "dossier.py", args, timeout=180)
 
             if result.returncode == 0:
                 self.progress.emit(result.stdout)
@@ -136,16 +142,17 @@ class RenderThread(QThread):
 
             self.progress.emit("Renderizando HTML del boletin...")
 
-            env = os.environ.copy()
-            env["PYTHONPATH"] = str(self.cti_path) + ":" + env.get("PYTHONPATH", "")
-            result = subprocess.run(
-                ["python3", str(render_py)],
-                capture_output=True,
-                text=True,
-                cwd=str(self.cti_path),
-                env=env,
-                timeout=120
-            )
+            # render.py sin argumentos elige el dossier por orden alfabético, y
+            # "dossier-2026-W39.json" va después de "dossier-2026-W39-CER.json":
+            # renderizaba el global aunque acabaras de generar el de un cliente.
+            # Se le pasa explícitamente el dossier generado más recientemente.
+            dossiers = sorted((self.cti_path / "store").glob("dossier-*.json"),
+                              key=lambda f: f.stat().st_mtime)
+            if not dossiers:
+                self.error.emit("No hay dossier para renderizar. Genera uno primero.")
+                return
+            self.progress.emit(f"Dossier: {dossiers[-1].name}")
+            result = _run_cti_script(self.cti_path, "render.py", [str(dossiers[-1])], timeout=120)
 
             if result.returncode == 0:
                 # El output es la ruta del HTML generado
@@ -383,7 +390,7 @@ class CTITab(QWidget):
         # Abrir en el navegador
         if html_path and Path(html_path).exists():
             import webbrowser
-            webbrowser.open(f"file://{html_path}")
+            webbrowser.open(Path(html_path).resolve().as_uri())
             self._log(f"Abierto en navegador: {html_path}")
 
     def _on_validate(self):
