@@ -100,6 +100,12 @@ class ProfilerEngine:
     # Cuánto baja la confianza de un candidato con señal de homónimo (no se borra).
     HOMONYM_PENALTY = 30.0
 
+    # Búsqueda encadenada (segunda ronda): con los usernames descubiertos en la
+    # primera ronda, se relanzan estas herramientas. Se limita el número de
+    # usernames para no disparar el número de peticiones.
+    CHAINED_USERNAME_TOOLS = ["GitHubOSINT", "Sherlock", "Maigret"]
+    MAX_CHAINED_USERNAMES = 3
+
     # Herramientas por prioridad y tipo de dato requerido
     # 'required' son opciones OR - si tiene CUALQUIERA de estos datos, corre
     TOOL_PRIORITY = {
@@ -194,13 +200,16 @@ class ProfilerEngine:
 
     def run_parallel(self, seed: SeedData, max_workers: int = 6,
                      timeout_per_tool: int = 120,
-                     only_tools: List[str] = None) -> List[ToolResult]:
+                     only_tools: List[str] = None,
+                     chain: bool = False) -> List[ToolResult]:
         """
         Ejecuta las herramientas aplicables en paralelo.
 
         only_tools: si se pasa una lista no vacía, solo se ejecutan esas
         herramientas (además de estar disponibles y tener los datos que
         necesitan). Vacía o None = todas las aplicables.
+        chain: si es True, tras la primera ronda lanza una segunda ronda con
+        los usernames descubiertos (búsqueda encadenada).
         """
         tools_to_run = self._select_tools_to_run(seed, only_tools)
 
@@ -270,7 +279,93 @@ class ProfilerEngine:
                     ))
 
         self.results = results
-        return results
+
+        if chain:
+            round1_hits = [sr for tr in results for sr in tr.results]
+            discovered = extract_usernames_from_results(round1_hits)
+            self.run_second_round(
+                seed, discovered, max_workers=max_workers,
+                timeout_per_tool=timeout_per_tool, only_tools=only_tools,
+            )
+
+        return self.results
+
+    def _execute_tool(self, tool_name: str, query_params: QueryParameters,
+                      label: str = None) -> ToolResult:
+        """Ejecuta una herramienta y devuelve su ToolResult (nunca lanza).
+
+        `label` permite anotar la procedencia, p.ej. 'Sherlock:jperez' en la
+        segunda ronda encadenada.
+        """
+        name = label or tool_name
+        start = datetime.now()
+        try:
+            results = self.tools[tool_name].execute(query_params)
+            duration = (datetime.now() - start).total_seconds()
+            self._log(f"  [{name}] Completado: {len(results)} resultados en {duration:.1f}s")
+            return ToolResult(tool_name=name, status='ok', results=results,
+                              duration_seconds=duration)
+        except Exception as e:
+            duration = (datetime.now() - start).total_seconds()
+            self._log(f"  [{name}] Error: {str(e)[:50]}")
+            return ToolResult(tool_name=name, status='error', error=str(e),
+                              duration_seconds=duration)
+
+    def run_second_round(self, seed: SeedData, discovered_usernames: List[str],
+                         max_workers: int = 6, timeout_per_tool: int = 90,
+                         only_tools: List[str] = None) -> List[ToolResult]:
+        """Segunda ronda encadenada: relanza las herramientas de username sobre
+        los usernames descubiertos que no estaban en la semilla.
+
+        Devuelve solo los ToolResults nuevos (que además se añaden a self.results).
+        """
+        seed_user = (seed.username or "").lower()
+        usernames = []
+        for u in discovered_usernames:
+            if u.lower() != seed_user and u not in usernames:
+                usernames.append(u)
+        usernames = usernames[:self.MAX_CHAINED_USERNAMES]
+        if not usernames:
+            return []
+
+        requested = set(only_tools) if only_tools else None
+        tools = [
+            t for t in self.CHAINED_USERNAME_TOOLS
+            if t in self.tools and self.tools[t].is_available
+            and (requested is None or t in requested)
+        ]
+        if not tools:
+            return []
+
+        self._log(f"🔗 Segunda ronda: {len(usernames)} usernames × {len(tools)} herramientas")
+
+        tasks = []
+        for u in usernames:
+            qp = seed.to_query_params()
+            qp.username = u
+            for tool_name in tools:
+                tasks.append((tool_name, qp, f"{tool_name}:{u}"))
+
+        new_results: List[ToolResult] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_label = {
+                executor.submit(self._execute_tool, tn, qp, label): label
+                for (tn, qp, label) in tasks
+            }
+            for future in concurrent.futures.as_completed(future_to_label, timeout=timeout_per_tool * 2):
+                label = future_to_label[future]
+                try:
+                    new_results.append(future.result(timeout=timeout_per_tool))
+                except concurrent.futures.TimeoutError:
+                    self._log(f"  [{label}] Timeout")
+                    new_results.append(ToolResult(tool_name=label, status='timeout',
+                                                  error='Timeout exceeded'))
+                except Exception as e:
+                    self._log(f"  [{label}] Excepcion: {str(e)[:50]}")
+                    new_results.append(ToolResult(tool_name=label, status='error', error=str(e)))
+
+        self.results.extend(new_results)
+        return new_results
 
     def extract_candidates(self, seed: SeedData, min_confidence: float = 30.0) -> List[Candidate]:
         """

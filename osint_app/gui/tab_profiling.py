@@ -59,9 +59,11 @@ class ProfilerThread(QThread):
             self.progress.emit(f"Iniciando perfilamiento de: {self.seed.name}")
             self.progress.emit(f"Contexto: {self.seed.context}")
 
-            # Ejecutar herramientas en paralelo (solo las seleccionadas, si hay)
+            # Ejecutar herramientas en paralelo (solo las seleccionadas, si hay),
+            # con búsqueda encadenada: los usernames descubiertos disparan una
+            # segunda ronda (GitHub/Sherlock/Maigret).
             self.engine.run_parallel(self.seed, max_workers=6, timeout_per_tool=90,
-                                     only_tools=self.selected_tools)
+                                     only_tools=self.selected_tools, chain=True)
 
             # Extraer candidatos
             candidates = self.engine.extract_candidates(self.seed, min_confidence=20.0)
