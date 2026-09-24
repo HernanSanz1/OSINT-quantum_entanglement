@@ -77,6 +77,7 @@ class ProfilerThread(QThread):
                     'category': c.category,
                     'matched': c.matched_fields,
                     'verdict': c.user_verdict,
+                    'warning': c.warning,
                 }
                 for c in candidates
             ]
@@ -597,9 +598,15 @@ class ProfilingTab(QWidget):
             # Fuente
             self.candidates_table.setItem(row, 0, QTableWidgetItem(c['source']))
 
-            # Titulo (truncado)
+            # Titulo (truncado); marca ⚠️ si hay aviso de homónimo
             title = c['title'][:60] + "..." if len(c['title']) > 60 else c['title']
-            self.candidates_table.setItem(row, 1, QTableWidgetItem(title))
+            if c.get('warning'):
+                title = f"⚠️ {title}"
+            title_item = QTableWidgetItem(title)
+            if c.get('warning'):
+                title_item.setToolTip(c['warning'])
+                title_item.setForeground(QColor("#ffaa00"))
+            self.candidates_table.setItem(row, 1, title_item)
 
             # Coincidencias
             matched = ", ".join(c['matched'][:3]) if c['matched'] else "-"
@@ -665,8 +672,9 @@ class ProfilingTab(QWidget):
         row = rows[0].row()
         if row < len(self.candidates_data):
             c = self.candidates_data[row]
+            aviso = f"\n⚠️  AVISO: {c['warning']}\n" if c.get('warning') else ""
             details = f"""URL: {c['url']}
-
+{aviso}
 Fuente: {c['source']}
 Confianza: {c['confidence']:.0f}%
 Categoria: {c.get('category', 'N/A')}

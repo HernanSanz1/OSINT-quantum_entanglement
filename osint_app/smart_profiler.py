@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from .case_manager import CaseManager
 from .db.feedback_db import db
 from .core.models import Case, TargetData, ToolReport, QueryParameters, SearchResult
+from .utils import homonyms
 
 logger = logging.getLogger(__name__)
 
@@ -353,27 +354,12 @@ class SmartProfiler:
         return max(min(score, 1.0), 0.0)
 
     def _is_same_region(self, location: str, country: str) -> bool:
-        """Verifica si están en la misma región."""
-        latam = ['ecuador', 'colombia', 'perú', 'peru', 'chile', 'argentina',
-                 'mexico', 'méxico', 'latam', 'latinoamerica', 'south america']
-
-        loc_is_latam = any(c in location for c in latam)
-        country_is_latam = any(c in country for c in latam)
-
-        return loc_is_latam and country_is_latam
+        """Verifica si están en la misma región (lógica compartida)."""
+        return homonyms.is_same_region(location, country)
 
     def _is_different_country(self, location: str, expected_country: str) -> bool:
-        """Verifica si claramente es un país diferente."""
-        other_countries = ['spain', 'españa', 'usa', 'united states', 'germany',
-                          'alemania', 'france', 'francia', 'uk', 'england',
-                          'china', 'japan', 'india', 'canada', 'australia']
-
-        # Si la ubicación menciona explícitamente otro país
-        for other in other_countries:
-            if other in location and other not in expected_country:
-                return True
-
-        return False
+        """Verifica si claramente es un país diferente (lógica compartida)."""
+        return homonyms.different_country(location, expected_country) is not None
 
     def _check_rejection_rules(self, candidate: CandidateProfile, seed: ProfileSeed) -> Optional[str]:
         """

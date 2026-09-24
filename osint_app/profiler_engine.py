@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from .tools import build_tool_registry, ALL_TOOLS
 from .core.models import QueryParameters, SearchResult
 from .correlation_engine import CorrelationEngine
+from .utils import homonyms
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +89,16 @@ class Candidate:
     matched_fields: List[str] = field(default_factory=list)
     raw_data: Dict[str, Any] = field(default_factory=dict)
     user_verdict: Optional[str] = None  # 'confirmed', 'rejected', 'pending'
+    warning: str = ""                   # aviso de posible homónimo (no descarta)
 
 
 class ProfilerEngine:
     """
     Motor de perfilamiento que orquesta todas las herramientas.
     """
+
+    # Cuánto baja la confianza de un candidato con señal de homónimo (no se borra).
+    HOMONYM_PENALTY = 30.0
 
     # Herramientas por prioridad y tipo de dato requerido
     # 'required' son opciones OR - si tiene CUALQUIERA de estos datos, corre
@@ -285,6 +290,12 @@ class ProfilerEngine:
                 confidence, matched = self._calculate_confidence(sr, seed)
 
                 if confidence >= min_confidence:
+                    # Señal de homónimo (enfoque A): avisa y penaliza, no descarta.
+                    text = f"{sr.title} {sr.snippet} {sr.url}"
+                    warning = homonyms.homonym_warning(text, seed.country) or ""
+                    if warning:
+                        confidence = max(0.0, confidence - self.HOMONYM_PENALTY)
+
                     candidate = Candidate(
                         source_tool=tool_result.tool_name,
                         url=sr.url,
@@ -294,7 +305,8 @@ class ProfilerEngine:
                         category=sr.category,
                         matched_fields=matched,
                         raw_data=sr.raw_data if sr.raw_data else {},
-                        user_verdict='pending'
+                        user_verdict='pending',
+                        warning=warning,
                     )
                     all_candidates.append(candidate)
 

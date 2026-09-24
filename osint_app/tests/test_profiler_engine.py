@@ -185,3 +185,47 @@ def test_enrich_does_not_mutate_original():
     seed = SeedData(name="Juan Perez")
     enrich_seed_from_candidates(seed, [{"url": "https://github.com/jperez"}])
     assert seed.username is None
+
+
+# ── Señal de homónimo (4.5, enfoque A) ────────────────────────────────────────
+
+def _engine_from_results(results):
+    eng = ProfilerEngine.__new__(ProfilerEngine)
+    eng.progress_callback = lambda _msg: None
+    eng.results = results
+    eng.candidates = []
+    return eng
+
+
+def test_homonym_candidate_is_flagged_and_penalized():
+    from osint_app.core.models import SearchResult
+    from osint_app.profiler_engine import ToolResult
+
+    good = SearchResult(title="Juan Perez - Quito", url="https://x/1",
+                        snippet="Ecuador", source_tool="WebSearch", category="X")
+    homonym = SearchResult(title="Juan Perez - Madrid, Spain", url="https://x/2",
+                           snippet="España", source_tool="WebSearch", category="X")
+    eng = _engine_from_results([ToolResult(tool_name="WebSearch", status="ok",
+                                           results=[good, homonym])])
+    seed = SeedData(name="Juan Perez", country="Ecuador")
+
+    cands = {c.url: c for c in eng.extract_candidates(seed, min_confidence=0)}
+
+    # El homónimo NO se elimina (enfoque A): sigue presente, pero avisado...
+    assert set(cands) == {"https://x/1", "https://x/2"}
+    assert cands["https://x/2"].warning        # tiene aviso
+    assert not cands["https://x/1"].warning     # el bueno no
+    # ...y penalizado, por lo que queda por debajo del bueno
+    assert cands["https://x/2"].confidence < cands["https://x/1"].confidence
+    assert eng.candidates[0].url == "https://x/1"   # ordenado: el bueno primero
+
+
+def test_no_warning_without_country_signal():
+    from osint_app.core.models import SearchResult
+    from osint_app.profiler_engine import ToolResult
+    sr = SearchResult(title="Juan Perez", url="https://x/1", snippet="ingeniero",
+                      source_tool="WebSearch", category="X")
+    eng = _engine_from_results([ToolResult(tool_name="WebSearch", status="ok", results=[sr])])
+    cands = eng.extract_candidates(SeedData(name="Juan Perez", country="Ecuador"),
+                                   min_confidence=0)
+    assert cands[0].warning == ""
