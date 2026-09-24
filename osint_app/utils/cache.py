@@ -14,7 +14,7 @@ class CacheManager:
         self._cache: dict = {}  # key -> {value, ts}
 
     def _make_key(self, params: dict) -> str:
-        return hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()
+        return hashlib.md5(json.dumps(params, sort_keys=True).encode(), usedforsecurity=False).hexdigest()
 
     def get(self, params: dict) -> Optional[Any]:
         key = self._make_key(params)

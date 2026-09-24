@@ -78,6 +78,9 @@ class IpWhoisTool(OSINTTool):
         )
         self._python_pkgs = ["ipwhois"]
         self._install_cmd = "pip install ipwhois"
+
+    def execute(self, query_params: QueryParameters) -> List[SearchResult]:
+        ip = (query_params.ip or "").strip()
         if not ip or not validate_ip(ip):
             logger.warning("IpWhoisTool: invalid or missing IP")
             return []

@@ -5,6 +5,7 @@ Usa DuckDuckGo para evitar captchas de Google.
 import json
 import time
 import logging
+import os
 import ssl
 import urllib.parse
 import urllib.request
@@ -14,10 +15,12 @@ from ..core.base_tool import OSINTTool
 
 logger = logging.getLogger(__name__)
 
-# SSL context that doesn't verify (for proxies/corporate networks)
+# SSL context — verifies certificates. Behind a corporate proxy that
+# intercepts TLS, set OSINT_INSECURE_SSL=1 to disable verification.
 SSL_CONTEXT = ssl.create_default_context()
-SSL_CONTEXT.check_hostname = False
-SSL_CONTEXT.verify_mode = ssl.CERT_NONE
+if os.environ.get("OSINT_INSECURE_SSL") == "1":
+    SSL_CONTEXT.check_hostname = False
+    SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
 
 class WebSearchTool(OSINTTool):
@@ -331,6 +334,17 @@ class GitHubOSINTTool(OSINTTool):
         return results
 
 
+class _OrderedSet(dict):
+    """Set mínimo que conserva el orden de inserción (add / update)."""
+
+    def add(self, item: str) -> None:
+        self[item] = None
+
+    def update(self, items) -> None:
+        for item in items:
+            self[item] = None
+
+
 class UsernameVariantsTool(OSINTTool):
     """Genera y busca variantes de un username."""
 
@@ -366,7 +380,10 @@ class UsernameVariantsTool(OSINTTool):
         - Separadores múltiples: ivan--ortiz, ivan__ortiz
         - Truncados: ivanort, iortiz99
         """
-        variants = set()
+        # Conjunto ORDENADO: las variantes se generan de más a menos probables
+        # y luego se recorta a 200 (y solo se consultan las 10 primeras).
+        # Con un set() normal el recorte descartaba variantes al azar.
+        variants = _OrderedSet()
 
         # Limpiar y separar nombre
         name_clean = name.lower().strip()

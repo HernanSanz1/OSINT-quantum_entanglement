@@ -8,7 +8,7 @@ SECURITY:
 - Output is hard-capped at MAX_OUTPUT_BYTES to prevent RAM exhaustion.
 - All calls have explicit timeout values.
 """
-import subprocess, json, shutil, logging, shlex
+import subprocess, json, shutil, logging, shlex, sys
 from typing import List
 from pathlib import Path
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
@@ -20,6 +20,19 @@ logger = logging.getLogger(__name__)
 # Hard cap on subprocess stdout — prevents tools from filling RAM
 MAX_OUTPUT_BYTES = 2_000_000   # 2 MB
 MAX_RESULTS      = 200         # Never return more than 200 results per tool
+
+SPIDERFOOT_PATH = Path(__file__).parent.parent.parent / "spiderfoot/sf.py"
+
+
+def _find_go_binary(name: str) -> str:
+    """Return the path to a Go-installed binary (PATH or ~/go/bin), or "" if missing."""
+    found = shutil.which(name)
+    if found:
+        return found
+    for candidate in (Path.home() / "go/bin" / name, Path.home() / "go/bin" / f"{name}.exe"):
+        if candidate.is_file():
+            return str(candidate)
+    return ""
 
 
 import time
@@ -98,8 +111,7 @@ class SubfinderTool(OSINTTool):
         )
         self.is_heavy = True
         self._binary_names = ["subfinder"]
-        cmd_path = shutil.which("subfinder") or Path.home() / "go/bin/subfinder"
-        self.is_available = shutil.which("subfinder") is not None or (isinstance(cmd_path, Path) and cmd_path.exists())
+        self.is_available = self.check_available()
         self._install_cmd = (
             "Guía de Instalación Subfinder (Multiplataforma):\n"
             "1. Descarga e instala Go desde https://go.dev/dl/\n"
@@ -112,18 +124,17 @@ class SubfinderTool(OSINTTool):
         )
         self._system_deps = [("go", "https://go.dev/dl/")]
 
+    def check_available(self) -> bool:
+        return bool(_find_go_binary("subfinder"))
+
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         domain = _safe_domain(query_params)
         if not domain:
             return []
             
-        cmd_path = shutil.which("subfinder")
+        cmd_path = _find_go_binary("subfinder")
         if not cmd_path:
-            local_path = Path.home() / "go/bin/subfinder"
-            if local_path.exists():
-                cmd_path = str(local_path)
-            else:
-                return []
+            return []
                 
         self._report_progress(f"🔍 Subfinder: buscando subdominios de {domain}…")
         
@@ -159,8 +170,7 @@ class AmassTool(OSINTTool):
         )
         self.is_heavy = True
         self._binary_names = ["amass"]
-        cmd_path = shutil.which("amass") or Path.home() / "go/bin/amass"
-        self.is_available = shutil.which("amass") is not None or (isinstance(cmd_path, Path) and cmd_path.exists())
+        self.is_available = self.check_available()
         self._install_cmd = (
             "Guía de Instalación OWASP Amass (Multiplataforma):\n"
             "1. Descarga e instala Go desde https://go.dev/dl/\n"
@@ -173,18 +183,17 @@ class AmassTool(OSINTTool):
         )
         self._system_deps = [("go", "https://go.dev/dl/")]
 
+    def check_available(self) -> bool:
+        return bool(_find_go_binary("amass"))
+
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         domain = _safe_domain(query_params)
         if not domain:
             return []
             
-        cmd_path = shutil.which("amass")
+        cmd_path = _find_go_binary("amass")
         if not cmd_path:
-            local_path = Path.home() / "go/bin/amass"
-            if local_path.exists():
-                cmd_path = str(local_path)
-            else:
-                return []
+            return []
                 
         self._report_progress(f"🔍 AMASS: enumerando subdominios de {domain} (puede tardar ~5 min)…")
         
@@ -219,8 +228,7 @@ class SpiderFootTool(OSINTTool):
             )
         )
         self.is_heavy = True
-        local_path = Path(__file__).parent.parent.parent / "spiderfoot/sf.py"
-        self.is_available = local_path.exists()
+        self.is_available = self.check_available()
         self._binary_names = ["sf.py"]
         self._install_cmd = (
             "Guía de Instalación SpiderFoot (Requiere Código Fuente):\n"
@@ -235,6 +243,9 @@ class SpiderFootTool(OSINTTool):
             "4. Vuelve a iniciar Sentinel. La IA detectará automáticamente la carpeta `spiderfoot`."
         )
 
+    def check_available(self) -> bool:
+        return SPIDERFOOT_PATH.is_file()
+
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         # Pick best target — sanitize all
         raw_target = (
@@ -245,10 +256,10 @@ class SpiderFootTool(OSINTTool):
         if not target:
             return []
         
-        cmd = str(Path(__file__).parent.parent.parent / "spiderfoot/sf.py")
         self._report_progress("🔍 SpiderFoot: ejecutando módulos OSINT...")
         
-        cmd_args = ["python3", cmd, "-s", target]
+        # sys.executable: "python3" does not exist on Windows
+        cmd_args = [sys.executable, str(SPIDERFOOT_PATH), "-s", target]
         if query_params.extra_args:
             cmd_args.extend(shlex.split(query_params.extra_args))
         else:
@@ -388,7 +399,7 @@ class MaigretTool(OSINTTool):
             )
         )
         self.is_heavy = True
-        self.is_available = shutil.which("maigret") is not None
+        self.is_available = self.check_available()
         self._binary_names = ["maigret"]
         self._install_cmd = (
             "Guía de Instalación Maigret (Entorno Virtual):\n"
@@ -400,6 +411,9 @@ class MaigretTool(OSINTTool):
             "   `pip install maigret`\n\n"
             "La herramienta quedará anclada a tu entorno virtual sin afectar al sistema."
         )
+
+    def check_available(self) -> bool:
+        return shutil.which("maigret") is not None
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         username = _safe_username(query_params)

@@ -37,8 +37,9 @@ class OSINTTool(ABC):
         pass
 
     def check_available(self) -> bool:
-        """Override in subprocess-based tools to verify binary is installed."""
-        return True
+        """Re-detect availability. Override in tools that depend on a binary,
+        package or server; the default keeps whatever __init__ decided."""
+        return self.is_available
 
     def _report_progress(self, msg: str) -> None:
         """Emit a progress message to the UI. Safe to call from execute()."""

@@ -51,7 +51,7 @@ class Entity:
 
     def fingerprint(self) -> str:
         """Hash único para deduplicación"""
-        return hashlib.md5(f"{self.entity_type}:{self.normalized()}".encode()).hexdigest()[:12]
+        return hashlib.md5(f"{self.entity_type}:{self.normalized()}".encode(), usedforsecurity=False).hexdigest()[:12]
 
 
 @dataclass

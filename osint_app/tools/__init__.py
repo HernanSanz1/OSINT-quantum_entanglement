@@ -1,4 +1,6 @@
 """Tool registry — all 25+ tools in one place."""
+import logging
+
 from .google_dorks import GoogleDorksTool
 from .hunter import HunterTool
 from .social_tools import SherlockTool, HoleheTool, GHuntTool, SnscrapeYoutubeTool, InstagramTool
@@ -52,6 +54,9 @@ ALL_TOOLS = [
 ]
 
 
+logger = logging.getLogger(__name__)
+
+
 def build_tool_registry() -> dict:
     """Instantiate all tools and return {tool_name: instance}."""
     registry = {}
@@ -61,5 +66,5 @@ def build_tool_registry() -> dict:
             t.is_available = t.check_available()
             registry[t.name] = t
         except Exception:
-            pass
+            logger.exception(f"No se pudo cargar la herramienta {ToolClass.__name__}")
     return registry

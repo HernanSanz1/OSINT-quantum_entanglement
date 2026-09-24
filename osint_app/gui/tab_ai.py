@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QLabel, QSplitter, QCheckBox, QScrollArea, QFrame, QLineEdit,
     QComboBox, QTabWidget
 )
-from PySide6.QtCore import Qt, QMetaObject, Q_ARG, QTimer, Signal
+from PySide6.QtCore import Qt, QMetaObject, Q_ARG, Signal
 from PySide6.QtGui import QColor
 from .components import SentinelModal
 from ..db.feedback_db import db
@@ -199,6 +199,9 @@ class _BrainStatusCard(QFrame):
 
 class AITab(QWidget):
     brain_status_ready = Signal(str, object)
+    # Runs a callable on the GUI thread. QTimer.singleShot from a plain
+    # threading.Thread never fires (that thread has no Qt event loop).
+    _ui_call = Signal(object)
 
     def __init__(self, app):
         super().__init__()
@@ -208,6 +211,7 @@ class AITab(QWidget):
         self._chk_vars = {}
         
         self.brain_status_ready.connect(self._on_brain_status_ready)
+        self._ui_call.connect(lambda fn: fn())
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -449,7 +453,7 @@ class AITab(QWidget):
             try:
                 def _cb(brain_name, status):
                     msg = f"[{brain_name}] {status}"
-                    QTimer.singleShot(0, lambda: self.app.set_status(f"🧠 {msg}", "loading"))
+                    self._ui_call.emit(lambda: self.app.set_status(f"🧠 {msg}", "loading"))
 
                 res, _ = self.app.ai_engine.analyze(
                     self.app.active_case_id,
@@ -465,13 +469,13 @@ class AITab(QWidget):
                 QMetaObject.invokeMethod(self.txt_venice1, "setPlainText", Qt.QueuedConnection, Q_ARG(str, str(c_res)))
                 QMetaObject.invokeMethod(self.txt_venice2, "setPlainText", Qt.QueuedConnection, Q_ARG(str, str(v_res)))
 
-                QTimer.singleShot(0, lambda: self.app.set_status("✅ Análisis completado", "success"))
-                QTimer.singleShot(0, lambda: self.app.toast.show("Análisis IA completado", kind="success"))
+                self._ui_call.emit(lambda: self.app.set_status("✅ Análisis completado", "success"))
+                self._ui_call.emit(lambda: self.app.toast.show("Análisis IA completado", kind="success"))
 
             except Exception as e:
                 err = str(e)
                 QMetaObject.invokeMethod(self.txt_ollama, "setPlainText", Qt.QueuedConnection, Q_ARG(str, f"❌ Error: {err}"))
-                QTimer.singleShot(0, lambda: self.app.toast.show(f"Error IA: {err}", kind="error"))
+                self._ui_call.emit(lambda: self.app.toast.show(f"Error IA: {err}", kind="error"))
             finally:
                 self._analyzing = False
                 QMetaObject.invokeMethod(self.btn_analyze, "setEnabled", Qt.QueuedConnection, Q_ARG(bool, True))
@@ -521,7 +525,7 @@ class AITab(QWidget):
             try:
                 def _cb(brain_name, status):
                     msg = f"[{brain_name}] {status}"
-                    QTimer.singleShot(0, lambda: self.app.set_status(f"🗣 {msg}", "loading"))
+                    self._ui_call.emit(lambda: self.app.set_status(f"🗣 {msg}", "loading"))
 
                 res, corr = self.app.ai_engine.run_debate(
                     self.app.active_case_id,
@@ -539,13 +543,13 @@ class AITab(QWidget):
                 QMetaObject.invokeMethod(self.txt_venice1, "setPlainText", Qt.QueuedConnection, Q_ARG(str, str(c_res)))
                 QMetaObject.invokeMethod(self.txt_venice2, "setPlainText", Qt.QueuedConnection, Q_ARG(str, str(v_res)))
 
-                QTimer.singleShot(0, lambda: self.app.set_status("✅ Debate Concluido", "success"))
-                QTimer.singleShot(0, lambda: self.app.toast.show("Debate de IA concluido con éxito", kind="success"))
+                self._ui_call.emit(lambda: self.app.set_status("✅ Debate Concluido", "success"))
+                self._ui_call.emit(lambda: self.app.toast.show("Debate de IA concluido con éxito", kind="success"))
 
             except Exception as e:
                 err = str(e)
                 QMetaObject.invokeMethod(self.txt_ollama, "setPlainText", Qt.QueuedConnection, Q_ARG(str, f"❌ Error Crítico: {err}"))
-                QTimer.singleShot(0, lambda: self.app.toast.show(f"Error Debate IA: {err}", kind="error"))
+                self._ui_call.emit(lambda: self.app.toast.show(f"Error Debate IA: {err}", kind="error"))
             finally:
                 self._analyzing = False
                 QMetaObject.invokeMethod(self.btn_analyze, "setEnabled", Qt.QueuedConnection, Q_ARG(bool, True))
@@ -583,7 +587,8 @@ class AITab(QWidget):
                 QMetaObject.invokeMethod(self.txt_venice1, "appendPlainText", Qt.QueuedConnection, Q_ARG(str, "\n" + str(c_res)))
                 QMetaObject.invokeMethod(self.txt_venice2,  "appendPlainText", Qt.QueuedConnection, Q_ARG(str, "\n" + str(v_res)))
             except Exception as e:
-                QTimer.singleShot(0, lambda: self.app.toast.show(f"Error: {e}", kind="error"))
+                err = str(e)
+                self._ui_call.emit(lambda: self.app.toast.show(f"Error: {err}", kind="error"))
 
         threading.Thread(target=_worker, daemon=True).start()
 

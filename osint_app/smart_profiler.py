@@ -188,11 +188,7 @@ class SmartProfiler:
     def _check_github(self, username: str) -> Optional[CandidateProfile]:
         """Verifica si existe un usuario en GitHub y extrae datos."""
         import urllib.request
-        import ssl
-
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+        from .tools.web_search import SSL_CONTEXT as ctx
 
         try:
             url = f"https://api.github.com/users/{username}"
@@ -278,12 +274,19 @@ class SmartProfiler:
         # Score basado en cuántas partes coinciden
         score = len(common) / max(len(seed_parts), len(cand_parts))
 
-        # Bonus si el apellido coincide (más importante)
-        seed_last = list(seed_parts)[-1] if seed_parts else ""
+        # Bonus si el apellido coincide (más importante).
+        # Se toma de la lista ordenada: un set no conserva el orden.
+        seed_last = self._last_name(seed.name)
         if seed_last in cand_parts:
             score += 0.2
 
         return min(score, 1.0)
+
+    @staticmethod
+    def _last_name(name: str) -> str:
+        """Última palabra del nombre (el apellido), en minúsculas."""
+        parts = [p for p in re.split(r'[\s\-_]+', name.lower().strip()) if p]
+        return parts[-1] if parts else ""
 
     def _username_to_name_score(self, username: str, name: str) -> float:
         """Evalúa si un username podría corresponder a un nombre."""
@@ -385,7 +388,7 @@ class SmartProfiler:
             # Si no comparten NINGUNA parte del nombre, rechazar
             if not (seed_parts & cand_parts):
                 # Verificar si al menos el apellido está en el username
-                seed_last = list(seed_parts)[-1] if seed_parts else ""
+                seed_last = self._last_name(seed.name)
                 if seed_last not in candidate.username.lower():
                     return f"Nombre no coincide: '{candidate.display_name}' vs '{seed.name}'"
 
