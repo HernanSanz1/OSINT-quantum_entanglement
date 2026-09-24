@@ -13,7 +13,10 @@ from typing import List
 from pathlib import Path
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
 from ..core.base_tool import OSINTTool
-from ..utils.sanitizer import sanitize_shell_arg, sanitize_snippet, MAX_INPUT_LEN
+from ..utils.sanitizer import (
+    sanitize_shell_arg, sanitize_snippet, MAX_INPUT_LEN,
+    validate_domain, validate_ip,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +87,23 @@ def _run(tool, cmd: List[str], timeout: int = 300) -> tuple:
     except Exception as e:
         logger.error(f"_run({cmd[0]}): {e}")
         return f"❌ Excepción crítica de Python en {cmd[0]}: {e}", -1
+
+
+def _looks_like_observable(value: str) -> bool:
+    """True si el texto parece un IOC escaneable (dominio, IP o email).
+
+    Evita que un contexto de texto libre ("UDLA Ecuador 2006"), que el
+    perfilador coloca en `observable`, se use como objetivo de escaneo.
+    """
+    v = (value or "").strip()
+    if not v or " " in v:
+        return False
+    if validate_ip(v) or validate_domain(v):
+        return True
+    if "@" in v:
+        local, _, dom = v.partition("@")
+        return bool(local) and validate_domain(dom)
+    return False
 
 
 def _safe_domain(qp: QueryParameters) -> str:
@@ -246,13 +266,22 @@ class SpiderFootTool(OSINTTool):
     def check_available(self) -> bool:
         return SPIDERFOOT_PATH.is_file()
 
-    def execute(self, query_params: QueryParameters) -> List[SearchResult]:
-        # Pick best target — sanitize all
-        raw_target = (
-            query_params.observable or query_params.domain
-            or query_params.email or query_params.ip or query_params.target_name
+    @staticmethod
+    def _pick_target(query_params: QueryParameters) -> str:
+        """Elige el objetivo a escanear.
+
+        `observable` solo se acepta si es un IOC real (dominio/IP/email); si es
+        contexto de texto libre (lo que pone el perfilador), se ignora y se usa
+        un identificador concreto.
+        """
+        obs = query_params.observable if _looks_like_observable(query_params.observable) else ""
+        return (
+            obs or query_params.domain or query_params.email
+            or query_params.ip or query_params.target_name or ""
         )
-        target = sanitize_shell_arg(raw_target or "")
+
+    def execute(self, query_params: QueryParameters) -> List[SearchResult]:
+        target = sanitize_shell_arg(self._pick_target(query_params))
         if not target:
             return []
         

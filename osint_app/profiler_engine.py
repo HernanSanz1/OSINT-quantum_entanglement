@@ -47,7 +47,13 @@ class SeedData:
     company: Optional[str] = None
 
     def to_query_params(self) -> QueryParameters:
-        """Convierte a QueryParameters para las herramientas."""
+        """Convierte a QueryParameters para las herramientas.
+
+        context y country se pasan en `observable`: WebSearch y
+        UsernameVariants lo usan como contexto extra de búsqueda y para
+        extraer el año. (Antes se perdían por el camino.)
+        """
+        observable = " ".join(p for p in (self.context, self.country) if p).strip()
         return QueryParameters(
             target_name=self.name,
             email=self.email or "",
@@ -55,6 +61,7 @@ class SeedData:
             username=self.username or "",
             company=self.company or "",
             phone=self.phone or "",
+            observable=observable,
         )
 
 
