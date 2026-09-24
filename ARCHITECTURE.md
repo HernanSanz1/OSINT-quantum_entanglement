@@ -51,6 +51,12 @@
 
 ## Estructura de Carpetas
 
+> **Estado actual:** esta es la estructura *objetivo*. Hoy las herramientas de
+> PROFILE y RECON viven en `osint_app/tools/` (las copias que había en
+> `sentinel_unified/modules/profile` y `recon` eran duplicados exactos y se
+> eliminaron). En `sentinel_unified/modules/` solo queda `cti/`, que usa la
+> pestaña CTI de `osint_app`.
+
 ```
 sentinel_unified/
 ├── core/
