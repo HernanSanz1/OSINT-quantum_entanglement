@@ -16,8 +16,7 @@
 ## Requirements
 
 - Python 3.10+
-- Tkinter (included in standard Python)
-- Pillow (optional, for logo display): `pip install Pillow`
+- PySide6 + pyqtgraph (GUI) — installed via `requirements.txt`
 
 ## Setup
 
