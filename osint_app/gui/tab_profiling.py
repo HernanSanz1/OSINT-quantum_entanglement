@@ -39,6 +39,7 @@ class ProfilerThread(QThread):
     progress = Signal(str)
     tool_done = Signal(str, int)  # nombre_herramienta, num_resultados
     candidates_ready = Signal(list)
+    case_saved = Signal(int)      # case_id donde se guardaron los resultados
     finished_ok = Signal(dict)
     error = Signal(str)
 
@@ -80,6 +81,13 @@ class ProfilerThread(QThread):
                 for c in candidates
             ]
             self.candidates_ready.emit(candidates_data)
+
+            # Guardar los resultados en un caso para que no se pierdan
+            try:
+                case_id = self.engine.save_to_case(self.seed)
+                self.case_saved.emit(case_id)
+            except Exception as e:
+                self.progress.emit(f"⚠️ No se pudieron guardar los resultados en un caso: {e}")
 
             # Emitir resumen final
             self.finished_ok.emit(self.engine.get_summary())
@@ -559,9 +567,21 @@ class ProfilingTab(QWidget):
         self.profiler_thread = ProfilerThread(seed, selected)
         self.profiler_thread.progress.connect(self._log)
         self.profiler_thread.candidates_ready.connect(self._on_candidates_ready)
+        self.profiler_thread.case_saved.connect(self._on_case_saved)
         self.profiler_thread.finished_ok.connect(self._on_search_done)
         self.profiler_thread.error.connect(self._on_error)
         self.profiler_thread.start()
+
+    def _on_case_saved(self, case_id: int):
+        """Activa el caso recién guardado y refresca las pestañas dependientes."""
+        name = f"Perfil: {self.input_name.text().strip()}"
+        self.app.active_case_id = case_id
+        self.app.active_case_name = name
+        self.app.case_badge.setText(f"ACTIVE CASE: #{case_id} — {name.upper()}")
+        self._log(f"💾 Resultados guardados en el caso #{case_id}. Míralos en la pestaña Reportes.")
+        for page_name, widget in self.app.pages:
+            if page_name in ("Casos", "Datos", "Reportes") and hasattr(widget, "refresh"):
+                widget.refresh()
 
     def _on_candidates_ready(self, candidates: List[Dict]):
         """Procesar candidatos encontrados."""

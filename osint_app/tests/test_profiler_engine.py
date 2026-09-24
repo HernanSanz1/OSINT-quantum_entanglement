@@ -99,3 +99,52 @@ def test_selected_but_not_applicable_is_skipped(monkeypatch):
     # "Sherlock" no está entre las aplicables (p.ej. no instalada) → se omite
     got = eng._select_tools_to_run(seed, ["WebSearch", "Sherlock"])
     assert got == ["WebSearch"]
+
+
+# ── Guardado en caso (bug 2) ──────────────────────────────────────────────────
+
+def _engine_with_results(results):
+    eng = ProfilerEngine.__new__(ProfilerEngine)
+    eng.progress_callback = lambda _msg: None
+    eng.results = results
+    return eng
+
+
+def test_save_to_case_persists_seed_and_reports(temp_db):
+    from osint_app.core.models import SearchResult
+    from osint_app.profiler_engine import ToolResult
+
+    hits = [SearchResult(title="The Octocat", url="https://github.com/octocat",
+                         snippet="perfil", source_tool="GitHubOSINT", category="GitHub")]
+    eng = _engine_with_results([ToolResult(tool_name="GitHubOSINT", status="ok",
+                                           results=hits, duration_seconds=1.5)])
+    seed = SeedData(name="Juan Perez", context="UDLA", country="Ecuador",
+                    email="j@x.com", username="jperez")
+
+    case_id = eng.save_to_case(seed)
+
+    # La semilla se guardó como datos del caso
+    stored = {(d.field_type, d.value) for d in temp_db.get_target_data(case_id)}
+    assert ("name", "Juan Perez") in stored
+    assert ("email", "j@x.com") in stored
+    assert ("country", "Ecuador") in stored
+
+    # El reporte de la herramienta se guardó con sus resultados
+    reports = temp_db.get_reports(case_id)
+    assert len(reports) == 1
+    assert reports[0].tool_name == "GitHubOSINT"
+    assert reports[0].results_count == 1
+    assert "octocat" in reports[0].raw_json
+
+
+def test_save_to_case_reuses_given_case(temp_db):
+    from osint_app.case_manager import CaseManager
+    existing = CaseManager().create("Caso previo", "")
+    eng = _engine_with_results([])
+    seed = SeedData(name="Juan Perez")
+
+    returned = eng.save_to_case(seed, case_id=existing.id)
+
+    assert returned == existing.id
+    # No debe duplicar la semilla en un caso existente
+    assert temp_db.get_target_data(existing.id) == []

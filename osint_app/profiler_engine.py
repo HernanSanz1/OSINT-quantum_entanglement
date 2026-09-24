@@ -427,6 +427,48 @@ class ProfilerEngine:
 
         return seed
 
+    def save_to_case(self, seed: SeedData, case_id: int = None) -> int:
+        """Persiste la semilla y los resultados de las herramientas en un caso.
+
+        Si no se pasa case_id, crea un caso nuevo con la semilla. Devuelve el
+        case_id. Debe llamarse después de run_parallel(). Antes, los resultados
+        del perfilamiento se perdían al cerrar la ventana.
+        """
+        from .db.feedback_db import db
+        from .case_manager import CaseManager
+        from .core.models import ToolReport, TargetData
+
+        if case_id is None:
+            case = CaseManager().create(
+                f"Perfil: {seed.name}",
+                f"Contexto: {seed.context} | País: {seed.country}",
+            )
+            case_id = case.id
+            seed_fields = [
+                ("name", seed.name), ("context", seed.context), ("country", seed.country),
+                ("email", seed.email), ("username", seed.username),
+                ("phone", seed.phone), ("domain", seed.domain), ("company", seed.company),
+            ]
+            for field_type, value in seed_fields:
+                if value:
+                    db.add_target_data(TargetData(
+                        case_id=case_id, field_type=field_type, value=value,
+                        source="seed", confidence=100,
+                    ))
+
+        for tr in self.results:
+            report = ToolReport(
+                case_id=case_id, tool_name=tr.tool_name,
+                raw_json=json.dumps([r.to_dict() for r in tr.results], ensure_ascii=False),
+                summary=f"{len(tr.results)} resultados",
+                status=tr.status,
+                execution_time=round(tr.duration_seconds, 2),
+                results_count=len(tr.results),
+            )
+            db.save_report(report)
+
+        return case_id
+
     def get_summary(self) -> Dict[str, Any]:
         """Retorna resumen del perfilamiento."""
         return {
