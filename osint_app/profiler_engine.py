@@ -534,7 +534,48 @@ class ProfilerEngine:
 
 _EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
 _GITHUB_USER_RE = re.compile(r'github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)', re.I)
-_GITHUB_RESERVED = {"search", "orgs", "topics", "about", "login", "settings", "explore"}
+# Primeros segmentos de github.com que NO son un usuario.
+_GITHUB_RESERVED = {
+    "search", "orgs", "topics", "about", "login", "settings", "explore",
+    "users", "sponsors", "marketplace", "collections", "trending",
+    "features", "pricing", "notifications", "new",
+}
+_LINKEDIN_RE = re.compile(r'linkedin\.com/in/([A-Za-z0-9\-_%.]+)', re.I)
+_TWITTER_RE = re.compile(r'(?:twitter\.com|x\.com)/([A-Za-z0-9_]+)', re.I)
+_TWITTER_RESERVED = {"search", "explore", "i", "home", "hashtag", "share", "intent", "settings"}
+
+
+def extract_usernames_from_results(results) -> List[str]:
+    """Usernames descubiertos en las URLs de los resultados (GitHub, LinkedIn,
+    Twitter/X), para encadenar una segunda ronda de búsqueda.
+
+    Preserva el orden de aparición y elimina duplicados. Migrado de
+    profiler.OSINTProfiler._extract_entities_from_results.
+    """
+    found: List[str] = []
+
+    def _add(value: str):
+        if value and value not in found:
+            found.append(value)
+
+    for r in results:
+        url = getattr(r, "url", "") if not isinstance(r, dict) else r.get("url", "")
+        if not url:
+            continue
+
+        m = _GITHUB_USER_RE.search(url)
+        if m and m.group(1).lower() not in _GITHUB_RESERVED:
+            _add(m.group(1))
+
+        m = _LINKEDIN_RE.search(url)
+        if m:
+            _add(m.group(1))
+
+        m = _TWITTER_RE.search(url)
+        if m and m.group(1).lower() not in _TWITTER_RESERVED:
+            _add(m.group(1))
+
+    return found
 
 
 def enrich_seed_from_candidates(seed: "SeedData", candidates: List[Dict]) -> "SeedData":
