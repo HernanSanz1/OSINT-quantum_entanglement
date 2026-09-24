@@ -737,13 +737,43 @@ Snippet:
             self.app.toast.show("Candidato descartado", kind="info")
 
     def _on_refine(self):
-        """Refinar busqueda con datos confirmados."""
+        """Refinar búsqueda: enriquece la semilla con los candidatos confirmados
+        (username, email, dominio) y vuelve a buscar."""
         if not self.confirmed_urls:
             self.app.toast.show("Confirma al menos un candidato primero", kind="error")
             return
 
-        self._log("Refinando busqueda con datos confirmados...")
-        self.app.toast.show("Funcion de refinamiento en desarrollo", kind="info")
+        from ..profiler_engine import SeedData, enrich_seed_from_candidates
+
+        confirmed = [c for c in self.candidates_data if c.get("url") in self.confirmed_urls]
+        base = SeedData(
+            name=self.input_name.text().strip(),
+            context=self.input_context.text().strip(),
+            country=self.input_country.currentText(),
+            username=self.input_username.text().strip() or None,
+            email=self.input_email.text().strip() or None,
+            phone=self.input_phone.text().strip() or None,
+            domain=self.input_domain.text().strip() or None,
+        )
+        enriched = enrich_seed_from_candidates(base, confirmed)
+
+        # Reflejar los datos nuevos en los campos para que el usuario los vea
+        new_bits = []
+        if enriched.username and not base.username:
+            self.input_username.setText(enriched.username); new_bits.append(f"username={enriched.username}")
+        if enriched.email and not base.email:
+            self.input_email.setText(enriched.email); new_bits.append(f"email={enriched.email}")
+        if enriched.domain and not base.domain:
+            self.input_domain.setText(enriched.domain); new_bits.append(f"dominio={enriched.domain}")
+
+        if not new_bits:
+            self.app.toast.show("Los candidatos confirmados no aportan datos nuevos", kind="info")
+            self._log("Refinar: sin datos nuevos que añadir.")
+            return
+
+        self._log(f"🔁 Refinando con datos nuevos: {', '.join(new_bits)}")
+        self.app.toast.show("Refinando búsqueda con los datos confirmados…", kind="info")
+        self._on_search()
 
     def _on_export(self):
         """Exportar perfil completo."""

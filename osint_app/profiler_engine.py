@@ -22,6 +22,7 @@ Herramientas utilizadas:
 """
 import json
 import logging
+import re
 import concurrent.futures
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Callable
@@ -517,6 +518,39 @@ class ProfilerEngine:
                 for r in self.results
             ]
         }
+
+
+_EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
+_GITHUB_USER_RE = re.compile(r'github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)', re.I)
+_GITHUB_RESERVED = {"search", "orgs", "topics", "about", "login", "settings", "explore"}
+
+
+def enrich_seed_from_candidates(seed: "SeedData", candidates: List[Dict]) -> "SeedData":
+    """Rellena los campos vacíos de la semilla con datos de candidatos confirmados.
+
+    Solo completa lo que falta (nunca pisa lo que el usuario ya puso). Extrae
+    username de URLs de GitHub, email del texto y dominio del email.
+    """
+    import copy
+    new = copy.copy(seed)
+    for c in candidates:
+        url = c.get("url") or ""
+        text = f"{c.get('title', '')} {c.get('snippet', '')}"
+
+        if not new.username:
+            m = _GITHUB_USER_RE.search(url)
+            if m and m.group(1).lower() not in _GITHUB_RESERVED:
+                new.username = m.group(1)
+
+        if not new.email:
+            m = _EMAIL_RE.search(text)
+            if m:
+                new.email = m.group(0)
+
+        if not new.domain and new.email and "@" in new.email:
+            new.domain = new.email.split("@", 1)[1]
+
+    return new
 
 
 # Funcion de conveniencia para uso simple

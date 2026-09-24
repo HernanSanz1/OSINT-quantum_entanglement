@@ -6,7 +6,9 @@ sin que SpiderFoot escanee ese texto libre como objetivo.
 import pytest
 
 from osint_app.core.models import QueryParameters
-from osint_app.profiler_engine import ProfilerEngine, SeedData
+from osint_app.profiler_engine import (
+    ProfilerEngine, SeedData, enrich_seed_from_candidates,
+)
 from osint_app.tools.heavy_tools import SpiderFootTool, _looks_like_observable
 
 
@@ -148,3 +150,38 @@ def test_save_to_case_reuses_given_case(temp_db):
     assert returned == existing.id
     # No debe duplicar la semilla en un caso existente
     assert temp_db.get_target_data(existing.id) == []
+
+
+# ── Refinar: enriquecer la semilla con confirmados (bug 3) ────────────────────
+
+def test_enrich_extracts_username_email_domain():
+    seed = SeedData(name="Juan Perez")
+    confirmed = [
+        {"url": "https://github.com/jperez", "title": "Juan Perez", "snippet": ""},
+        {"url": "", "title": "", "snippet": "contacto: juan@empresa.com"},
+    ]
+    out = enrich_seed_from_candidates(seed, confirmed)
+    assert out.username == "jperez"
+    assert out.email == "juan@empresa.com"
+    assert out.domain == "empresa.com"
+
+
+def test_enrich_never_overwrites_user_data():
+    seed = SeedData(name="Juan Perez", username="original", email="mio@x.com")
+    confirmed = [{"url": "https://github.com/otro", "snippet": "otro@y.com"}]
+    out = enrich_seed_from_candidates(seed, confirmed)
+    assert out.username == "original"
+    assert out.email == "mio@x.com"
+
+
+def test_enrich_ignores_github_reserved_paths():
+    seed = SeedData(name="Juan Perez")
+    confirmed = [{"url": "https://github.com/search?q=juan", "snippet": ""}]
+    out = enrich_seed_from_candidates(seed, confirmed)
+    assert out.username is None
+
+
+def test_enrich_does_not_mutate_original():
+    seed = SeedData(name="Juan Perez")
+    enrich_seed_from_candidates(seed, [{"url": "https://github.com/jperez"}])
+    assert seed.username is None
