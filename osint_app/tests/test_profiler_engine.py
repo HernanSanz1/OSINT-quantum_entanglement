@@ -6,8 +6,16 @@ sin que SpiderFoot escanee ese texto libre como objetivo.
 import pytest
 
 from osint_app.core.models import QueryParameters
-from osint_app.profiler_engine import SeedData
+from osint_app.profiler_engine import ProfilerEngine, SeedData
 from osint_app.tools.heavy_tools import SpiderFootTool, _looks_like_observable
+
+
+def _engine_with_applicable(monkeypatch, applicable):
+    """ProfilerEngine sin construir el registro; get_tools_for_seed fijo."""
+    eng = ProfilerEngine.__new__(ProfilerEngine)
+    eng.progress_callback = lambda _msg: None
+    monkeypatch.setattr(eng, "get_tools_for_seed", lambda seed: list(applicable))
+    return eng
 
 
 # ── SeedData.to_query_params (bug 4) ──────────────────────────────────────────
@@ -64,3 +72,30 @@ def test_spiderfoot_uses_real_observable():
 def test_spiderfoot_falls_back_to_name():
     qp = QueryParameters(target_name="Juan Perez", observable="contexto libre")
     assert SpiderFootTool._pick_target(qp) == "Juan Perez"
+
+
+# ── Selección de herramientas (bug 1) ─────────────────────────────────────────
+
+APPLICABLE = ["Google Dorks", "GitHubOSINT", "WebSearch", "UsernameVariants"]
+
+
+def test_no_selection_runs_all(monkeypatch):
+    eng = _engine_with_applicable(monkeypatch, APPLICABLE)
+    seed = SeedData(name="Juan Perez")
+    assert eng._select_tools_to_run(seed, None) == APPLICABLE
+    assert eng._select_tools_to_run(seed, []) == APPLICABLE   # lista vacía = todas
+
+
+def test_selection_runs_only_chosen(monkeypatch):
+    eng = _engine_with_applicable(monkeypatch, APPLICABLE)
+    seed = SeedData(name="Juan Perez")
+    got = eng._select_tools_to_run(seed, ["WebSearch", "GitHubOSINT"])
+    assert got == ["GitHubOSINT", "WebSearch"]   # respeta el orden de aplicables
+
+
+def test_selected_but_not_applicable_is_skipped(monkeypatch):
+    eng = _engine_with_applicable(monkeypatch, APPLICABLE)
+    seed = SeedData(name="Juan Perez")
+    # "Sherlock" no está entre las aplicables (p.ej. no instalada) → se omite
+    got = eng._select_tools_to_run(seed, ["WebSearch", "Sherlock"])
+    assert got == ["WebSearch"]

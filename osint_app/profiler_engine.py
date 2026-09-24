@@ -169,12 +169,34 @@ class ProfilerEngine:
         available.sort(key=lambda x: x[1])
         return [t[0] for t in available]
 
-    def run_parallel(self, seed: SeedData, max_workers: int = 6,
-                     timeout_per_tool: int = 120) -> List[ToolResult]:
-        """
-        Ejecuta todas las herramientas aplicables en paralelo.
+    def _select_tools_to_run(self, seed: SeedData, only_tools: List[str] = None) -> List[str]:
+        """Herramientas aplicables, filtradas por la selección del usuario.
+
+        only_tools vacía o None = todas las aplicables. Si se pasa una lista,
+        solo esas (que además estén disponibles y tengan datos). Registra las
+        seleccionadas que se omiten para que el usuario sepa por qué.
         """
         tools_to_run = self.get_tools_for_seed(seed)
+        if only_tools:
+            requested = set(only_tools)
+            filtered = [t for t in tools_to_run if t in requested]
+            skipped = requested - set(filtered)
+            if skipped:
+                self._log(f"Seleccionadas pero omitidas (no disponibles o sin datos): {', '.join(sorted(skipped))}")
+            tools_to_run = filtered
+        return tools_to_run
+
+    def run_parallel(self, seed: SeedData, max_workers: int = 6,
+                     timeout_per_tool: int = 120,
+                     only_tools: List[str] = None) -> List[ToolResult]:
+        """
+        Ejecuta las herramientas aplicables en paralelo.
+
+        only_tools: si se pasa una lista no vacía, solo se ejecutan esas
+        herramientas (además de estar disponibles y tener los datos que
+        necesitan). Vacía o None = todas las aplicables.
+        """
+        tools_to_run = self._select_tools_to_run(seed, only_tools)
 
         if not tools_to_run:
             self._log("No hay herramientas disponibles para los datos proporcionados")
