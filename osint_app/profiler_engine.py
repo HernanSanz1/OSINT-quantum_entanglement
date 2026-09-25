@@ -575,7 +575,47 @@ class ProfilerEngine:
             )
             db.save_report(report)
 
+        self._promote_profile_fields(case_id)
         return case_id
+
+    def _promote_profile_fields(self, case_id: int) -> None:
+        """Guarda como datos del caso los campos estructurados de los perfiles
+        de GitHub encontrados (nombre, email, empresa, ubicación, Twitter).
+
+        Migrado de profiler.OSINTProfiler._run_github_osint. Deduplica contra
+        lo que ya hay en el caso para no repetir.
+        """
+        from .db.feedback_db import db
+        from .core.models import TargetData
+
+        existing = {(d.field_type, d.value) for d in db.get_target_data(case_id)}
+
+        def _add(field_type: str, value, confidence: int):
+            if not value:
+                return
+            value = str(value).strip()
+            if not value or (field_type, value) in existing:
+                return
+            db.add_target_data(TargetData(
+                case_id=case_id, field_type=field_type, value=value,
+                source="GitHub", confidence=confidence,
+            ))
+            existing.add((field_type, value))
+
+        for tool_result in self.results:
+            for sr in tool_result.results:
+                if getattr(sr, "category", "") != "GitHub Profile":
+                    continue
+                extra = getattr(sr, "extra_data", None)
+                if not isinstance(extra, dict):
+                    continue
+                _add("name", extra.get("name"), 90)
+                _add("email", extra.get("email"), 95)
+                _add("company", extra.get("company"), 85)
+                _add("location", extra.get("location"), 80)
+                tw = extra.get("twitter")
+                if tw:
+                    _add("twitter", f"@{str(tw).lstrip('@')}", 90)
 
     def get_summary(self) -> Dict[str, Any]:
         """Retorna resumen del perfilamiento."""

@@ -139,6 +139,47 @@ def test_save_to_case_persists_seed_and_reports(temp_db):
     assert "octocat" in reports[0].raw_json
 
 
+def test_save_to_case_promotes_github_profile_fields(temp_db):
+    # Migrado de profiler.py: al guardar, los campos estructurados de un perfil
+    # de GitHub pasan a ser datos del caso.
+    from osint_app.core.models import SearchResult
+    from osint_app.profiler_engine import ToolResult
+
+    profile = SearchResult(
+        title="GitHub: Juan", url="https://github.com/jperez", snippet="",
+        source_tool="GitHubOSINT", category="GitHub Profile",
+        extra_data={"name": "Juan Perez", "email": "juan@empresa.com",
+                    "company": "@empresa", "location": "Quito, Ecuador",
+                    "twitter": "jperez_tw"},
+    )
+    eng = _engine_with_results([ToolResult(tool_name="GitHubOSINT", status="ok",
+                                           results=[profile])])
+    case_id = eng.save_to_case(SeedData(name="Juan Perez"))
+
+    stored = {(d.field_type, d.value) for d in temp_db.get_target_data(case_id)}
+    assert ("company", "@empresa") in stored
+    assert ("location", "Quito, Ecuador") in stored
+    assert ("twitter", "@jperez_tw") in stored          # normaliza la @
+    assert ("email", "juan@empresa.com") in stored
+
+
+def test_promote_profile_fields_dedups(temp_db):
+    from osint_app.core.models import SearchResult
+    from osint_app.profiler_engine import ToolResult
+    from osint_app.case_manager import CaseManager
+
+    case = CaseManager().create("c", "")
+    profile = SearchResult(title="", url="", snippet="", source_tool="GitHubOSINT",
+                           category="GitHub Profile",
+                           extra_data={"location": "Quito"})
+    eng = _engine_with_results([ToolResult(tool_name="GitHubOSINT", status="ok",
+                                           results=[profile])])
+    eng._promote_profile_fields(case.id)
+    eng._promote_profile_fields(case.id)   # segunda vez: no debe duplicar
+    locs = [d for d in temp_db.get_target_data(case.id) if d.field_type == "location"]
+    assert len(locs) == 1
+
+
 def test_save_to_case_reuses_given_case(temp_db):
     from osint_app.case_manager import CaseManager
     existing = CaseManager().create("Caso previo", "")
