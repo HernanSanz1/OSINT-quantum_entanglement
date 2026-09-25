@@ -9,6 +9,7 @@ from .network_tools import (
     TheHarvesterTool, PhoneNumbersTool,
 )
 from .wayback import WaybackMachineTool
+from .crtsh import CrtShTool
 from .web_search import WebSearchTool, GitHubOSINTTool, UsernameVariantsTool
 
 from .heavy_tools import (
@@ -31,6 +32,7 @@ ALL_TOOLS = [
     IpWhoisTool,
     CensysTool,
     WaybackMachineTool,
+    CrtShTool,
     PhoneNumbersTool,
     HoleheTool,
     GHuntTool,
