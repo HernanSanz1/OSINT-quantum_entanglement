@@ -121,6 +121,11 @@ class CorrelationTab(QWidget):
         self.btn_cross_case.setToolTip("Busca entidades compartidas entre casos")
         actions.addWidget(self.btn_cross_case)
 
+        self.btn_cti = QPushButton("🛡️  Cruzar con CTI")
+        self.btn_cti.clicked.connect(self._on_cti)
+        self.btn_cti.setToolTip("Cruza los CVEs y tecnologías del caso con la inteligencia de amenazas")
+        actions.addWidget(self.btn_cti)
+
         actions.addStretch()
 
         self.btn_export = QPushButton("📄  Exportar Perfil")
@@ -228,6 +233,7 @@ class CorrelationTab(QWidget):
         self.btn_analyze.setEnabled(not busy)
         self.btn_auto_enrich.setEnabled(not busy)
         self.btn_cross_case.setEnabled(not busy)
+        self.btn_cti.setEnabled(not busy)
         if busy:
             self.progress.setRange(0, 0)
             self.progress.show()
@@ -412,6 +418,75 @@ class CorrelationTab(QWidget):
 
         except Exception as e:
             self._log(f"❌ Error: {str(e)}")
+
+    def _on_cti(self):
+        """Cruza los CVEs y tecnologías del caso con la inteligencia de amenazas."""
+        if not self.app.active_case_id:
+            self.app.toast.show("Abre un caso primero", kind="warning")
+            return
+
+        self._set_busy(True)
+        self._log("🛡️ Cruzando el caso con la inteligencia de amenazas (CTI)…")
+        try:
+            from ..db.feedback_db import db
+
+            engine = CorrelationEngine(self.app.active_case_id)
+            # Extrae entidades (incl. CVEs) de los reportes del caso
+            for report in db.get_reports(self.app.active_case_id):
+                engine.process_tool_results(report.tool_name, report.raw_json)
+
+            # Tecnologías del objetivo: valores de tipo company/organization
+            tech_terms = [
+                e.value for e in engine.entities.values()
+                if e.entity_type in ("company", "organization", "tech")
+            ]
+
+            result = engine.correlate_with_cti(tech_terms=tech_terms)
+            self._populate_cti_matches(result)
+
+            n_cve = result["total_cve_matches"]
+            n_exp = result["actively_exploited"]
+            n_tech = result["total_tech_matches"]
+            self._log(f"✅ CTI: {n_cve} CVE(s) del caso en el CTI ({n_exp} explotados activamente); "
+                      f"{n_tech} tecnología(s) con vulnerabilidades activas.")
+            if n_cve == 0 and n_tech == 0:
+                self.app.toast.show("Sin coincidencias con el CTI para este caso", kind="info")
+            else:
+                self.app.toast.show(
+                    f"CTI: {n_cve} CVE(s) y {n_tech} tecnología(s) coinciden", kind="success")
+        except Exception as e:
+            self._log(f"❌ Error al cruzar con CTI: {e}")
+            self.app.toast.show(f"Error CTI: {str(e)[:50]}", kind="error")
+        finally:
+            self._set_busy(False)
+
+    def _populate_cti_matches(self, result: dict):
+        """Muestra las coincidencias con el CTI en la tabla de correlaciones."""
+        self.table_correlations.setRowCount(0)
+
+        def _add_row(a, rel, b, conf, ev, color=None):
+            row = self.table_correlations.rowCount()
+            self.table_correlations.insertRow(row)
+            for col, val in enumerate((a, rel, b, conf, ev)):
+                item = QTableWidgetItem(str(val))
+                if color:
+                    item.setForeground(QColor(color))
+                self.table_correlations.setItem(row, col, item)
+
+        for m in result["cve_matches"]:
+            h = m["hits"][0]
+            if m["actively_exploited"]:
+                rel, color = "⚠️ en CTI · EXPLOTADO", "#ff3333"
+            else:
+                rel, color = "en CTI", "#ffaa00"
+            if m["ransomware"]:
+                rel += " · ransomware"
+            tech = f"{h['vendor']} {h['product']}".strip() or "—"
+            _add_row(m["cve"], rel, tech, h.get("severity") or "—", h.get("source") or "", color)
+
+        for t in result["tech_matches"]:
+            _add_row(t["term"], f"tecnología · {t['count']} CVEs",
+                     f"{t['actively_exploited']} explotados", "—", "CTI", "#ffaa00")
 
     def _on_export(self):
         """Exporta el perfil correlacionado"""
