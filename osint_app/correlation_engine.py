@@ -47,6 +47,8 @@ class Entity:
             return re.sub(r'[^\d+]', '', v)
         elif self.entity_type == "username":
             return v.lstrip("@")
+        elif self.entity_type == "cve":
+            return self.value.strip().upper()
         return v
 
     def fingerprint(self) -> str:
@@ -76,6 +78,7 @@ class EntityExtractor:
         "username": r'@[a-zA-Z0-9_]{3,30}',
         "hash_md5": r'\b[a-fA-F0-9]{32}\b',
         "hash_sha256": r'\b[a-fA-F0-9]{64}\b',
+        "cve": r'[Cc][Vv][Ee]-\d{4}-\d{4,7}',   # para cruzar con el CTI
     }
 
     @classmethod
@@ -336,6 +339,17 @@ class CorrelationEngine:
             suggestions.append(("Google Dorks", "Búsqueda inicial"))
 
         return suggestions
+
+    def correlate_with_cti(self, store=None, tech_terms: List[str] = None) -> Dict:
+        """Cruza las entidades del caso con la inteligencia de amenazas (CTI).
+
+        Si no se pasa `store`, lo carga del almacén CTI por defecto. Devuelve
+        las coincidencias por CVE y por tecnología (ver cti_link).
+        """
+        from .cti_link import CtiStore, correlate_entities_with_cti
+        if store is None:
+            store = CtiStore.load()
+        return correlate_entities_with_cti(self.entities.values(), store, tech_terms)
 
     def auto_enrich(self, max_tools: int = 3) -> List[str]:
         """

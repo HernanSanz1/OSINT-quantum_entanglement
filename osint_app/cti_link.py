@@ -156,3 +156,58 @@ class CtiStore:
                 if len(hits) >= limit:
                     break
         return hits
+
+
+def _entity_field(entity, name: str):
+    """Lee un campo de una entidad, sea objeto (.attr) o dict."""
+    if isinstance(entity, dict):
+        return entity.get(name)
+    return getattr(entity, name, None)
+
+
+def correlate_entities_with_cti(entities, store: "CtiStore",
+                                tech_terms: Optional[List[str]] = None) -> Dict:
+    """Cruza las entidades de un caso con la inteligencia de amenazas (CTI).
+
+    - Entidades de tipo 'cve' → coincidencia exacta con el CTI (fuerte).
+    - tech_terms (tecnologías del objetivo) → CVEs de ese vendor/product.
+
+    Devuelve un dict serializable con las coincidencias y un resumen.
+    """
+    cve_matches: List[Dict] = []
+    seen_cve = set()
+    for entity in entities or []:
+        if _entity_field(entity, "entity_type") != "cve":
+            continue
+        value = _entity_field(entity, "value")
+        for cve in normalize_cves(value):
+            if cve in seen_cve:
+                continue
+            seen_cve.add(cve)
+            hits = store.by_cve(cve)
+            if hits:
+                cve_matches.append({
+                    "cve": cve,
+                    "actively_exploited": any(h.actively_exploited for h in hits),
+                    "ransomware": any(h.ransomware for h in hits),
+                    "hits": [h.to_dict() for h in hits],
+                })
+
+    tech_matches: List[Dict] = []
+    for term in dict.fromkeys((t or "").strip().lower() for t in (tech_terms or []) if t):
+        hits = store.search_tech(term)
+        if hits:
+            tech_matches.append({
+                "term": term,
+                "count": len(hits),
+                "actively_exploited": sum(1 for h in hits if h.actively_exploited),
+                "hits": [h.to_dict() for h in hits],
+            })
+
+    return {
+        "cve_matches": cve_matches,
+        "tech_matches": tech_matches,
+        "total_cve_matches": len(cve_matches),
+        "total_tech_matches": len(tech_matches),
+        "actively_exploited": sum(1 for m in cve_matches if m["actively_exploited"]),
+    }

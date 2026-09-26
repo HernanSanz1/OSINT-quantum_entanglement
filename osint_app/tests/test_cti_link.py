@@ -96,3 +96,60 @@ def test_load_skips_bad_lines(tmp_path):
 def test_real_store_loads_and_indexes():
     s = CtiStore.load()
     assert len(s) > 100 and s.cve_count > 100
+
+
+# ── Cruce entidades del caso ↔ CTI (2b) ───────────────────────────────────────
+
+from osint_app.cti_link import correlate_entities_with_cti  # noqa: E402
+from osint_app.correlation_engine import Entity, EntityExtractor  # noqa: E402
+
+
+def test_entity_extractor_now_finds_cves():
+    ents = EntityExtractor.extract("Reporte: afectado por CVE-2026-0001 y cve-2026-94127.", "t")
+    cves = sorted(e.value.upper() for e in ents if e.entity_type == "cve")
+    assert cves == ["CVE-2026-0001", "CVE-2026-94127"]
+
+
+def test_cve_entity_normalized_uppercase():
+    assert Entity("cve", "cve-2026-0001", "t").normalized() == "CVE-2026-0001"
+
+
+def test_correlate_matches_case_cve_with_cti(store):
+    entities = [Entity("cve", "cve-2026-0001", "report"),   # está en el CTI (ransomware)
+                Entity("domain", "example.com", "manual"),
+                Entity("cve", "CVE-1999-9999", "report")]   # no está en el CTI
+    result = correlate_entities_with_cti(entities, store)
+    assert result["total_cve_matches"] == 1
+    m = result["cve_matches"][0]
+    assert m["cve"] == "CVE-2026-0001" and m["ransomware"] is True
+
+
+def test_correlate_flags_actively_exploited(store):
+    result = correlate_entities_with_cti([Entity("cve", "CVE-2026-93952", "r")], store)
+    assert result["actively_exploited"] == 1     # es KEV
+
+
+def test_correlate_dedups_repeated_cves(store):
+    ents = [Entity("cve", "CVE-2026-0001", "a"), Entity("cve", "cve-2026-0001", "b")]
+    assert correlate_entities_with_cti(ents, store)["total_cve_matches"] == 1
+
+
+def test_correlate_tech_terms(store):
+    result = correlate_entities_with_cti([], store, tech_terms=["Fortinet", "noexiste"])
+    assert result["total_tech_matches"] == 1
+    assert result["tech_matches"][0]["term"] == "fortinet"
+
+
+def test_correlate_empty_case(store):
+    result = correlate_entities_with_cti([], store)
+    assert result["total_cve_matches"] == 0 and result["total_tech_matches"] == 0
+
+
+def test_correlation_engine_method_uses_injected_store(store, temp_db):
+    from osint_app.case_manager import CaseManager
+    from osint_app.correlation_engine import CorrelationEngine
+    case = CaseManager().create("c", "")
+    eng = CorrelationEngine(case.id)
+    eng.add_entity(Entity("cve", "CVE-2026-0001", "report"))
+    result = eng.correlate_with_cti(store=store)
+    assert result["total_cve_matches"] == 1
