@@ -1,15 +1,15 @@
 # SENTINEL — OSINT Framework v2
 
 > **Cybersecurity & IT Intelligence Platform**  
-> Desktop application for structured OSINT investigations with AI Triple-Brain analysis.
+> Desktop application for structured OSINT investigations focused on data correlation.
 
 ---
 
 ## Features
 
 - **Case Management** — Create, organize, and track investigation cases
-- **OSINT Tools** — Integrated tools: Google Dorks, Wayback Machine, Censys, Subfinder, TheHarvester, and more
-- **IA Triple Engine** — Parallel analysis with Ollama (local), ChatGPT, and Venice AI
+- **OSINT Tools** — Integrated tools: Google Dorks, Wayback Machine, crt.sh, Censys, Subfinder, TheHarvester, and more
+- **Correlation Engine** — Cross-source entity correlation for profiling and CTI
 - **Reporting** — JSON/HTML export with entity extraction
 - **Sentinel UI** — Premium dark cybersecurity dashboard interface
 
@@ -32,9 +32,9 @@ source env/bin/activate
 # 3. Install dependencies
 pip install -r osint_app/requirements.txt
 
-# 4. Configure API keys (never committed to repo)
-echo "ChatGPT=sk-your-openai-key" >> ~/.osint_v2_keys
-echo "Venice=your-venice-key"     >> ~/.osint_v2_keys
+# 4. (Optional) Configure API keys for tools that need them (never committed)
+echo "Hunter.io=your-hunter-key" >> ~/.osint_v2_keys
+echo "CENSYS=your-censys-key"    >> ~/.osint_v2_keys
 chmod 600 ~/.osint_v2_keys
 
 # 5. Run

@@ -623,9 +623,9 @@ class ToolsTab(QWidget):
                 if not getattr(tool, "_is_cancelled", False):
                     self.app.toast.show(f"{t_name} finalizado", kind="success")
                 
-                # Auto-refresh Reports and AI tabs to reflect new data
+                # Auto-refresh dependent tabs to reflect new data
                 for page_name, widget in self.app.pages:
-                    if page_name in ("Reportes", "Correlational Intelligence IA"):
+                    if page_name in ("Reportes", "Correlación"):
                         if hasattr(widget, "refresh"):
                             widget.refresh()
 

@@ -12,15 +12,13 @@ from PySide6.QtGui import QPixmap  # noqa: F401 – kept for potential use in ot
 
 from ..framework import OSINTFramework
 from ..case_manager import CaseManager
-from ..ai_engine import MultiLLMEngine
-from ..utils.secret_vault import vault
+from ..utils.secret_vault import vault  # noqa: F401 (usado por otras herramientas)
 from .components import ToastManager, BrandLogo, HudStatPanel, TopBarContainer, SideBarContainer
 
 from .tab_cases import CasesTab
 from .tab_data import DataTab
 from .tab_tools import ToolsTab
 from .tab_reports import ReportsTab
-from .tab_ai import AITab
 from .tab_cti import CTITab
 from .tab_correlation import CorrelationTab
 from .tab_profiling import ProfilingTab
@@ -36,10 +34,6 @@ class OSINTGUI(QMainWindow):
 
         self.framework  = OSINTFramework()
         self.case_mgr   = CaseManager()
-        self.ai_engine  = MultiLLMEngine(
-            openai_key=vault.get("ChatGPT"),
-            venice_key=vault.get("Venice"),
-        )
         self.active_case_id = None
         self.active_case_name = ""
         self._use_tor_proxy = False
@@ -229,7 +223,6 @@ class OSINTGUI(QMainWindow):
             ("Correlación", CorrelationTab(self)),
             ("CTI", CTITab(self)),
             ("Reportes", ReportsTab(self)),
-            ("IA", AITab(self))
         ]
         
         self.tab_btns = []
