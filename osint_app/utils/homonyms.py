@@ -5,37 +5,56 @@ detectan señales blandas (que se muestran como aviso); la decisión de aceptar 
 descartar es siempre del investigador. Antes esta lógica estaba duplicada en
 smart_profiler.py; ahora vive aquí y la usan los dos perfiladores.
 """
+import re
 from typing import Optional
 
 # Países/regiones latinoamericanos (mismo contexto que el objetivo típico).
 LATAM = [
     "ecuador", "colombia", "perú", "peru", "chile", "argentina",
     "mexico", "méxico", "latam", "latinoamerica", "south america",
+    "bolivia", "venezuela", "uruguay", "paraguay",
 ]
 
-# Países claramente ajenos: si aparecen y el objetivo es de otro sitio, es señal.
+# Nombres de países ajenos (coincidencia por palabra completa, sin distinguir
+# mayúsculas). No incluir siglas ambiguas aquí (ver COUNTRY_ABBREV).
 OTHER_COUNTRIES = [
-    "spain", "españa", "usa", "united states", "germany", "alemania",
-    "france", "francia", "uk", "england", "china", "japan", "india",
-    "canada", "australia",
+    "spain", "españa", "united states", "germany", "alemania", "france",
+    "francia", "england", "china", "japan", "japón", "india", "canada",
+    "canadá", "australia", "russia", "rusia", "italy", "italia", "portugal",
 ]
+
+# Siglas ambiguas: "usa" es también el verbo español "usa"; "uk" aparece dentro
+# de palabras. Solo se aceptan como país si están en MAYÚSCULAS y como palabra.
+COUNTRY_ABBREV = ["USA", "UK"]
+
+
+def _word_present(text_lower: str, term: str) -> bool:
+    return re.search(rf"\b{re.escape(term)}\b", text_lower) is not None
 
 
 def is_same_region(location: str, country: str) -> bool:
     """True si ubicación y país objetivo están ambos en Latinoamérica."""
-    location, country = (location or "").lower(), (country or "").lower()
-    return any(c in location for c in LATAM) and any(c in country for c in LATAM)
+    loc, ctry = (location or "").lower(), (country or "").lower()
+    return any(_word_present(loc, c) for c in LATAM) and any(_word_present(ctry, c) for c in LATAM)
 
 
 def different_country(location: str, expected_country: str) -> Optional[str]:
-    """Devuelve el país ajeno mencionado en `location`, o None.
+    """Devuelve el país ajeno mencionado en `location` (en minúsculas), o None.
 
-    Ignora el caso en que el país mencionado ES el esperado.
+    Coincidencia por palabra completa para evitar falsos positivos como
+    'usa' dentro de 'usar' o 'india' dentro de 'Indiana'. Ignora el país
+    esperado.
     """
-    location, expected_country = (location or "").lower(), (expected_country or "").lower()
-    for other in OTHER_COUNTRIES:
-        if other in location and other not in expected_country:
-            return other
+    original = location or ""
+    low = original.lower()
+    exp = (expected_country or "").lower()
+    for name in OTHER_COUNTRIES:
+        if name not in exp and _word_present(low, name):
+            return name
+    for abbr in COUNTRY_ABBREV:
+        # Sensible a mayúsculas sobre el texto original (país, no verbo).
+        if abbr.lower() not in exp and re.search(rf"\b{re.escape(abbr)}\b", original):
+            return abbr.lower()
     return None
 
 

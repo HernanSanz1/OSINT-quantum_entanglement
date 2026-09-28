@@ -181,3 +181,11 @@ def test_collect_tech_terms_from_reports():
 def test_collect_tech_terms_handles_bad_json():
     assert collect_tech_terms_from_reports([_Rep("no es json")]) == []
     assert collect_tech_terms_from_reports([]) == []
+
+
+def test_store_summary_counts(store):
+    s = store.summary()
+    assert s["items"] == 3 and s["cves"] == 3
+    assert s["kev"] == 1          # solo el primero es KEV
+    assert s["ransomware"] == 1   # solo el tercero
+    assert s["vendors"] == 3

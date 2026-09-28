@@ -134,6 +134,22 @@ class CtiStore:
     def cve_count(self) -> int:
         return len(self._by_cve)
 
+    def summary(self) -> Dict:
+        """Cifras generales del almacén CTI (datos reales)."""
+        kev = sum(1 for it in self._items if _truthy(it.get("kev")))
+        exploited = sum(1 for it in self._items if _truthy(it.get("exploited")))
+        ransomware = sum(1 for it in self._items if _truthy(it.get("ransomware")))
+        vendors = {str(it.get("vendor", "")).strip().lower()
+                   for it in self._items if it.get("vendor")}
+        return {
+            "items": len(self._items),
+            "cves": self.cve_count,
+            "kev": kev,
+            "exploited": exploited,
+            "ransomware": ransomware,
+            "vendors": len(vendors),
+        }
+
     def by_cve(self, cve: str) -> List[CtiHit]:
         """Ítems CTI que mencionan ese CVE exacto."""
         cve = (cve or "").strip().upper()
