@@ -424,9 +424,10 @@ class GoogleDorksTool(OSINTTool):
 
         self._rate.wait_if_needed()
 
-        # Jitter anti-WAF: espera corta y aleatoria entre peticiones (antes era
-        # de 3.5-12.5 s, lo que hacía el dork lentísimo con 25 consultas).
-        time.sleep(random.uniform(1.0, 3.0))
+        # Jitter anti-WAF: punto medio entre velocidad y no ser bloqueado.
+        # (Antes 3.5-12.5 s = lentísimo con 25 consultas; 1-3 s = demasiado
+        # agresivo y DuckDuckGo bloqueaba por ráfaga.)
+        time.sleep(random.uniform(2.0, 5.0))
 
         # Helper compartido: POST a html.duckduckgo y respaldo a lite si va vacío.
         return duckduckgo_search(query, max_results=max_results)
