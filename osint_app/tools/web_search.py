@@ -23,6 +23,87 @@ if os.environ.get("OSINT_INSECURE_SSL") == "1":
     SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
 
+_DDG_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/119.0 Safari/537.36",
+]
+
+
+def _ddg_unwrap(href: str) -> str:
+    """Deshace la redirección de DuckDuckGo (//duckduckgo.com/l/?uddg=...)."""
+    if not href:
+        return ""
+    if "uddg=" in href:
+        try:
+            return urllib.parse.unquote(href.split("uddg=")[1].split("&")[0])
+        except Exception:
+            return href
+    if href.startswith("//"):
+        return "https:" + href
+    return href
+
+
+def duckduckgo_search(query: str, max_results: int = 10) -> List[Dict[str, str]]:
+    """Busca en DuckDuckGo y devuelve [{title, url, snippet}].
+
+    Usa POST a html.duckduckgo.com (más fiable que GET) y, si falla o va vacío
+    (bloqueo temporal, 429), cae a lite.duckduckgo.com, que tiene otro formato.
+    """
+    import random
+    import requests
+    from bs4 import BeautifulSoup
+
+    headers = {"User-Agent": random.choice(_DDG_USER_AGENTS),
+               "Referer": "https://duckduckgo.com/"}
+
+    # 1) html.duckduckgo.com
+    try:
+        resp = requests.post("https://html.duckduckgo.com/html/", data={"q": query},
+                             headers=headers, timeout=20)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            hits = []
+            for r in soup.select(".result"):
+                a = r.select_one(".result__a")
+                if not a:
+                    continue
+                s = r.select_one(".result__snippet")
+                hits.append({
+                    "title": a.get_text(strip=True),
+                    "url": _ddg_unwrap(a.get("href", "")),
+                    "snippet": s.get_text(strip=True) if s else "",
+                })
+                if len(hits) >= max_results:
+                    break
+            if hits:
+                return hits
+    except requests.RequestException as e:
+        logger.warning(f"DuckDuckGo (html) error: {type(e).__name__}")
+
+    # 2) Respaldo: lite.duckduckgo.com (otro formato)
+    try:
+        resp = requests.post("https://lite.duckduckgo.com/lite/", data={"q": query},
+                             headers=headers, timeout=20)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            links = soup.select("a.result-link")
+            snippets = soup.select(".result-snippet")
+            hits = []
+            for i, a in enumerate(links[:max_results]):
+                snip = snippets[i].get_text(strip=True) if i < len(snippets) else ""
+                hits.append({
+                    "title": a.get_text(strip=True),
+                    "url": _ddg_unwrap(a.get("href", "")),
+                    "snippet": snip,
+                })
+            return hits
+    except requests.RequestException as e:
+        logger.warning(f"DuckDuckGo (lite) error: {type(e).__name__}")
+
+    return []
+
+
 def github_headers(token: str = None) -> Dict[str, str]:
     """Cabeceras para la API de GitHub.
 
@@ -63,51 +144,8 @@ class WebSearchTool(OSINTTool):
         return True
 
     def _search_duckduckgo(self, query: str, max_results: int = 20) -> List[Dict[str, str]]:
-        """Busca en DuckDuckGo y extrae resultados."""
-        results = []
-        try:
-            # DuckDuckGo HTML search
-            encoded = urllib.parse.quote_plus(query)
-            url = f"https://html.duckduckgo.com/html/?q={encoded}"
-
-            req = urllib.request.Request(url, headers={
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-            })
-
-            with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
-                html = response.read().decode('utf-8', errors='ignore')
-
-            # Parse results (simple regex-free parsing)
-            # Look for result links
-            import re
-            # DuckDuckGo HTML results are in <a class="result__a" href="...">
-            pattern = r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)</a>'
-            matches = re.findall(pattern, html, re.IGNORECASE)
-
-            for href, title in matches[:max_results]:
-                # DuckDuckGo wraps URLs, extract actual URL
-                if 'uddg=' in href:
-                    actual_url = urllib.parse.unquote(href.split('uddg=')[1].split('&')[0])
-                else:
-                    actual_url = href
-
-                results.append({
-                    'url': actual_url,
-                    'title': title.strip(),
-                    'snippet': ''
-                })
-
-            # Also try to get snippets
-            snippet_pattern = r'<a class="result__snippet"[^>]*>([^<]+)</a>'
-            snippets = re.findall(snippet_pattern, html, re.IGNORECASE)
-            for i, snippet in enumerate(snippets):
-                if i < len(results):
-                    results[i]['snippet'] = snippet.strip()
-
-        except Exception as e:
-            logger.warning(f"DuckDuckGo search error: {e}")
-
-        return results
+        """Busca en DuckDuckGo (helper compartido: POST + respaldo a lite)."""
+        return duckduckgo_search(query, max_results=max_results)
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         results = []

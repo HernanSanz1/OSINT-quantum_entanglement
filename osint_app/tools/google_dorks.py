@@ -420,54 +420,16 @@ class GoogleDorksTool(OSINTTool):
         return sorted_queries[:budget]
 
     def _search(self, query: str, max_results: int = 10) -> List[Dict]:
-        from urllib.parse import urlparse, parse_qs, unquote
-        
+        from .web_search import duckduckgo_search
+
         self._rate.wait_if_needed()
-        
-        # JITTER ANTI-WAF (Retrasos Aleatorios)
-        # Espera base aleatoria como un humano entre peticiones
-        jitter_delay = random.uniform(3.5, 12.5)  
-        time.sleep(jitter_delay)
-        
-        try:
-            resp = requests.post(
-                "https://html.duckduckgo.com/html/",
-                data={"q": query},
-                headers={"User-Agent": random.choice(USER_AGENTS),
-                         "Referer": "https://duckduckgo.com/"},
-                timeout=20,
-            )
-            if resp.status_code == 429:
-                # WAF o Rate limit detectado. Aplicar Backoff masivo como medida de protección.
-                logger.warning(f"Google Dorks (DuckDuckGo WAF): Código 429. Aplicando backoff de seguridad...")
-                time.sleep(random.uniform(35.0, 60.0))
-                return []
-            soup = BeautifulSoup(resp.text, "html.parser")
-            hits = []
-            for r in soup.select(".result"):
-                a = r.select_one(".result__title a")
-                s = r.select_one(".result__snippet")
-                if a:
-                    raw_url = a.get("href", "")
-                    
-                    # Logica para limpiar la URL de la redirección de DuckDuckGo
-                    clean_url = raw_url
-                    if raw_url.startswith("//duckduckgo.com/l/?") or raw_url.startswith("https://duckduckgo.com/l/?"):
-                        # Extraer el queryString
-                        parsed = urlparse(raw_url)
-                        qs = parse_qs(parsed.query)
-                        if "uddg" in qs:
-                            clean_url = unquote(qs["uddg"][0])
-                            
-                    hits.append({"title": a.get_text(strip=True),
-                                  "url": clean_url,
-                                  "snippet": s.get_text(strip=True) if s else ""})
-                if len(hits) >= max_results:
-                    break
-            return hits
-        except Exception as e:
-            logger.error(f"DuckDuckGo error: {e}")
-            return []
+
+        # Jitter anti-WAF: espera corta y aleatoria entre peticiones (antes era
+        # de 3.5-12.5 s, lo que hacía el dork lentísimo con 25 consultas).
+        time.sleep(random.uniform(1.0, 3.0))
+
+        # Helper compartido: POST a html.duckduckgo y respaldo a lite si va vacío.
+        return duckduckgo_search(query, max_results=max_results)
 
     def _categorize(self, q: str) -> str:
         ql = q.lower()
