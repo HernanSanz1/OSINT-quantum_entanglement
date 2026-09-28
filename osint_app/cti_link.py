@@ -158,6 +158,32 @@ class CtiStore:
         return hits
 
 
+def collect_tech_terms_from_reports(reports) -> List[str]:
+    """Extrae las tecnologías detectadas (por Tech Detect) de los reportes de un
+    caso, para cruzarlas con el CTI. Lee los resultados de categoría 'Technology'.
+    """
+    terms: List[str] = []
+    seen = set()
+    for report in reports or []:
+        raw = getattr(report, "raw_json", None) or (report.get("raw_json") if isinstance(report, dict) else None)
+        if not raw:
+            continue
+        try:
+            items = json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            tech = None
+            if item.get("category") == "Technology":
+                tech = (item.get("raw_data") or {}).get("technology") or item.get("title")
+            if tech and tech.lower() not in seen:
+                seen.add(tech.lower())
+                terms.append(tech)
+    return terms
+
+
 def _entity_field(entity, name: str):
     """Lee un campo de una entidad, sea objeto (.attr) o dict."""
     if isinstance(entity, dict):

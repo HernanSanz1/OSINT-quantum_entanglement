@@ -430,13 +430,18 @@ class CorrelationTab(QWidget):
         try:
             from ..db.feedback_db import db
 
+            from ..cti_link import collect_tech_terms_from_reports
+
             engine = CorrelationEngine(self.app.active_case_id)
+            reports = db.get_reports(self.app.active_case_id)
             # Extrae entidades (incl. CVEs) de los reportes del caso
-            for report in db.get_reports(self.app.active_case_id):
+            for report in reports:
                 engine.process_tool_results(report.tool_name, report.raw_json)
 
-            # Tecnologías del objetivo: valores de tipo company/organization
-            tech_terms = [
+            # Tecnologías del objetivo: las detectadas por Tech Detect +
+            # los valores de tipo company/organization del caso.
+            tech_terms = collect_tech_terms_from_reports(reports)
+            tech_terms += [
                 e.value for e in engine.entities.values()
                 if e.entity_type in ("company", "organization", "tech")
             ]

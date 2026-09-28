@@ -153,3 +153,31 @@ def test_correlation_engine_method_uses_injected_store(store, temp_db):
     eng.add_entity(Entity("cve", "CVE-2026-0001", "report"))
     result = eng.correlate_with_cti(store=store)
     assert result["total_cve_matches"] == 1
+
+
+# ── Recoger tecnologías de los reportes (3c) ──────────────────────────────────
+
+from osint_app.cti_link import collect_tech_terms_from_reports  # noqa: E402
+
+
+class _Rep:
+    def __init__(self, raw_json): self.raw_json = raw_json
+
+
+def test_collect_tech_terms_from_reports():
+    import json as _json
+    reports = [
+        _Rep(_json.dumps([
+            {"title": "Fortinet", "category": "Technology", "raw_data": {"technology": "Fortinet"}},
+            {"title": "nginx", "category": "Technology", "raw_data": {"technology": "nginx"}},
+            {"title": "otra cosa", "category": "GitHub Repo"},
+        ])),
+        _Rep(_json.dumps([{"title": "Fortinet", "category": "Technology",
+                           "raw_data": {"technology": "Fortinet"}}])),  # dup
+    ]
+    assert collect_tech_terms_from_reports(reports) == ["Fortinet", "nginx"]
+
+
+def test_collect_tech_terms_handles_bad_json():
+    assert collect_tech_terms_from_reports([_Rep("no es json")]) == []
+    assert collect_tech_terms_from_reports([]) == []
