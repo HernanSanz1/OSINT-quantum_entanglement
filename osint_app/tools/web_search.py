@@ -23,6 +23,25 @@ if os.environ.get("OSINT_INSECURE_SSL") == "1":
     SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
 
+def github_headers(token: str = None) -> Dict[str, str]:
+    """Cabeceras para la API de GitHub.
+
+    Si hay un token en el baúl (clave "GitHub") o en la variable de entorno
+    GITHUB_TOKEN, se autentica y el límite sube de 60 a 5.000 peticiones/hora.
+    Sin token funciona igual, solo con el límite anónimo.
+    """
+    headers = {
+        "User-Agent": "SENTINEL-OSINT/1.0",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    if token is None:
+        from ..utils.secret_vault import vault
+        token = vault.get("GitHub")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 class WebSearchTool(OSINTTool):
     """Búsqueda web usando DuckDuckGo HTML."""
 
@@ -185,10 +204,7 @@ class GitHubOSINTTool(OSINTTool):
         """GET request a GitHub API."""
         try:
             url = f"https://api.github.com{endpoint}"
-            req = urllib.request.Request(url, headers={
-                'User-Agent': 'SENTINEL-OSINT/1.0',
-                'Accept': 'application/vnd.github.v3+json'
-            })
+            req = urllib.request.Request(url, headers=github_headers())
             with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
                 return json.loads(response.read().decode('utf-8'))
         except Exception as e:
@@ -634,9 +650,7 @@ class UsernameVariantsTool(OSINTTool):
         for variant in variants[:10]:
             try:
                 url = f"https://api.github.com/users/{variant}"
-                req = urllib.request.Request(url, headers={
-                    'User-Agent': 'SENTINEL-OSINT/1.0'
-                })
+                req = urllib.request.Request(url, headers=github_headers())
                 with urllib.request.urlopen(req, timeout=5, context=SSL_CONTEXT) as response:
                     user = json.loads(response.read().decode('utf-8'))
                     if user.get('login'):

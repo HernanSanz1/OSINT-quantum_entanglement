@@ -22,6 +22,7 @@ _VAULT_PATH = Path.home() / ".osint_v2_keys"
 
 # Environment variable names
 _ENV_MAP: Dict[str, str] = {
+    "GitHub":    "GITHUB_TOKEN",
     "ChatGPT":   "OSINT_OPENAI_KEY",
     "Venice":    "OSINT_VENICE_KEY",
     "Hunter.io": "OSINT_HUNTER_KEY",

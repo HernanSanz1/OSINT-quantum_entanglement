@@ -189,14 +189,11 @@ class SmartProfiler:
     def _check_github(self, username: str) -> Optional[CandidateProfile]:
         """Verifica si existe un usuario en GitHub y extrae datos."""
         import urllib.request
-        from .tools.web_search import SSL_CONTEXT as ctx
+        from .tools.web_search import SSL_CONTEXT as ctx, github_headers
 
         try:
             url = f"https://api.github.com/users/{username}"
-            req = urllib.request.Request(url, headers={
-                'User-Agent': 'SENTINEL-OSINT/1.0',
-                'Accept': 'application/vnd.github.v3+json'
-            })
+            req = urllib.request.Request(url, headers=github_headers())
             with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
                 data = json.loads(response.read().decode('utf-8'))
 
