@@ -10,6 +10,7 @@ from .network_tools import (
 )
 from .wayback import WaybackMachineTool
 from .crtsh import CrtShTool
+from .domain_whois import DomainWhoisTool
 from .tech_detect import TechDetectTool
 from .web_search import WebSearchTool, GitHubOSINTTool, UsernameVariantsTool
 
@@ -34,6 +35,7 @@ ALL_TOOLS = [
     CensysTool,
     WaybackMachineTool,
     CrtShTool,
+    DomainWhoisTool,
     TechDetectTool,
     PhoneNumbersTool,
     HoleheTool,

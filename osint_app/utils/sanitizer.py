@@ -119,8 +119,10 @@ def validate_domain(domain: str) -> bool:
     """Basic domain validation — letters, digits, hyphens, dots only."""
     if not domain:
         return False
-    pattern = r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+$'
-    return bool(re.match(pattern, domain.strip()))
+    label = r'[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?'
+    pattern = rf'^({label}\.)+[a-zA-Z]{{2,}}$'
+    domain = domain.strip()
+    return len(domain) <= 253 and bool(re.match(pattern, domain))
 
 
 def validate_ip(ip: str) -> bool:

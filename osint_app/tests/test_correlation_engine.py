@@ -44,6 +44,52 @@ def test_extract_basic_entities():
     assert "sub.example.org" in found["domain"]
 
 
+def test_extract_email_domain_is_not_a_username():
+    # bug previo: "desarrollo@nic.ec" generaba un usuario falso "@nic"
+    found = _by_type(EntityExtractor.extract("contacto desarrollo@nic.ec y a.b+c@mail.empresa.com", "test"))
+    assert "username" not in found
+    assert found["email"] == {"desarrollo@nic.ec", "a.b+c@mail.empresa.com"}
+
+
+def test_extract_username_still_found_next_to_emails():
+    found = _by_type(EntityExtractor.extract("mail x@y.com, twitter @juanito, (@maria_99)", "test"))
+    assert found["username"] == {"@juanito", "@maria_99"}
+
+
+def test_extract_wayback_timestamps_are_not_phones():
+    # bug hallado en prueba real: 303 "teléfonos" eran marcas de tiempo de Wayback
+    txt = ("https://web.archive.org/web/20000815065837/http://www.python.org/NEWS-152.txt "
+           "ts 20000816002136 fecha 19980526 id 1234567890123456789")
+    found = _by_type(EntityExtractor.extract(txt, "Wayback Machine"))
+    assert "phone" not in found
+    assert "NEWS-152.txt" not in found.get("domain", set())
+    assert "web.archive.org" not in found.get("domain", set())
+    assert "python.org" in {d.replace("www.", "") for d in found["domain"]}
+
+
+def test_extract_domain_is_not_truncated_into_fake_tld():
+    # "parsermodule.1.txt" se cortaba como dominio "parsermodule.1.tx"
+    found = _by_type(EntityExtractor.extract("ver parsermodule.1.txt y www.empresa.com/ruta.", "test"))
+    assert found["domain"] == {"www.empresa.com"}
+    # títulos recortados con "..." (Wayback): un host cortado no es un dominio
+    cut = _by_type(EntityExtractor.extract("http://www.python.org:80/1.5/parsermodule.1.tx...", "test"))
+    assert "parsermodule.1.tx" not in cut.get("domain", set())
+
+
+@pytest.mark.parametrize("phone", [
+    "+593 2 299 3000", "0987654321", "593987654321", "(02) 255-1234", "+1 415-555-2671", "022551234",
+])
+def test_extract_real_phones_still_found(phone):
+    found = _by_type(EntityExtractor.extract(f"Contacto: {phone}.", "test"))
+    assert found.get("phone"), f"no se extrajo {phone}"
+
+
+def test_extract_ip_is_not_also_a_phone():
+    found = _by_type(EntityExtractor.extract("servidor 151.101.64.223 y 10.0.0.5", "test"))
+    assert found["ip"] == {"151.101.64.223", "10.0.0.5"}
+    assert "phone" not in found
+
+
 def test_extract_skips_image_and_asset_filenames():
     found = _by_type(EntityExtractor.extract("logo.png style.css app.js", "test"))
     assert "domain" not in found

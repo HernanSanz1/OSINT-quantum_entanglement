@@ -125,6 +125,7 @@ class ProfilerEngine:
         'Wayback Machine': {'required': ['domain'], 'priority': 3},
         'crt.sh': {'required': ['domain'], 'priority': 3},
         'Tech Detect': {'required': ['domain'], 'priority': 3},
+        'Domain WHOIS': {'required': ['domain'], 'priority': 3},
         'CENSYS': {'required': ['domain'], 'priority': 3},
         'dnspython': {'required': ['domain'], 'priority': 3},
         'phonenumbers': {'required': ['phone'], 'priority': 3},

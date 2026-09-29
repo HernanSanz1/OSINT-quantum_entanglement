@@ -5,14 +5,16 @@ Used to auto-populate case data from tool reports.
 import re
 from typing import Dict, List
 
+from .entity_filters import DOMAIN_PATTERN, PHONE_PATTERN, is_noise_domain, is_plausible_phone
+
 
 # ── Patterns ──────────────────────────────────────────────────────────────────
 
 _RE_EMAIL   = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
-_RE_DOMAIN  = re.compile(r"\b(?:[a-zA-Z0-9\-]+\.)+[a-zA-Z]{2,}\b")
+_RE_DOMAIN  = re.compile(DOMAIN_PATTERN)
 _RE_IP      = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _RE_URL     = re.compile(r"https?://[^\s\"<>]+")
-_RE_PHONE   = re.compile(r"(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}")
+_RE_PHONE   = re.compile(PHONE_PATTERN)
 _RE_HASH_MD5    = re.compile(r"\b[a-fA-F0-9]{32}\b")
 _RE_HASH_SHA256 = re.compile(r"\b[a-fA-F0-9]{64}\b")
 
@@ -34,9 +36,11 @@ class EntityExtractor:
         ips      = list(dict.fromkeys(_RE_IP.findall(text)))
         domains  = [
             d for d in dict.fromkeys(_RE_DOMAIN.findall(text))
-            if d.lower() not in _NOISE_DOMAINS and not any(ip == d for ip in ips)
+            if d.lower() not in _NOISE_DOMAINS and not is_noise_domain(d) and d not in ips
         ]
-        phones   = list(dict.fromkeys(_RE_PHONE.findall(text)))
+        phones   = list(dict.fromkeys(
+            m.group() for m in _RE_PHONE.finditer(text) if is_plausible_phone(m.group())
+        ))
         hashes   = list(dict.fromkeys(
             _RE_HASH_SHA256.findall(text) + _RE_HASH_MD5.findall(text)
         ))

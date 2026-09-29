@@ -26,6 +26,13 @@ def test_validate_ip(ip, ok):
 @pytest.mark.parametrize("domain,ok", [
     ("example.com", True), ("sub.example.co.uk", True),
     ("exa mple.com", False), ("-bad.com", False), ("", False),
+    # dígitos y guiones en cualquier etiqueta (bug previo: se rechazaban)
+    ("www.banco24.com", True), ("a.b.gob.ec", True), ("x1.y2.example.org", True),
+    ("mail-2.mi-empresa.com", True), ("xn--nio-8qa.com", True),
+    # sigue rechazando lo inválido / peligroso
+    ("mal-.com", False), ("a..com", False), ("empresa", False), ("empresa.c", False),
+    ("1.2.3.4", False), ("ex.com;rm -rf", False), ("ex.com/../x", False),
+    (("a" * 64) + ".com", False), (("a." * 130) + "com", False),
 ])
 def test_validate_domain(domain, ok):
     assert s.validate_domain(domain) is ok

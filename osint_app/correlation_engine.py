@@ -25,6 +25,9 @@ from collections import defaultdict
 
 from .db.feedback_db import db
 from .core.models import TargetData, DataType
+from .utils.entity_filters import (
+    DOMAIN_PATTERN, PHONE_PATTERN, is_noise_domain, is_plausible_phone,
+)
 
 
 @dataclass
@@ -72,10 +75,10 @@ class EntityExtractor:
     # Patrones regex
     PATTERNS = {
         "email": r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
-        "domain": r'(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}',
+        "domain": DOMAIN_PATTERN,
         "ip": r'\b(?:\d{1,3}\.){3}\d{1,3}\b',
-        "phone": r'(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}',
-        "username": r'@[a-zA-Z0-9_]{3,30}',
+        "phone": PHONE_PATTERN,
+        "username": r'(?<![a-zA-Z0-9._%+-])@[a-zA-Z0-9_]{3,30}',   # no el "@dominio" de un email
         "hash_md5": r'\b[a-fA-F0-9]{32}\b',
         "hash_sha256": r'\b[a-fA-F0-9]{64}\b',
         "cve": r'[Cc][Vv][Ee]-\d{4}-\d{4,7}',   # para cruzar con el CTI
@@ -92,9 +95,11 @@ class EntityExtractor:
                 value = match.group()
 
                 # Filtrar falsos positivos
+                if entity_type == "phone" and not is_plausible_phone(value):
+                    continue
                 if entity_type == "domain":
-                    # Ignorar extensiones de archivo
-                    if value.endswith(('.png', '.jpg', '.gif', '.css', '.js', '.html')):
+                    # Ignorar nombres de archivo, extensiones inexistentes e infraestructura de las herramientas
+                    if is_noise_domain(value):
                         continue
                     # Ignorar si ya se capturó como email
                     if any(value in e.value for e in entities if e.entity_type == "email"):
