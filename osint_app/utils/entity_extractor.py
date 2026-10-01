@@ -5,7 +5,9 @@ Used to auto-populate case data from tool reports.
 import re
 from typing import Dict, List
 
-from .entity_filters import DOMAIN_PATTERN, PHONE_PATTERN, is_dns_txt_record, is_noise_domain, is_plausible_phone
+from .entity_filters import (
+    DOMAIN_PATTERN, PHONE_PATTERN, is_dns_txt_record, is_noise_domain, is_plausible_phone, is_public_ip, is_valid_email,
+)
 
 
 # ── Patterns ──────────────────────────────────────────────────────────────────
@@ -31,9 +33,9 @@ class EntityExtractor:
 
     def extract(self, text: str) -> Dict[str, List[str]]:
         """Returns a dict of DataType → list of unique values."""
-        emails   = list(dict.fromkeys(_RE_EMAIL.findall(text)))
+        emails   = [e for e in dict.fromkeys(_RE_EMAIL.findall(text)) if is_valid_email(e)]
         urls     = list(dict.fromkeys(_RE_URL.findall(text)))
-        ips      = list(dict.fromkeys(_RE_IP.findall(text)))
+        ips      = [i for i in dict.fromkeys(_RE_IP.findall(text)) if is_public_ip(i)]
         domains  = [
             d for d in dict.fromkeys(_RE_DOMAIN.findall(text))
             if d.lower() not in _NOISE_DOMAINS and not is_noise_domain(d) and d not in ips

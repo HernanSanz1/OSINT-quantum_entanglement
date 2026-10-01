@@ -2,6 +2,7 @@
 OSINT App v2 — Core Data Models
 All entities: Case, TargetData, ToolReport, ToolRequirements, CompatibilityResult
 """
+import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from enum import Enum
@@ -104,6 +105,14 @@ class ToolReport:
 
 # ── SearchResult ──────────────────────────────────────────────────────────────
 
+def _json_safe(value: Any) -> Any:
+    """Copia de `value` serializable a JSON (fechas, conjuntos… pasan a texto). {} si no se puede."""
+    try:
+        return json.loads(json.dumps(value, default=str))
+    except (TypeError, ValueError):
+        return {}
+
+
 @dataclass
 class SearchResult:
     """Standardized result from any OSINT tool."""
@@ -121,6 +130,7 @@ class SearchResult:
             "title": self.title, "url": self.url, "snippet": self.snippet,
             "source_tool": self.source_tool, "relevance_score": self.relevance_score,
             "category": self.category, "extra_data": self.extra_data,
+            "raw_data": _json_safe(self.raw_data),
         }
 
 

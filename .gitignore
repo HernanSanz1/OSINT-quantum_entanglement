@@ -58,3 +58,12 @@ logs/
 
 # ── Linters ──────────────────────────────────────────────────────────────────
 .ruff_cache/
+
+# ── Resultados de investigaciones: contienen datos personales de terceros (LOPDP/RGPD) ──
+# Nunca se versionan. Se guardan en la base de datos del caso o fuera del repositorio.
+osint_results/
+/veronicaup*.txt
+/prob.txt
+/duck.*.txt
+/logistica_ecuador.txt
+/amass_passive.txt

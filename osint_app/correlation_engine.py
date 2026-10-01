@@ -22,11 +22,13 @@ from typing import Dict, List, Tuple, Optional, Set
 from dataclasses import dataclass, field
 from datetime import datetime
 from collections import defaultdict
+from itertools import combinations, product
 
 from .db.feedback_db import db
 from .core.models import TargetData, DataType
 from .utils.entity_filters import (
-    DOMAIN_PATTERN, PHONE_PATTERN, is_dns_txt_record, is_noise_domain, is_plausible_phone,
+    DOMAIN_PATTERN, FREEMAIL_DOMAINS, PHONE_PATTERN, ROLE_ACCOUNTS, is_code_handle, is_dns_txt_record,
+    is_noise_domain, is_plausible_phone, is_public_ip, is_valid_email,
 )
 
 
@@ -45,7 +47,7 @@ class Entity:
         if self.entity_type == "email":
             return v
         elif self.entity_type == "domain":
-            return v.replace("www.", "")
+            return v[4:] if v.startswith("www.") else v
         elif self.entity_type == "phone":
             return re.sub(r'[^\d+]', '', v)
         elif self.entity_type == "username":
@@ -96,6 +98,12 @@ class EntityExtractor:
 
                 # Filtrar falsos positivos
                 if entity_type == "phone" and not is_plausible_phone(value):
+                    continue
+                if entity_type == "email" and not is_valid_email(value):
+                    continue
+                if entity_type == "ip" and not is_public_ip(value):
+                    continue
+                if entity_type == "username" and is_code_handle(value):
                     continue
                 if entity_type == "domain":
                     # Ignorar nombres de archivo, extensiones inexistentes e infraestructura de las herramientas
@@ -150,11 +158,15 @@ class CorrelationEngine:
         ("phone", "phone"): 0.95,      # mismo teléfono
     }
 
+    # Pares de tipos que se comparan (un solo tipo = entidades del mismo tipo entre sí)
+    CORRELATED_TYPES = (("email", "domain"), ("email", "username"), ("domain",))
+
     def __init__(self, case_id: int):
         self.case_id = case_id
         self.entities: Dict[str, Entity] = {}  # fingerprint -> Entity
         self.correlations: List[Correlation] = []
         self._load_existing()
+        self._recompute_correlations()
 
     def _load_existing(self):
         """Carga entidades de datos existentes del caso"""
@@ -167,6 +179,22 @@ class CorrelationEngine:
                 confidence=td.confidence
             )
             self.entities[entity.fingerprint()] = entity
+
+    def _recompute_correlations(self) -> None:
+        """Calcula las correlaciones entre TODAS las entidades del caso (también entre datos semilla)."""
+        buckets: Dict[str, List[Entity]] = defaultdict(list)
+        for entity in self.entities.values():
+            buckets[entity.entity_type].append(entity)
+        self.correlations = []
+        for types in self.CORRELATED_TYPES:
+            if len(types) == 1:
+                pairs = combinations(buckets[types[0]], 2)
+            else:
+                pairs = product(buckets[types[0]], buckets[types[1]])
+            for a, b in pairs:
+                correlation = self._check_correlation(a, b)
+                if correlation:
+                    self.correlations.append(correlation)
 
     def add_entity(self, entity: Entity) -> bool:
         """Agrega entidad y busca correlaciones"""
@@ -207,7 +235,10 @@ class CorrelationEngine:
                 self.correlations.append(correlation)
 
     def _check_correlation(self, a: Entity, b: Entity) -> Optional[Correlation]:
-        """Verifica si dos entidades están correlacionadas"""
+        """Verifica si dos entidades están correlacionadas, sin importar el orden en que se pasen."""
+        return self._check_ordered(a, b) or self._check_ordered(b, a)
+
+    def _check_ordered(self, a: Entity, b: Entity) -> Optional[Correlation]:
 
         # Mismo tipo, mismo valor normalizado -> misma entidad
         if a.entity_type == b.entity_type:
@@ -220,9 +251,11 @@ class CorrelationEngine:
                     evidence=f"Valor idéntico: {a.value}"
                 )
 
-        # Email contiene domain
+        # Email usa un dominio (exacto o subdominio; los proveedores gratuitos no cuentan)
         if a.entity_type == "email" and b.entity_type == "domain":
-            if b.normalized() in a.normalized():
+            email_domain = a.normalized().rsplit("@", 1)[-1]
+            target = b.normalized()
+            if email_domain not in FREEMAIL_DOMAINS and (email_domain == target or email_domain.endswith("." + target)):
                 return Correlation(
                     entity_a=a,
                     entity_b=b,
@@ -231,18 +264,26 @@ class CorrelationEngine:
                     evidence=f"Email usa dominio: {a.value} -> {b.value}"
                 )
 
-        # Username similar a parte de email
+        # Username igual (o casi) a la parte local del correo. Se ignoran los buzones de rol
+        # (admin, info…) y los usuarios cortos, que coinciden por casualidad.
         if a.entity_type == "email" and b.entity_type == "username":
-            email_prefix = a.normalized().split("@")[0]
+            email_prefix = a.normalized().split("@")[0].split("+")[0]
             username = b.normalized()
-            if email_prefix == username or username in email_prefix:
-                return Correlation(
-                    entity_a=a,
-                    entity_b=b,
-                    relation_type="same_person",
-                    confidence=75,
-                    evidence=f"Username coincide con email: {username} ~ {email_prefix}"
-                )
+            if email_prefix not in ROLE_ACCOUNTS and username not in ROLE_ACCOUNTS and len(username) >= 3:
+                if email_prefix == username:
+                    confidence = 75
+                elif len(username) >= 5 and username in email_prefix and len(username) / len(email_prefix) >= 0.5:
+                    confidence = 55
+                else:
+                    confidence = 0
+                if confidence:
+                    return Correlation(
+                        entity_a=a,
+                        entity_b=b,
+                        relation_type="same_person",
+                        confidence=confidence,
+                        evidence=f"Username coincide con email: {username} ~ {email_prefix}"
+                    )
 
         # Dominio y subdominio
         if a.entity_type == "domain" and b.entity_type == "domain":
@@ -308,18 +349,18 @@ class CorrelationEngine:
             "case_id": self.case_id,
             "total_entities": len(self.entities),
             "total_correlations": len(self.correlations),
+            "correlations": self._correlations_as_dicts(),
             "entities_by_type": dict(by_type),
-            "top_correlations": [
-                {
-                    "a": c.entity_a.value,
-                    "b": c.entity_b.value,
-                    "type": c.relation_type,
-                    "confidence": c.confidence,
-                    "evidence": c.evidence
-                }
-                for c in sorted(self.correlations, key=lambda x: x.confidence, reverse=True)[:10]
-            ]
+            "top_correlations": self._correlations_as_dicts()[:10],
         }
+
+    def _correlations_as_dicts(self) -> List[Dict]:
+        ordered = sorted(self.correlations, key=lambda x: x.confidence, reverse=True)
+        return [
+            {"a": c.entity_a.value, "b": c.entity_b.value, "type": c.relation_type,
+             "confidence": c.confidence, "evidence": c.evidence}
+            for c in ordered
+        ]
 
     def suggest_tools(self) -> List[Tuple[str, str]]:
         """Sugiere herramientas a ejecutar según los datos disponibles"""

@@ -8,6 +8,9 @@ destino, **sin visitarlo**.
 Analiza el **texto de la URL**. No la abre, así que no deja rastro en el servidor
 investigado ni te expone a su contenido. No necesita clave de API.
 
+Además consulta la **antigüedad del dominio** en el registro público RDAP (el mismo que usa
+Domain WHOIS). Esa consulta va al registro, **nunca al sitio investigado**.
+
 Señales que busca:
 
 | Gravedad | Señal |
@@ -18,6 +21,16 @@ Señales que busca:
 
 Cada señal suma puntos (alta 50, media 20, baja 8, máximo 100):
 **bajo** < 20, **medio** de 20 a 49, **alto** desde 50.
+
+### Antigüedad del dominio
+
+| Edad | Señal |
+|---|---|
+| menos de 30 días | **alta**: típico de phishing y campañas nuevas |
+| de 30 a 179 días | **media**: dominio joven |
+
+Solo se consulta en dominios propios: no en IPs, acortadores, plataformas gratuitas ni
+dominios oficiales de una marca. Si es un acortador, se mide el dominio del **destino final**.
 
 ### Acortadores
 
@@ -46,24 +59,42 @@ No corre sola en Perfilamiento: necesita un enlace concreto.
 
 ## Qué tan fiable es (medido con datos reales)
 
-Probada con **300 URLs de phishing reales** (feed público de OpenPhish) y **3000 sitios
-legítimos** (los más visitados según la lista Tranco):
+Probada con **300 URLs de phishing reales** (feed público de OpenPhish, analizadas como
+texto sin visitarlas), **3000 sitios legítimos** (los más visitados según Tranco) y las
+**antigüedades reales** de 98 dominios de phishing y 60 legítimos consultadas por RDAP.
+
+**Antigüedad del dominio (datos reales):**
+
+| Edad | Dominios de phishing | Sitios legítimos |
+|---|---|---|
+| menos de 7 días | 33% | 0% |
+| menos de 30 días | **41%** | **0%** |
+| menos de 180 días | 49% | 4% |
+| mediana | 267 días | 7041 días |
+
+**Nivel de riesgo resultante:**
 
 | | Alto | Medio | Bajo |
 |---|---|---|---|
-| Phishing real | 9% | 67% | 25% |
-| Sitios legítimos | 0% | 1% | 99% |
+| Phishing real, solo texto de la URL | 9% | 67% | 25% |
+| Phishing real, **con antigüedad** | **20%** | 65% | **16%** |
+| Sitios legítimos (3000, solo texto) | 0% | 1% | 99% |
+| Sitios legítimos (muestra de 60, con antigüedad) | 0% | 8% | 92% |
 
-Es decir, marca como **medio o alto el 76% del phishing** y el **1%** de los sitios legítimos
-(sobre todo páginas de plataformas gratuitas). Los acortadores se verificaron con enlaces
-propios de destino conocido: el destino real coincidió en todos.
+Es decir, marca como **medio o alto el 84% del phishing** y ningún sitio legítimo como alto.
+Los acortadores se verificaron con enlaces propios de destino conocido: el destino real
+coincidió en todos.
 
 ## Limitaciones
 
-- Es una **señal, no un veredicto**: un enlace limpio puede ser malicioso. El 25% del
-  phishing real pasa como "bajo" porque su URL parece normal (sitios legítimos hackeados
-  o dominios nuevos con nombre corriente). Para esos casos conviene cruzarlo con
-  **Domain WHOIS** (antigüedad del dominio) y **Tech Detect**.
+- Es una **señal, no un veredicto**: un enlace limpio puede ser malicioso. El 16% del
+  phishing real aún pasa como "bajo": sitios legítimos hackeados (dominio antiguo y URL
+  normal) o dominios sin datos de antigüedad.
+- **Antigüedad no disponible en muchas extensiones.** El registro oficial (IANA) no publica
+  RDAP para `.io`, `.co`, `.me`, `.us`, `.de`, `.es`, `.ru`, `.cn`, `.edu` y muchas más. En
+  la muestra real, un 22% de los dominios de phishing y un 20% de los legítimos eran de
+  esas extensiones. Cuando pasa, el resultado lo dice expresamente.
+- Una página legítima nueva (una empresa recién creada) puede salir con alerta por su edad.
 - Las listas de marcas y de plataformas son finitas: puede haber falsos positivos con
   dominios propios de una marca que no estén en la lista oficial.
 - Una página en una plataforma gratuita puede ser legítima; por eso solo sube a "medio".

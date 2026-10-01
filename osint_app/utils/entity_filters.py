@@ -3,6 +3,7 @@
 Los patrones regex por sí solos confunden marcas de tiempo con teléfonos y
 nombres de archivo con dominios. Estos filtros descartan ese ruido.
 """
+import ipaddress
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -30,7 +31,7 @@ FILE_EXTENSIONS = (
     '.docx', '.xlsx', '.pptx', '.ini', '.cfg', '.yml', '.yaml', '.php', '.asp', '.aspx', '.jsp',
 )
 # Hosts de infraestructura de las propias herramientas: no forman parte del objetivo
-IGNORED_DOMAINS = {"web.archive.org", "rdap.org", "crt.sh"}
+IGNORED_DOMAINS = {"web.archive.org", "rdap.org", "crt.sh", "openstreetmap.org"}
 
 
 @lru_cache(maxsize=1)
@@ -50,7 +51,8 @@ def has_known_tld(domain: str) -> bool:
 
 def is_noise_domain(value: str) -> bool:
     v = value.lower()
-    return v.endswith(FILE_EXTENSIONS) or v in IGNORED_DOMAINS or not has_known_tld(v)
+    ignored = any(v == d or v.endswith("." + d) for d in IGNORED_DOMAINS)
+    return v.endswith(FILE_EXTENSIONS) or ignored or not has_known_tld(v)
 
 
 def is_plausible_phone(value: str) -> bool:
@@ -60,6 +62,49 @@ def is_plausible_phone(value: str) -> bool:
     if _TIMESTAMP_RE.match(digits):               # 20000815065837 = marca de tiempo (p. ej. Wayback)
         return False
     return not (_IP_RE.match(value.strip()) or _DECIMAL_RE.match(value.strip()))
+
+
+# Proveedores de correo gratuito: un correo @gmail.com no "pertenece" al dominio gmail.com de nadie
+FREEMAIL_DOMAINS = {
+    "gmail.com", "googlemail.com", "hotmail.com", "hotmail.es", "outlook.com", "outlook.es", "live.com", "msn.com",
+    "yahoo.com", "yahoo.es", "ymail.com", "icloud.com", "me.com", "aol.com", "proton.me", "protonmail.com",
+    "gmx.com", "gmx.net", "mail.com", "zoho.com", "yandex.com", "yandex.ru", "mail.ru", "qq.com", "163.com",
+}
+# Buzones de rol: los usan organizaciones, no una persona concreta
+ROLE_ACCOUNTS = {
+    "admin", "administrator", "info", "contact", "contacto", "support", "soporte", "sales", "ventas", "hello",
+    "office", "mail", "email", "webmaster", "postmaster", "noreply", "no-reply", "root", "help", "ayuda",
+    "billing", "abuse", "security", "marketing", "rrhh", "hr", "jobs", "careers", "news", "team", "service",
+}
+# "@algo" que es código (CSS, JavaScript, Java, Python, decoradores…) y no un usuario de red social
+CODE_HANDLES = {
+    "media", "import", "font-face", "fontface", "keyframes", "charset", "supports", "page", "namespace", "viewport",
+    "tailwind", "apply", "layer", "container", "property", "override", "deprecated", "param", "return", "returns",
+    "throws", "see", "since", "author", "version", "link", "example", "type", "typedef", "interface", "class",
+    "ngmodule", "component", "injectable", "input", "output", "hostlistener", "viewchild", "dataclass", "staticmethod",
+    "classmethod", "wraps", "abstractmethod", "pytest", "fixture", "test", "autowired", "entity", "table", "column",
+    "getter", "setter", "service", "controller", "route", "app", "todo", "fixme", "private", "public", "protected",
+    "implements", "extends", "default", "export", "mixin", "include", "extend", "function", "if", "else", "each",
+}
+
+
+def is_valid_email(value: str) -> bool:
+    """El dominio del correo debe ser real: descarta logo@2x.png, sprite@3x.webp, etc."""
+    if "@" not in value:
+        return False
+    return not is_noise_domain(value.rsplit("@", 1)[1])
+
+
+def is_public_ip(value: str) -> bool:
+    """IP válida y pública. Descarta 999.1.1.1 y las privadas, locales o reservadas (192.168.x.x, 127.x…)."""
+    try:
+        return ipaddress.ip_address(value).is_global
+    except ValueError:
+        return False
+
+
+def is_code_handle(value: str) -> bool:
+    return value.lstrip("@").lower() in CODE_HANDLES
 
 
 def is_dns_txt_record(title: str) -> bool:

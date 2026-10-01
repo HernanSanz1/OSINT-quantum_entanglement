@@ -164,6 +164,7 @@ def test_trace_blocks_private_destination_and_reports_errors(net):
 @pytest.fixture
 def tool(monkeypatch):
     t = LinkShieldTool()
+    monkeypatch.setattr(t, "_domain_age", lambda host: None)         # sin RDAP salvo en los tests de antigüedad
     monkeypatch.setattr(t._rate, "wait_if_needed", lambda: None)
     return t
 
@@ -219,3 +220,81 @@ def test_tool_registered_and_available():
     reg = build_tool_registry()
     assert "Link Shield" in reg and reg["Link Shield"].is_available
     assert reg["Link Shield"].requirements.mandatory == ["url"]
+
+
+# ── antigüedad del dominio (RDAP) ────────────────────────────────────────────
+
+@pytest.mark.parametrize("host,expected", [
+    ("nuevo-sitio.com", True), ("www.empresa.com.ec", True), ("a.b.empresa.xyz", True),
+    ("45.12.3.4", False), ("3232235777", False), ("bit.ly", False), ("mi-pagina.pages.dev", False),
+    ("usuario.github.io", False), ("accounts.google.com", False), ("www.bancopichincha.com", False), ("", False),
+])
+def test_should_check_age(host, expected):
+    assert ls.should_check_age(host) is expected
+
+
+@pytest.mark.parametrize("days,sev", [
+    (0, "alta"), (ls.NEW_DOMAIN_DAYS - 1, "alta"), (ls.NEW_DOMAIN_DAYS, "media"),
+    (ls.YOUNG_DOMAIN_DAYS - 1, "media"), (ls.YOUNG_DOMAIN_DAYS, None), (4000, None), (None, None), (-5, None),
+])
+def test_age_findings(days, sev):
+    found = ls.age_findings(days)
+    assert (found[0][0] if found else None) == sev
+
+
+def test_new_domain_makes_clean_looking_link_high_risk(tool, monkeypatch):
+    monkeypatch.setattr(tool, "_domain_age", lambda host: {"age_days": 3, "registered": "2026-09-28", "registrar": "X"})
+    results = tool.execute(QueryParameters(url="https://webwds.com/"))
+    main = results[0]
+    assert main.raw_data["level"] == "alto" and main.raw_data["domain_age"]["age_days"] == 3
+    assert "registrado el 2026-09-28, hace 3 días" in main.snippet
+    assert any("solo 3 días" in a.snippet for a in results[1:])
+
+
+def test_old_domain_adds_no_alert_and_is_mentioned(tool, monkeypatch):
+    monkeypatch.setattr(tool, "_domain_age", lambda host: {"age_days": 9000, "registered": "1995-03-27", "registrar": "Gandi"})
+    main = tool.execute(QueryParameters(url="https://www.python.org/"))[0]
+    assert main.raw_data["level"] == "bajo" and "ni en la antigüedad" in main.snippet and len(tool.execute(QueryParameters(url="https://www.python.org/"))) == 1
+
+
+def test_age_unknown_changes_nothing(tool):
+    main = tool.execute(QueryParameters(url="https://www.python.org/"))[0]
+    assert main.raw_data["domain_age"] is None and "ni en la antigüedad" not in main.snippet
+
+
+def test_age_of_shortener_target_uses_final_host(tool, net, monkeypatch):
+    asked = []
+    monkeypatch.setattr(tool, "_domain_age", lambda host: asked.append(host))
+    net(_Resp(301, "https://destino-raro.com/x"), _Resp(200))
+    tool.execute(QueryParameters(url="https://bit.ly/abc"))
+    assert asked == ["destino-raro.com"]
+
+
+def test_domain_age_uses_whois_lookup_and_survives_failures():
+    t = LinkShieldTool()
+    t._whois.lookup = lambda dom: ({"age_days": 12, "registered": "2026-09-19", "registrar": "R"}, dom, 200)
+    assert t._domain_age("www.sitio.com") == {"age_days": 12, "registered": "2026-09-19", "registrar": "R"}
+    t._whois.lookup = lambda dom: (None, dom, 404)
+    assert t._domain_age("sitio.com") is None
+    t._whois.lookup = lambda dom: ({"age_days": None}, dom, 200)
+    assert t._domain_age("sitio.com") is None
+
+    def boom(dom):
+        raise RuntimeError("RDAP caído")
+    t._whois.lookup = boom
+    assert t._domain_age("sitio.com") is None                       # no rompe el análisis estático
+    t._whois.lookup = lambda dom: pytest.fail("no debe consultarse")
+    assert t._domain_age("pages.dev") is None and t._domain_age("1.2.3.4") is None
+
+
+def test_extension_without_rdap_is_reported_not_hidden(tool, monkeypatch):
+    monkeypatch.setattr(tool, "_domain_age", lambda host: {"age_days": None, "note": "antigüedad no disponible: la extensión .io no publica datos RDAP"})
+    main = tool.execute(QueryParameters(url="https://www.python.org/"))[0]
+    assert "Antigüedad no disponible: la extensión .io no publica datos RDAP" in main.snippet
+    assert "ni en la antigüedad" not in main.snippet and main.raw_data["level"] == "bajo"
+
+
+def test_domain_age_flags_no_rdap_extension():
+    t = LinkShieldTool()
+    t._whois.lookup = lambda dom: (None, dom, "no-rdap")
+    assert "no publica datos RDAP" in t._domain_age("sitio.io")["note"] and t._domain_age("sitio.io")["age_days"] is None

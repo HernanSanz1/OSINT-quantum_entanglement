@@ -6,13 +6,16 @@ el servidor investigado). Solo si el enlace es de un acortador conocido (bit.ly,
 tinyurl…) se siguen sus redirecciones, sin descargar contenido, para ver el
 destino real, y ese destino se analiza igual.
 
+Para la antigüedad del dominio (señal muy fuerte: el phishing usa dominios recién
+registrados) consulta el registro público RDAP, nunca al sitio investigado.
+
 Es una señal de riesgo, no un veredicto: un enlace limpio puede ser malicioso y
 uno con alertas puede ser legítimo.
 """
 import ipaddress
 import logging
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import unquote, urljoin, urlparse
 
 import requests
@@ -23,6 +26,7 @@ from ..utils.sanitizer import sanitize_snippet, validate_url
 from ..utils.rate_limiter import RateLimiter
 from ..utils.cache import CacheManager
 from . import file_metadata
+from .domain_whois import DomainWhoisTool
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +36,8 @@ USER_AGENT = "SENTINEL-OSINT/2.0 (link-shield; python-requests)"
 WEIGHTS = {"alta": 50, "media": 20, "baja": 8}
 SEVERITY_SCORE = {"alta": 88, "media": 75, "baja": 60}
 MEDIUM_FROM, HIGH_FROM = 20, 50
+NEW_DOMAIN_DAYS = 30             # registrado hace menos: casi siempre campaña nueva
+YOUNG_DOMAIN_DAYS = 180          # registrado hace menos: dominio joven, precaución
 
 SHORTENERS = {
     "bit.ly", "t.co", "tinyurl.com", "goo.gl", "ow.ly", "is.gd", "buff.ly", "rebrand.ly", "cutt.ly",
@@ -317,6 +323,32 @@ def trace_redirects(url: str, max_hops: int = MAX_HOPS) -> Tuple[List[str], str]
     return chain, "demasiadas redirecciones"
 
 
+def age_findings(age_days: Optional[int]) -> List[Tuple[str, str]]:
+    """Hallazgos según la antigüedad del dominio (None = desconocida: sin hallazgo)."""
+    if age_days is None or age_days < 0:
+        return []
+    if age_days < NEW_DOMAIN_DAYS:
+        return [("alta", f"Dominio registrado hace solo {age_days} días: típico de phishing y campañas nuevas")]
+    if age_days < YOUNG_DOMAIN_DAYS:
+        return [("media", f"Dominio joven: registrado hace {age_days} días")]
+    return []
+
+
+def should_check_age(host: str) -> bool:
+    """Solo dominios propios: no IPs, ni acortadores, ni plataformas gratuitas, ni dominios oficiales de una marca."""
+    if not host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    dom = registrable(host)
+    if is_ip_obfuscated(host) or dom in SHORTENERS or any(host == f or host.endswith("." + f) for f in FREE_HOSTING):
+        return False
+    return not any(dom in o or dom.endswith(tuple("." + x for x in o)) for o in BRANDS.values())
+
+
 def merge_final(first: dict, final: dict) -> List[Tuple[str, str]]:
     """Hallazgos del destino final, prefijados, sin repetir los ya vistos."""
     seen = {t for _, t in first["findings"]}
@@ -336,9 +368,26 @@ class LinkShieldTool(OSINTTool):
         self._install_cmd = "pip install requests"
         self._rate = RateLimiter(max_requests=20, time_window=60)
         self._cache = CacheManager(max_size=100, ttl=600)
+        self._whois = DomainWhoisTool()
 
     def check_available(self) -> bool:
         return True
+
+    def _domain_age(self, host: str) -> Optional[dict]:
+        """Antigüedad del dominio por RDAP (registro público, no el sitio investigado). None si no se puede saber."""
+        if not should_check_age(host):
+            return None
+        try:
+            info, _resolved, _status = self._whois.lookup(registrable(host))
+        except Exception as e:      # el análisis estático no debe fallar por el RDAP
+            logger.warning(f"Link Shield: RDAP no disponible ({type(e).__name__})")
+            return None
+        if _status == "no-rdap":
+            tld = registrable(host).rsplit(".", 1)[-1]
+            return {"age_days": None, "note": f"antigüedad no disponible: la extensión .{tld} no publica datos RDAP"}
+        if not info or info.get("age_days") is None:
+            return None
+        return {"age_days": info["age_days"], "registered": info.get("registered", ""), "registrar": info.get("registrar", "")}
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         target = (query_params.url or "").strip()
@@ -368,6 +417,10 @@ class LinkShieldTool(OSINTTool):
                 if len(chain) > 3:
                     findings.append(("media", f"Cadena larga de redirecciones: {len(chain) - 1} saltos"))
             trace_note = err
+        final_host = analyze_url(chain[-1])["host"] if len(chain) > 1 else first["host"]
+        age = self._domain_age(final_host)
+        if age:
+            findings += age_findings(age.get("age_days"))
         score = min(100, sum(WEIGHTS[s] for s, _ in findings))
         level = "alto" if score >= HIGH_FROM else "medio" if score >= MEDIUM_FROM else "bajo"
 
@@ -376,10 +429,15 @@ class LinkShieldTool(OSINTTool):
             parts.append(f"Destino final: {chain[-1]}")
         elif is_shortener(target) and trace_note:
             parts.append(f"No se pudo seguir el acortador: {trace_note}")
+        known_age = bool(age) and age.get("age_days") is not None
+        if known_age:
+            parts.append(f"Dominio registrado el {age['registered']}, hace {age['age_days']} días")
+        elif age and age.get("note"):
+            parts.append(age["note"][:1].upper() + age["note"][1:])
         if not findings:
-            parts.append("Sin señales de riesgo en el texto de la URL")
+            parts.append("Sin señales de riesgo en el texto de la URL" + (" ni en la antigüedad del dominio" if known_age else ""))
         raw = {"url": target, "host": first["host"], "domain": first["domain"], "score": score, "level": level,
-               "chain": chain, "findings": [{"severity": s, "text": t} for s, t in findings]}
+               "chain": chain, "domain_age": age, "findings": [{"severity": s, "text": t} for s, t in findings]}
         results = [SearchResult(
             title=f"Análisis de enlace: {first['host']}",
             url="",

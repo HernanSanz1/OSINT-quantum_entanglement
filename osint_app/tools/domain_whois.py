@@ -203,6 +203,27 @@ class DomainWhoisTool(OSINTTool):
                 return None, 200
         return None, status
 
+    def lookup(self, domain: str):
+        """Registro RDAP de un dominio ya validado. Devuelve (info | None, dominio_resuelto, estado).
+
+        Si el nombre no es registrable sube al dominio padre. estado == NO_RDAP si la extensión
+        no publica RDAP. Lo usan también otras herramientas (p. ej. Link Shield, para la antigüedad).
+        """
+        status = 0
+        for candidate in candidate_domains(domain):
+            self._rate.wait_if_needed()
+            data, status = self._fetch(candidate)
+            if data is not None:
+                parsed = parse_rdap(data)
+                if not is_empty_record(parsed):
+                    return parsed, candidate, 200
+                continue                     # cascarón sin datos (p. ej. .ec): probar el padre
+            if status == NO_RDAP:
+                return None, domain, NO_RDAP
+            if status not in NOT_A_DOMAIN:   # error real (red/servidor): no seguir subiendo de nivel
+                break
+        return None, domain, status
+
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         domain = sanitize_input(query_params.domain) if query_params.domain else ""
         domain = domain.strip().lower().lstrip(".")
@@ -216,23 +237,11 @@ class DomainWhoisTool(OSINTTool):
             return cached
 
         self._report_progress(f"🔍 Domain WHOIS: consultando el registro RDAP de {domain}…")
-        info, resolved = None, domain
-        for candidate in candidate_domains(domain):
-            self._rate.wait_if_needed()
-            data, status = self._fetch(candidate)
-            if data is not None:
-                parsed = parse_rdap(data)
-                if not is_empty_record(parsed):
-                    info, resolved = parsed, candidate
-                    break
-                continue                     # cascarón sin datos (p. ej. .ec): probar el padre
-            if status == NO_RDAP:
-                tld = domain.rsplit(".", 1)[-1]
-                self._report_progress(f"⚠️ Domain WHOIS: la extensión .{tld} no publica datos RDAP (no hay registro consultable).")
-                return []
-            if status not in NOT_A_DOMAIN:   # error real (red/servidor): no seguir subiendo de nivel
-                break
-
+        info, resolved, status = self.lookup(domain)
+        if status == NO_RDAP:
+            tld = domain.rsplit(".", 1)[-1]
+            self._report_progress(f"⚠️ Domain WHOIS: la extensión .{tld} no publica datos RDAP (no hay registro consultable).")
+            return []
         if info is None:
             self._report_progress("⚠️ Domain WHOIS: no se pudo obtener el registro (no existe o el servicio no responde).")
             return []

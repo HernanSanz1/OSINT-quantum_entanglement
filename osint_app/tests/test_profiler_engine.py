@@ -270,3 +270,56 @@ def test_no_warning_without_country_signal():
     cands = eng.extract_candidates(SeedData(name="Juan Perez", country="Ecuador"),
                                    min_confidence=0)
     assert cands[0].warning == ""
+
+
+# ── tiempo límite: una herramienta lenta no debe tirar el perfilamiento ──────
+
+import time as _time  # noqa: E402
+
+from osint_app.core.models import SearchResult as _SR  # noqa: E402
+from osint_app.profiler_engine import ProfilerEngine as _Engine, SeedData as _Seed  # noqa: E402
+
+
+class _FakeTool:
+    is_available = True
+
+    def __init__(self, delay=0.0, boom=False, hits=0):
+        self.delay, self.boom, self.hits = delay, boom, hits
+
+    def execute(self, qp):
+        _time.sleep(self.delay)
+        if self.boom:
+            raise RuntimeError("falló la herramienta")
+        return [_SR(title=f"r{i}", url=f"https://x.com/{i}", snippet="", source_tool="fake") for i in range(self.hits)]
+
+
+def _engine(**tools):
+    eng = _Engine()
+    eng.tools = tools
+    return eng
+
+
+def test_slow_tool_times_out_but_keeps_other_results():
+    eng = _engine(WebSearch=_FakeTool(0.05, hits=2), GitHubOSINT=_FakeTool(4))
+    t0 = _time.time()
+    res = eng.run_parallel(_Seed(name="Juan Perez", username="jperez"), timeout_per_tool=1,
+                           only_tools=["WebSearch", "GitHubOSINT"])
+    assert _time.time() - t0 < 3.5                       # no espera a la herramienta colgada
+    by = {r.tool_name: r for r in res}
+    assert by["WebSearch"].status == "ok" and len(by["WebSearch"].results) == 2
+    assert by["GitHubOSINT"].status == "timeout"
+    assert {r.tool_name for r in eng.results} == {"WebSearch", "GitHubOSINT"}
+
+
+def test_failing_tool_is_reported_not_raised():
+    eng = _engine(WebSearch=_FakeTool(boom=True), GitHubOSINT=_FakeTool(hits=1))
+    res = eng.run_parallel(_Seed(name="Juan Perez", username="jperez"), only_tools=["WebSearch", "GitHubOSINT"])
+    by = {r.tool_name: r.status for r in res}
+    assert by == {"WebSearch": "error", "GitHubOSINT": "ok"}
+
+
+def test_second_round_timeout_keeps_partial_results():
+    eng = _engine(GitHubOSINT=_FakeTool(4), Sherlock=_FakeTool(0.05, hits=1))
+    new = eng.run_second_round(_Seed(name="Juan Perez"), ["otro_usuario"], timeout_per_tool=1)
+    assert {(r.tool_name, r.status) for r in new} == {("GitHubOSINT:otro_usuario", "timeout"), ("Sherlock:otro_usuario", "ok")}
+    assert len(eng.results) == 2

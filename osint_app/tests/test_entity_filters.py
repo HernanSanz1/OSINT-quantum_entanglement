@@ -60,11 +60,11 @@ def test_framework_extractor_filters_wayback_noise():
 
 
 def test_framework_extractor_keeps_real_data():
-    text = "Contacto juan@empresa.com, +593 2 299 3000, 10.0.0.5, https://sub.empresa.com.ec/x"
+    text = "Contacto juan@empresa.com, +593 2 299 3000, 8.8.4.4, https://sub.empresa.com.ec/x"
     out = FrameworkExtractor().extract(text)
     assert out["email"] == ["juan@empresa.com"]
     assert "+593 2 299 3000" in out["phone"]
-    assert out["ip"] == ["10.0.0.5"]
+    assert out["ip"] == ["8.8.4.4"]
     assert "sub.empresa.com.ec" in out["domain"]
     assert out["url"] == ["https://sub.empresa.com.ec/x"]
 

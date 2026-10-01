@@ -104,6 +104,14 @@ def duckduckgo_search(query: str, max_results: int = 10) -> List[Dict[str, str]]
     return []
 
 
+def github_unavailable_hint(status: int) -> str:
+    """Texto claro cuando GitHub no pudo consultarse (no confundir con 'el usuario no existe')."""
+    if status in (403, 429):
+        return ("GitHub limitó las consultas (HTTP %s): sin token son solo 60 por hora. "
+                "Esto NO significa que el usuario no exista. Añade un token de GitHub o reintenta más tarde." % status)
+    return f"No se pudo contactar con GitHub (código {status or 'sin conexión'}). Esto NO significa que el usuario no exista."
+
+
 def github_headers(token: str = None) -> Dict[str, str]:
     """Cabeceras para la API de GitHub.
 
@@ -121,6 +129,26 @@ def github_headers(token: str = None) -> Dict[str, str]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
+
+
+# host → (categoría, relevancia base). Se compara el dominio exacto o un subdominio: 'x.com' no debe
+# coincidir con linux.com ni netflix.com.
+PLATFORMS = {
+    "linkedin.com": ("LinkedIn", 90), "github.com": ("GitHub", 85), "twitter.com": ("Twitter/X", 85),
+    "x.com": ("Twitter/X", 85), "facebook.com": ("Facebook", 80), "instagram.com": ("Instagram", 80),
+}
+
+
+def classify_url(url: str):
+    """(categoría, relevancia) según el dominio de la URL; ('Web', 70) si no es una plataforma conocida."""
+    try:
+        host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return "Web", 70
+    for domain, result in PLATFORMS.items():
+        if host == domain or host.endswith("." + domain):
+            return result
+    return "Web", 70
 
 
 class WebSearchTool(OSINTTool):
@@ -183,26 +211,7 @@ class WebSearchTool(OSINTTool):
                 if r['url'] not in seen_urls:
                     seen_urls.add(r['url'])
 
-                    # Categorize by URL
-                    category = "Web"
-                    relevance = 70
-                    url_lower = r['url'].lower()
-
-                    if 'linkedin.com' in url_lower:
-                        category = "LinkedIn"
-                        relevance = 90
-                    elif 'github.com' in url_lower:
-                        category = "GitHub"
-                        relevance = 85
-                    elif 'twitter.com' in url_lower or 'x.com' in url_lower:
-                        category = "Twitter/X"
-                        relevance = 85
-                    elif 'facebook.com' in url_lower:
-                        category = "Facebook"
-                        relevance = 80
-                    elif 'instagram.com' in url_lower:
-                        category = "Instagram"
-                        relevance = 80
+                    category, relevance = classify_url(r['url'])
 
                     results.append(SearchResult(
                         title=r['title'],
@@ -238,16 +247,24 @@ class GitHubOSINTTool(OSINTTool):
     def check_available(self) -> bool:
         return True
 
-    def _api_get(self, endpoint: str) -> Dict[str, Any]:
-        """GET request a GitHub API."""
+    def _api_request(self, endpoint: str):
+        """GET a la API de GitHub. Devuelve (datos | None, estado HTTP); estado 0 = fallo de red."""
         try:
             url = f"https://api.github.com{endpoint}"
             req = urllib.request.Request(url, headers=github_headers())
             with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
-                return json.loads(response.read().decode('utf-8'))
+                return json.loads(response.read().decode('utf-8')), response.status
+        except urllib.error.HTTPError as e:
+            logger.warning(f"GitHub API HTTP {e.code}")
+            return None, e.code
         except Exception as e:
             logger.warning(f"GitHub API error: {e}")
-            return {}
+            return None, 0
+
+    def _api_get(self, endpoint: str) -> Dict[str, Any]:
+        """GET a la API de GitHub; {} si falla (para datos secundarios como repos y actividad)."""
+        data, _status = self._api_request(endpoint)
+        return data if data is not None else {}
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         results = []
@@ -257,7 +274,16 @@ class GitHubOSINTTool(OSINTTool):
             return results
 
         # Get user profile
-        user = self._api_get(f"/users/{username}")
+        user, status = self._api_request(f"/users/{username}")
+        if status in (403, 429) or (user is None and status != 404):
+            return [SearchResult(
+                title=f"No se pudo consultar GitHub para {username}",
+                url="",
+                snippet=github_unavailable_hint(status),
+                source_tool=self.name,
+                category="Aviso",
+                relevance_score=10,
+            )]
         if not user or 'login' not in user:
             return [SearchResult(
                 title=f"Usuario no encontrado: {username}",
@@ -397,6 +423,23 @@ class _OrderedSet(dict):
     def update(self, items) -> None:
         for item in items:
             self[item] = None
+
+
+def score_github_match(target_name: str, user: Dict[str, Any]):
+    """(relevancia, nota) de una cuenta de GitHub que existe, según cuánto se parece su nombre al objetivo.
+
+    Antes toda cuenta existente puntuaba 90 aunque fuera de otra persona con un nombre común.
+    """
+    from ..utils.person_match import name_match
+    profile_name = (user.get("name") or "").strip()
+    if not profile_name:
+        return 55, "el perfil no tiene nombre: no se puede confirmar que sea la persona"
+    points, kind = name_match(target_name, profile_name)
+    if kind == "name":
+        return 90, "el nombre del perfil coincide con el objetivo"
+    if kind == "name_partial":
+        return 70, "el nombre del perfil coincide en parte"
+    return 40, "el nombre del perfil NO coincide: probablemente es otra persona"
 
 
 class UsernameVariantsTool(OSINTTool):
@@ -685,27 +728,44 @@ class UsernameVariantsTool(OSINTTool):
         ))
 
         # Check GitHub for each variant
+        checked = 0
+        limited = False
         for variant in variants[:10]:
             try:
                 url = f"https://api.github.com/users/{variant}"
                 req = urllib.request.Request(url, headers=github_headers())
                 with urllib.request.urlopen(req, timeout=5, context=SSL_CONTEXT) as response:
                     user = json.loads(response.read().decode('utf-8'))
-                    if user.get('login'):
-                        results.append(SearchResult(
-                            title=f"GitHub encontrado: {variant}",
-                            url=f"https://github.com/{variant}",
-                            snippet=f"Nombre: {user.get('name', 'N/A')} | Repos: {user.get('public_repos', 0)}",
-                            source_tool=self.name,
-                            category="GitHub Match",
-                            relevance_score=90,
-                            extra_data={'avatar_url': user.get('avatar_url')}
-                        ))
-            except urllib.error.HTTPError:
-                pass  # User doesn't exist
+                checked += 1
+                if user.get('login'):
+                    relevance, note = score_github_match(name, user)
+                    results.append(SearchResult(
+                        title=f"GitHub encontrado: {variant}",
+                        url=f"https://github.com/{variant}",
+                        snippet=f"Nombre: {user.get('name') or 'N/A'} | Repos: {user.get('public_repos', 0)} | {note}",
+                        source_tool=self.name,
+                        category="GitHub Match",
+                        relevance_score=relevance,
+                        extra_data={'avatar_url': user.get('avatar_url')}
+                    ))
+            except urllib.error.HTTPError as e:
+                if e.code in (403, 429):          # límite de GitHub: parar y avisar, no seguir golpeando
+                    limited = True
+                    break
+                checked += 1                      # 404: ese usuario no existe
             except Exception:
                 pass
 
             time.sleep(0.5)  # Rate limiting
+
+        if limited:
+            results.append(SearchResult(
+                title="GitHub limitó las consultas de variantes de usuario",
+                url="",
+                snippet=f"Se revisaron {checked} de {min(len(variants), 10)} variantes. " + github_unavailable_hint(403),
+                source_tool=self.name,
+                category="Aviso",
+                relevance_score=10,
+            ))
 
         return results

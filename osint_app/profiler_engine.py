@@ -5,7 +5,7 @@ Flujo:
 1. Recibe datos semilla (nombre, contexto, pais, username, email, etc)
 2. Lanza herramientas en paralelo segun los datos disponibles
 3. Recolecta TODOS los resultados
-4. La IA filtra y correlaciona los que coinciden con el objetivo
+4. Puntúa y correlaciona los que coinciden con el objetivo
 5. Presenta candidatos al usuario para feedback
 6. Con el feedback, refina la busqueda
 
@@ -32,6 +32,7 @@ from .tools import build_tool_registry, ALL_TOOLS
 from .core.models import QueryParameters, SearchResult
 from .correlation_engine import CorrelationEngine
 from .utils import homonyms
+from .utils.person_match import name_match, normalize_url, phone_in_text, username_in_text
 
 logger = logging.getLogger(__name__)
 
@@ -255,32 +256,10 @@ class ProfilerEngine:
                     duration_seconds=duration
                 )
 
-        # Ejecutar en paralelo
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_tool = {
-                executor.submit(run_tool, tool_name): tool_name
-                for tool_name in tools_to_run
-            }
-
-            for future in concurrent.futures.as_completed(future_to_tool, timeout=timeout_per_tool * 2):
-                tool_name = future_to_tool[future]
-                try:
-                    result = future.result(timeout=timeout_per_tool)
-                    results.append(result)
-                except concurrent.futures.TimeoutError:
-                    self._log(f"  [{tool_name}] Timeout")
-                    results.append(ToolResult(
-                        tool_name=tool_name,
-                        status='timeout',
-                        error='Timeout exceeded'
-                    ))
-                except Exception as e:
-                    self._log(f"  [{tool_name}] Excepcion: {str(e)[:50]}")
-                    results.append(ToolResult(
-                        tool_name=tool_name,
-                        status='error',
-                        error=str(e)
-                    ))
+        # Ejecutar en paralelo. Los resultados ya obtenidos se conservan aunque alguna herramienta se cuelgue.
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        future_to_tool = {executor.submit(run_tool, tool_name): tool_name for tool_name in tools_to_run}
+        results = self._gather(executor, future_to_tool, timeout_per_tool * 2)
 
         self.results = results
 
@@ -293,6 +272,31 @@ class ProfilerEngine:
             )
 
         return self.results
+
+    def _gather(self, executor, future_to_name: Dict, total_timeout: float) -> List[ToolResult]:
+        """Recoge los resultados de las tareas lanzadas, sin perder ninguno si el tiempo se agota.
+
+        Las tareas que no terminaron a tiempo se marcan 'timeout' y no se espera por ellas
+        (un hilo colgado no puede detenerse, pero tampoco debe bloquear ni tirar el perfilamiento).
+        """
+        results: List[ToolResult] = []
+        try:
+            for future in concurrent.futures.as_completed(future_to_name, timeout=total_timeout):
+                name = future_to_name[future]
+                try:
+                    results.append(future.result())
+                except Exception as e:
+                    self._log(f"  [{name}] Excepcion: {str(e)[:50]}")
+                    results.append(ToolResult(tool_name=name, status='error', error=str(e)))
+        except concurrent.futures.TimeoutError:
+            pass
+        for future, name in future_to_name.items():
+            if not future.done():
+                future.cancel()
+                self._log(f"  [{name}] Timeout")
+                results.append(ToolResult(tool_name=name, status='timeout', error='Timeout exceeded'))
+        executor.shutdown(wait=False, cancel_futures=True)
+        return results
 
     def _execute_tool(self, tool_name: str, query_params: QueryParameters,
                       label: str = None) -> ToolResult:
@@ -350,23 +354,9 @@ class ProfilerEngine:
             for tool_name in tools:
                 tasks.append((tool_name, qp, f"{tool_name}:{u}"))
 
-        new_results: List[ToolResult] = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_label = {
-                executor.submit(self._execute_tool, tn, qp, label): label
-                for (tn, qp, label) in tasks
-            }
-            for future in concurrent.futures.as_completed(future_to_label, timeout=timeout_per_tool * 2):
-                label = future_to_label[future]
-                try:
-                    new_results.append(future.result(timeout=timeout_per_tool))
-                except concurrent.futures.TimeoutError:
-                    self._log(f"  [{label}] Timeout")
-                    new_results.append(ToolResult(tool_name=label, status='timeout',
-                                                  error='Timeout exceeded'))
-                except Exception as e:
-                    self._log(f"  [{label}] Excepcion: {str(e)[:50]}")
-                    new_results.append(ToolResult(tool_name=label, status='error', error=str(e)))
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        future_to_label = {executor.submit(self._execute_tool, tn, qp, label): label for (tn, qp, label) in tasks}
+        new_results = self._gather(executor, future_to_label, timeout_per_tool * 2)
 
         self.results.extend(new_results)
         return new_results
@@ -409,12 +399,14 @@ class ProfilerEngine:
                     )
                     all_candidates.append(candidate)
 
-        # Deduplicar por URL
-        seen_urls = set()
+        # Deduplicar: la misma página escrita distinto (http/https, www, barra, rastreo) cuenta una vez;
+        # los resultados sin URL se distinguen por título y texto.
+        seen_keys = set()
         unique_candidates = []
         for c in all_candidates:
-            if c.url not in seen_urls:
-                seen_urls.add(c.url)
+            key = normalize_url(c.url) if c.url else (c.source_tool, c.title, c.snippet)
+            if key not in seen_keys:
+                seen_keys.add(key)
                 unique_candidates.append(c)
 
         # Ordenar por confianza
@@ -434,21 +426,12 @@ class ProfilerEngine:
         score = 0.0
         matched = []
 
-        # Nombre completo
+        # Nombre: palabras completas, sin depender de tildes, mayúsculas ni del orden
         if seed.name:
-            name_lower = seed.name.lower()
-            if name_lower in text:
-                score += 40
-                matched.append('name')
-            else:
-                # Partes del nombre
-                parts = seed.name.lower().split()
-                matches = sum(1 for p in parts if p in text and len(p) > 2)
-                if matches >= 2:
-                    score += 25
-                    matched.append('name_partial')
-                elif matches == 1:
-                    score += 10
+            points, kind = name_match(seed.name, text)
+            score += points
+            if kind:
+                matched.append(kind)
 
         # Email (muy alto valor)
         if seed.email and seed.email.lower() in text:
@@ -456,7 +439,7 @@ class ProfilerEngine:
             matched.append('email')
 
         # Username
-        if seed.username and seed.username.lower() in text:
+        if seed.username and username_in_text(seed.username, text):
             score += 25
             matched.append('username')
 
@@ -478,11 +461,9 @@ class ProfilerEngine:
             matched.append('domain')
 
         # Phone
-        if seed.phone:
-            clean_phone = ''.join(c for c in seed.phone if c.isdigit())
-            if len(clean_phone) > 5 and clean_phone in text:
-                score += 30
-                matched.append('phone')
+        if seed.phone and phone_in_text(seed.phone, text):
+            score += 30
+            matched.append('phone')
 
         # Ajustar por categoria del resultado (si ya viene con nivel de confianza)
         if hasattr(result, 'category') and result.category:

@@ -263,7 +263,7 @@ class CorrelationTab(QWidget):
             self._populate_entities_tree(summary['entities_by_type'])
 
             # Poblar tabla de correlaciones
-            self._populate_correlations_table(summary['top_correlations'])
+            self._populate_correlations_table(summary['correlations'])
 
             # Mostrar sugerencias
             suggestions = self.engine.suggest_tools()
