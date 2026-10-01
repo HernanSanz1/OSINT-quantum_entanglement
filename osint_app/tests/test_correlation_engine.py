@@ -234,7 +234,7 @@ def test_seed_data_is_correlated_on_load(temp_db):
     case = _seed_case(temp_db, [("name", "Juan Riofrio"), ("email", "jriofrio@utpl.edu.ec"),
                                 ("username", "jriofrio"), ("domain", "utpl.edu.ec")])
     kinds = {(c.relation_type) for c in CorrelationEngine(case.id).correlations}
-    assert kinds == {"owns", "same_person"}         # antes: 0 correlaciones al abrir el caso
+    assert kinds == {"owns", "same_person", "name_in_handle"}   # antes: 0 correlaciones al abrir el caso
 
 
 @pytest.mark.parametrize("order", [("domain", "email"), ("email", "domain")])

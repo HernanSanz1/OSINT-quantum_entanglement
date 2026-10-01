@@ -18,18 +18,21 @@ Basado en metodología de inteligencia militar:
 import re
 import json
 import hashlib
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
 from collections import defaultdict
 from itertools import combinations, product
 
 from .db.feedback_db import db
-from .core.models import TargetData, DataType
+from .core.models import TargetData
 from .utils.entity_filters import (
     DOMAIN_PATTERN, FREEMAIL_DOMAINS, PHONE_PATTERN, ROLE_ACCOUNTS, is_code_handle, is_dns_txt_record,
     is_noise_domain, is_plausible_phone, is_public_ip, is_valid_email,
 )
+from .utils.identity import (
+    find_profile_urls, handle_matches_name, name_from_profile_title, parse_profile_url, profile_key,
+)
+from .utils.person_match import name_match, normalize_text
 
 
 @dataclass
@@ -54,6 +57,10 @@ class Entity:
             return v.lstrip("@")
         elif self.entity_type == "cve":
             return self.value.strip().upper()
+        elif self.entity_type == "profile":
+            return profile_key(self.value)
+        elif self.entity_type in ("name", "company", "location"):
+            return normalize_text(self.value)         # sin tildes ni mayúsculas: "José Muñoz" = "jose munoz"
         return v
 
     def fingerprint(self) -> str:
@@ -80,7 +87,7 @@ class EntityExtractor:
         "domain": DOMAIN_PATTERN,
         "ip": r'\b(?:\d{1,3}\.){3}\d{1,3}\b',
         "phone": PHONE_PATTERN,
-        "username": r'(?<![a-zA-Z0-9._%+-])@[a-zA-Z0-9_]{3,30}',   # no el "@dominio" de un email
+        "username": r'(?<![a-zA-Z0-9._%+-])@[a-zA-Z0-9_]{3,30}(?![a-zA-Z0-9_-])',   # no el "@dominio" de un email, ni "@epicweb" de "@epicweb-dev"
         "hash_md5": r'\b[a-fA-F0-9]{32}\b',
         "hash_sha256": r'\b[a-fA-F0-9]{64}\b',
         "cve": r'[Cc][Vv][Ee]-\d{4}-\d{4,7}',   # para cruzar con el CTI
@@ -124,7 +131,44 @@ class EntityExtractor:
                     seen.add(fp)
                     entities.append(entity)
 
+        for platform, handle, canonical in find_profile_urls(text):
+            entity = Entity("profile", canonical, source, confidence=60, metadata={"platform": platform, "handle": handle})
+            fp = entity.fingerprint()
+            if fp not in seen:
+                seen.add(fp)
+                entities.append(entity)
+
         return entities
+
+    @classmethod
+    def extract_identity(cls, item: Dict, source: str = "unknown") -> List[Entity]:
+        """Nombre, empresa y ubicación de una persona a partir de un resultado ESTRUCTURADO (perfil).
+
+        No se adivina nada del texto libre: solo de campos que la herramienta entregó como datos
+        (GitHub) o del título de una página de perfil reconocida (LinkedIn, X, Instagram…).
+        """
+        found: List[Entity] = []
+        extra = item.get("extra_data") if isinstance(item.get("extra_data"), dict) else {}
+        parsed = parse_profile_url(item.get("url") or "")
+        canonical = parsed[2] if parsed else ""
+        origin = f"{source} @ {canonical}" if canonical else source
+
+        if parsed:
+            found.append(Entity("profile", canonical, source, confidence=60,
+                                metadata={"platform": parsed[0], "handle": parsed[1]}))
+            name = (extra.get("name") or "").strip() or name_from_profile_title(item.get("title", ""), parsed[0], parsed[1])
+            if name:
+                found.append(Entity("name", name, origin, confidence=60))
+            if extra.get("company"):
+                found.append(Entity("company", str(extra["company"]).strip().lstrip("@"), origin, confidence=55))
+            if extra.get("location"):
+                found.append(Entity("location", str(extra["location"]).strip(), origin, confidence=50))
+        twitter = str(extra.get("twitter") or "").lstrip("@")
+        if twitter:
+            tw = parse_profile_url(f"https://x.com/{twitter}")
+            if tw:
+                found.append(Entity("profile", tw[2], source, confidence=60, metadata={"platform": "x", "handle": tw[1]}))
+        return [e for e in found if e.value]
 
     @classmethod
     def extract_from_json(cls, data: Dict, source: str = "unknown") -> List[Entity]:
@@ -159,7 +203,15 @@ class CorrelationEngine:
     }
 
     # Pares de tipos que se comparan (un solo tipo = entidades del mismo tipo entre sí)
-    CORRELATED_TYPES = (("email", "domain"), ("email", "username"), ("domain",))
+    CORRELATED_TYPES = (
+        ("email", "domain"), ("email", "username"), ("domain",),
+        ("profile",), ("profile", "username"), ("profile", "email"), ("profile", "name"),
+        ("name",), ("name", "email"), ("name", "username"),
+    )
+
+    # Tipos de identidad: lo que se descubre se guarda aparte ("found_…") para que un nombre hallado en el
+    # perfil de un homónimo nunca sustituya al nombre que puso el investigador al lanzar otras herramientas.
+    IDENTITY_TYPES = ("profile", "name", "company", "location")
 
     def __init__(self, case_id: int):
         self.case_id = case_id
@@ -172,8 +224,9 @@ class CorrelationEngine:
         """Carga entidades de datos existentes del caso"""
         target_data = db.get_target_data(self.case_id)
         for td in target_data:
+            found = td.field_type.startswith("found_")
             entity = Entity(
-                entity_type=td.field_type,
+                entity_type=td.field_type[len("found_"):] if found else td.field_type,
                 value=td.value,
                 source=td.source,
                 confidence=td.confidence
@@ -296,13 +349,58 @@ class CorrelationEngine:
                     evidence=f"Subdominio: {a.value} de {b.value}"
                 )
 
+        return self._check_identity(a, b)
+
+    def _check_identity(self, a: Entity, b: Entity) -> Optional[Correlation]:
+        """Relaciones entre perfiles sociales, nombres, usuarios y correos de una persona."""
+        pair = (a.entity_type, b.entity_type)
+
+        if pair == ("profile", "profile"):
+            pa, pb = parse_profile_url(a.value), parse_profile_url(b.value)
+            if pa and pb and pa[1] == pb[1] and pa[0] != pb[0] and len(pa[1]) >= 4:
+                return Correlation(a, b, "same_handle", 70 if len(pa[1]) >= 6 else 45,
+                                   f"Mismo usuario «{pa[1]}» en {pa[0]} y {pb[0]}")
+
+        elif pair == ("profile", "username"):
+            parsed = parse_profile_url(a.value)
+            user = b.normalized()
+            if parsed and len(user) >= 3 and parsed[1] == user:
+                return Correlation(a, b, "profile_of", 90, f"El perfil de {parsed[0]} usa el usuario {b.value}")
+
+        elif pair == ("profile", "email"):
+            parsed = parse_profile_url(a.value)
+            local = b.normalized().split("@")[0].split("+")[0]
+            if parsed and len(local) >= 5 and local not in ROLE_ACCOUNTS and parsed[1] == local:
+                return Correlation(a, b, "same_person", 60, f"El usuario de {parsed[0]} coincide con el correo {b.value}")
+
+        elif pair == ("profile", "name"):
+            origin = b.source.split(" @ ", 1)[1] if " @ " in b.source else ""
+            if origin and profile_key(origin) == a.normalized():
+                return Correlation(a, b, "named_in", 85, f"El nombre «{b.value}» aparece en ese perfil")
+
+        elif pair == ("name", "name"):
+            if a.normalized() != b.normalized():
+                short, long_ = sorted((a, b), key=lambda e: len(e.normalized()))
+                points, kind = name_match(short.value, long_.value)
+                if kind == "name":
+                    return Correlation(a, b, "same_name", 60, f"«{short.value}» está contenido en «{long_.value}»")
+
+        elif pair == ("name", "email"):
+            local = b.normalized().split("@")[0]
+            if local not in ROLE_ACCOUNTS and handle_matches_name(local, a.value):
+                return Correlation(a, b, "name_in_handle", 65, f"El correo {b.value} sigue el patrón del nombre {a.value}")
+
+        elif pair == ("name", "username"):
+            if handle_matches_name(b.normalized(), a.value):
+                return Correlation(a, b, "name_in_handle", 55, f"El usuario {b.value} sigue el patrón del nombre {a.value}")
+
         return None
 
     def _persist_entity(self, entity: Entity):
         """Guarda entidad en la BD como TargetData"""
         td = TargetData(
             case_id=self.case_id,
-            field_type=entity.entity_type,
+            field_type=f"found_{entity.entity_type}" if entity.entity_type in self.IDENTITY_TYPES else entity.entity_type,
             value=entity.value,
             source=entity.source,
             confidence=entity.confidence
@@ -323,6 +421,7 @@ class CorrelationEngine:
             for item in data:
                 if isinstance(item, dict):
                     found = EntityExtractor.extract_from_json(item, tool_name)
+                    found += EntityExtractor.extract_identity(item, tool_name)
                     if is_dns_txt_record(item.get("title")):     # token de verificación, no un hash
                         found = [e for e in found if not e.entity_type.startswith("hash_")]
                     all_entities.extend(found)

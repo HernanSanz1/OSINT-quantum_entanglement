@@ -20,7 +20,7 @@ Estado general: la integración continua está en verde (Ubuntu y Windows, Pytho
 | C2 tiempo límite del perfilador | **Corregido** | 3 tests nuevos; una herramienta lenta ya no tira el resto (2 s en vez de 6 s y sin perder resultados) |
 | C3 `raw_data` no se guardaba | **Corregido** | 4 tests nuevos de ida y vuelta por la base de datos |
 | A1 correlaciones | **Corregido**: se calculan sobre todo el caso, no dependen del orden y se muestran todas | 4 tests nuevos |
-| A2 faltan entidades de perfil/nombre/organización | **Pendiente** (es el siguiente paso grande) | |
+| A2 faltan entidades de perfil/nombre/organización | **Hecho**: `profile`, `name`, `company`, `location` y 7 relaciones nuevas (ver abajo) | Cuenta real de GitHub (Kent C. Dodds): 6 entidades y 3 relaciones, todo coincide con la API; títulos reales de LinkedIn y X de una búsqueda web. La prueba real destapó 3 errores más, corregidos |
 | A3 falsos "owns"/"same_person" | **Corregido** | 12 casos de test |
 | A4 ruido del extractor | **Corregido** (correos falsos, IPs inválidas o privadas, `@código`) | Misma extracción real de python.org: 76 entidades, ninguna legítima perdida |
 | A5 puntuación de nombres, teléfonos y URLs | **Corregido** (módulo nuevo `person_match`) | Los 6 casos de la tabla ahora dan lo esperado; 30 tests nuevos |
@@ -289,3 +289,31 @@ Ordenadas por impacto sobre buscar y correlacionar personas:
 | 8 | A7, A8 GitHub y WebSearch honestos | medio |
 | 9 | A6 homónimos por ciudad/empresa | medio |
 | 10 | M1 limpieza de restos de la IA (tras verificar) | pequeño |
+
+
+---
+
+## 6. A2 — cómo se unen los datos de una persona (hecho)
+
+Tipos de entidad nuevos: **perfil social** (LinkedIn, GitHub, X, Facebook, Instagram, TikTok,
+YouTube, Telegram, Reddit, Medium), **nombre**, **empresa** y **ubicación**. Los perfiles se
+normalizan: `twitter.com/Dan_Abramov`, `x.com/dan_abramov/` y `mobile.twitter.com/dan_abramov?s=20`
+son el mismo perfil.
+
+| Relación | Cuándo | Confianza |
+|---|---|---|
+| `profile_of` | el usuario del perfil es igual a un usuario del caso | 90 |
+| `named_in` | el nombre se leyó en ese perfil | 85 |
+| `same_handle` | mismo usuario en dos plataformas (4 letras o más) | 70 (45 si es corto) |
+| `name_in_handle` | el correo o usuario sigue el patrón del nombre (`jriofrio` ~ Juan Riofrio) | 65 correo / 55 usuario |
+| `same_name` | un nombre contiene al otro (con otras tildes, sin el segundo apellido…) | 60 |
+| `same_person` | el usuario del perfil es igual a la parte local de un correo (no de rol) | 60 |
+
+Los nombres solo se leen de **datos estructurados** (el campo "nombre" de GitHub) o del **título
+de una página de perfil** reconocida; nunca de texto libre. Lo descubierto se guarda con prefijo
+`found_` en los datos del caso, así que un nombre hallado en el perfil de un homónimo **nunca
+sustituye** al objetivo con el que se lanzan las demás herramientas.
+
+Errores que solo salieron con datos reales: títulos que genera la propia herramienta
+("Lenguajes principales de x") tomados como nombre, `@epicweb-dev` cortado como `@epicweb` y
+"Replies by Linus Torvalds" tomado como nombre.

@@ -294,6 +294,9 @@ class CorrelationTab(QWidget):
             "username": "👤",
             "phone": "📱",
             "name": "📛",
+            "profile": "🔗",
+            "company": "🏢",
+            "location": "📍",
             "hash_md5": "#️⃣",
             "hash_sha256": "#️⃣",
         }
@@ -331,6 +334,11 @@ class CorrelationTab(QWidget):
             "owns": "→",
             "subdomain_of": "⊂",
             "linked": "↔",
+            "same_handle": "🔁",
+            "profile_of": "🔗",
+            "named_in": "📛",
+            "same_name": "📛",
+            "name_in_handle": "🧩",
         }
 
         for i, corr in enumerate(correlations):
