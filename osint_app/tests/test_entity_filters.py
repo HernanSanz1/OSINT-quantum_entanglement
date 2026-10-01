@@ -22,7 +22,7 @@ def test_has_known_tld(domain, expected):
 
 
 @pytest.mark.parametrize("domain,noise", [
-    ("web.archive.org", True), ("logo.png", True), ("app.js", True), ("x.zzzzz", True),
+    ("web.archive.org", True), ("crt.sh", True), ("logo.png", True), ("app.js", True), ("x.zzzzz", True),
     ("python.org", False), ("sub.empresa.com.ec", False),
 ])
 def test_is_noise_domain(domain, noise):
@@ -67,3 +67,20 @@ def test_framework_extractor_keeps_real_data():
     assert out["ip"] == ["10.0.0.5"]
     assert "sub.empresa.com.ec" in out["domain"]
     assert out["url"] == ["https://sub.empresa.com.ec/x"]
+
+
+def test_path_file_is_not_a_domain_but_url_host_is():
+    # md5sum.py es un archivo (".py" es TLD real); en "http://host" el host sí cuenta
+    text = "http://www.python.org:80/1.5/md5sum.py https://web.archive.org/web/2000/http://www.python.org/x/tool.sh y empresa.com/ruta"
+    for out in (
+        {e.value for e in CorrelationExtractor.extract(text, "t") if e.entity_type == "domain"},
+        set(FrameworkExtractor().extract(text)["domain"]),
+    ):
+        assert "md5sum.py" not in out and "tool.sh" not in out
+        assert {"www.python.org", "empresa.com"} <= out
+
+
+def test_tool_own_hosts_are_not_entities():
+    text = "https://crt.sh/?q=empresa.com https://rdap.org/domain/empresa.com sub.empresa.com"
+    out = {e.value for e in CorrelationExtractor.extract(text, "t") if e.entity_type == "domain"}
+    assert out == {"sub.empresa.com", "empresa.com"}      # sin "mpresa.com" ni "crt.sh" ni "rdap.org"

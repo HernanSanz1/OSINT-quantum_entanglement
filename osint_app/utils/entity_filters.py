@@ -9,8 +9,9 @@ from pathlib import Path
 
 TLD_FILE = Path(__file__).with_name("tlds.txt")   # lista oficial IANA (tlds-alpha-by-domain)
 
-# Dominio: sin "..." final (texto recortado) ni letras/guiones pegados (p. ej. ".txt" cortado en ".tx")
-DOMAIN_PATTERN = r'(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?![\w-]|\.\.)'
+# Dominio: sin "..." final (texto recortado) ni letras/guiones pegados (p. ej. ".txt" cortado en ".tx");
+# no empieza a mitad de palabra ni tras una "/" suelta (ruta de URL: /md5sum.py), sí tras "//" (http://dominio)
+DOMAIN_PATTERN = r'(?<![\w.-])(?<!(?<!/)/)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?![\w-]|\.\.)'
 
 # Teléfono: con "+" admite códigos de área cortos (+593 2 299 3000); sin dígitos ni "/" pegados
 PHONE_PATTERN = (r'(?<![\w/.])(?:\+\d{1,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}'
@@ -28,7 +29,7 @@ FILE_EXTENSIONS = (
     '.docx', '.xlsx', '.pptx', '.ini', '.cfg', '.yml', '.yaml', '.php', '.asp', '.aspx', '.jsp',
 )
 # Hosts de infraestructura de las propias herramientas: no forman parte del objetivo
-IGNORED_DOMAINS = {"web.archive.org", "rdap.org"}
+IGNORED_DOMAINS = {"web.archive.org", "rdap.org", "crt.sh"}
 
 
 @lru_cache(maxsize=1)
