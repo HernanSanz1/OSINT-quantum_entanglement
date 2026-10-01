@@ -25,7 +25,7 @@ import logging
 import re
 import concurrent.futures
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 
 from .tools import build_tool_registry, ALL_TOOLS
@@ -33,6 +33,8 @@ from .core.models import QueryParameters, SearchResult
 from .correlation_engine import CorrelationEngine
 from .utils import homonyms
 from .utils.person_match import name_match, normalize_text, normalize_url, phone_in_text, username_in_text
+from .utils.entity_filters import FREEMAIL_DOMAINS, ROLE_ACCOUNTS, is_valid_email
+from .utils.identity import name_from_profile_title, parse_profile_url, profile_key
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,7 @@ class Candidate:
     raw_data: Dict[str, Any] = field(default_factory=dict)
     user_verdict: Optional[str] = None  # 'confirmed', 'rejected', 'pending'
     warning: str = ""                   # aviso de posible homónimo (no descarta)
+    extra_data: Dict[str, Any] = field(default_factory=dict)   # datos estructurados del resultado (GitHub: empresa, ubicación…)
 
 
 class ProfilerEngine:
@@ -397,6 +400,7 @@ class ProfilerEngine:
                         raw_data=sr.raw_data if sr.raw_data else {},
                         user_verdict='pending',
                         warning=warning,
+                        extra_data=sr.extra_data if isinstance(sr.extra_data, dict) else {},
                     )
                     all_candidates.append(candidate)
 
@@ -706,32 +710,93 @@ def extract_usernames_from_results(results) -> List[str]:
     return found
 
 
+# Plataformas donde el usuario del perfil se puede usar como username en otras búsquedas
+_USERNAME_PLATFORMS = {"github", "x", "instagram", "tiktok", "reddit", "telegram", "medium", "youtube"}
+
+
+def identity_from_candidate(candidate: Dict) -> Dict[str, str]:
+    """Datos de identidad que aporta un candidato: username, email, empresa, ubicación, nombre y perfil.
+
+    Solo de lo estructurado: la URL del perfil, los campos de su resultado (GitHub) y un correo escrito
+    en el texto. Los correos de rol (info@, ventas@) no se toman: son de una organización, no de la persona.
+    """
+    out: Dict[str, str] = {}
+    url = candidate.get("url") or ""
+    extra = candidate.get("extra") if isinstance(candidate.get("extra"), dict) else {}
+    parsed = parse_profile_url(url)
+    if parsed:
+        platform, handle, canonical = parsed
+        out["profile"] = canonical
+        if platform in _USERNAME_PLATFORMS and "/" not in handle:
+            out["username"] = handle
+        name = (extra.get("name") or "").strip() or name_from_profile_title(candidate.get("title", ""), platform, handle)
+        if name:
+            out["name"] = name
+    if extra.get("company"):
+        out["company"] = str(extra["company"]).strip().lstrip("@").strip()
+    if extra.get("location"):
+        out["location"] = str(extra["location"]).strip()
+    text = f"{candidate.get('title', '')} {candidate.get('snippet', '')}"
+    for match in _EMAIL_RE.finditer(text):
+        email = match.group(0)
+        if is_valid_email(email) and email.split("@")[0].lower() not in ROLE_ACCOUNTS:
+            out["email"] = email
+            break
+    return {k: v for k, v in out.items() if v}
+
+
 def enrich_seed_from_candidates(seed: "SeedData", candidates: List[Dict]) -> "SeedData":
     """Rellena los campos vacíos de la semilla con datos de candidatos confirmados.
 
-    Solo completa lo que falta (nunca pisa lo que el usuario ya puso). Extrae
-    username de URLs de GitHub, email del texto y dominio del email.
+    Solo completa lo que falta (nunca pisa lo que el usuario ya puso). Toma el username del perfil
+    (GitHub, X, Instagram, TikTok…), el email del texto, la empresa si el resultado la trae y el
+    dominio del email, salvo que sea de un proveedor gratuito (gmail.com no es el dominio de nadie).
     """
     import copy
     new = copy.copy(seed)
     for c in candidates:
-        url = c.get("url") or ""
-        text = f"{c.get('title', '')} {c.get('snippet', '')}"
-
-        if not new.username:
-            m = _GITHUB_USER_RE.search(url)
-            if m and m.group(1).lower() not in _GITHUB_RESERVED:
-                new.username = m.group(1)
-
-        if not new.email:
-            m = _EMAIL_RE.search(text)
-            if m:
-                new.email = m.group(0)
-
+        found = identity_from_candidate(c)
+        if not new.username and found.get("username"):
+            new.username = found["username"]
+        if not new.email and found.get("email"):
+            new.email = found["email"]
+        if not new.company and found.get("company"):
+            new.company = found["company"]
         if not new.domain and new.email and "@" in new.email:
-            new.domain = new.email.split("@", 1)[1]
-
+            email_domain = new.email.split("@", 1)[1].lower()
+            if email_domain not in FREEMAIL_DOMAINS:
+                new.domain = email_domain
     return new
+
+
+def promote_confirmed_to_case(case_id: int, candidates: List[Dict]) -> List[Tuple[str, str]]:
+    """Guarda como datos del caso lo que aportan los candidatos que el investigador confirmó.
+
+    Son datos confirmados (confianza 90, origen "confirmado"), a diferencia de lo meramente descubierto
+    (prefijo found_). No duplica lo que ya está en el caso ni cambia el objetivo. Devuelve lo añadido.
+    """
+    from .db.feedback_db import db
+    from .core.models import TargetData
+
+    def key(field_type: str, value: str) -> str:
+        if field_type in ("username", "email"):
+            return value.lower().lstrip("@")
+        if field_type == "profile":
+            return profile_key(value)
+        return normalize_text(value)
+
+    existing = {(d.field_type, key(d.field_type, d.value)) for d in db.get_target_data(case_id)
+                if not d.field_type.startswith("found_")}
+    added: List[Tuple[str, str]] = []
+    for candidate in candidates:
+        for field_type, value in identity_from_candidate(candidate).items():
+            if (field_type, key(field_type, value)) in existing:
+                continue
+            db.add_target_data(TargetData(case_id=case_id, field_type=field_type, value=value,
+                                          source="confirmado", confidence=90))
+            existing.add((field_type, key(field_type, value)))
+            added.append((field_type, value))
+    return added
 
 
 # Funcion de conveniencia para uso simple

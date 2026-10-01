@@ -31,7 +31,8 @@ Estado general: la integración continua está en verde (Ubuntu y Windows, Pytho
 | A10 búsqueda por DuckDuckGo | **Pendiente**: necesita tu clave de API | |
 | Candidatos sin URL se fundían en uno solo (hallado después) | **Corregido** | Test: 3 resultados distintos ya dan 3 candidatos |
 | Link Shield + antigüedad del dominio | **Hecho** y medido con datos reales | Phishing marcado alto: 9% a 20% |
-| M1 a M8 | **Pendientes** | |
+| M3 promoción de lo confirmado al caso | **Hecho** (sección 8) | 18 tests nuevos y flujo real con GitHub y búsqueda web |
+| M1, M2, M4 a M8 | **Pendientes** | |
 
 Pruebas: de 429 a **538** tests, todos en verde; ruff y bandit limpios.
 
@@ -351,3 +352,29 @@ Además, la **empresa** del objetivo ahora suma 15 puntos si aparece en el resul
 señales débiles. Los homónimos sin ninguna pista de lugar siguen sin detectarse. Los resultados que son
 **directorios** de LinkedIn ("600+ Carlos Andrade profiles") puntúan como candidatos aunque no sean una persona:
 mejora pendiente.
+
+
+---
+
+## 8. M3 — lo que confirmas pasa al caso (hecho)
+
+Antes, **Confirmar** solo marcaba el candidato en pantalla y **Refinar** extraía únicamente un usuario de
+GitHub, un correo y un dominio. Ahora, al confirmar un candidato:
+
+- Se añaden al **caso activo**, como datos confirmados (origen "confirmado", confianza 90): el **perfil**
+  (LinkedIn, GitHub, X, Instagram…), el **usuario** (de cualquier plataforma, salvo ids de LinkedIn o canales
+  de YouTube), el **correo** (nunca los de rol como `info@` ni falsos como `logo@2x.png`), la **empresa**, la
+  **ubicación** y el **nombre** del perfil.
+- No se duplica nada (se compara sin tildes, mayúsculas ni `@`), y los datos descubiertos antes
+  (`found_*`) se convierten en datos del caso al confirmarlos.
+- **El objetivo no cambia**: una variante de nombre confirmada no sustituye al nombre que escribiste.
+- La interfaz avisa en el registro ("📌 Añadido al caso: …") y refresca la pestaña de datos.
+- **Refinar** ahora usa también perfiles de otras plataformas y la empresa, y **ya no toma `gmail.com` como
+  dominio del objetivo** (defecto que había: un correo `@gmail.com` confirmado ponía `site:gmail.com`).
+
+Rechazar un candidato **no borra** lo que ya se añadió (regla de no borrar sin verificar): se corrige a mano
+en la pestaña de datos.
+
+Verificado con datos reales (Kent C. Dodds, figura pública): de 47 candidatos, al confirmar tres pasaron al
+caso su perfil de GitHub, su LinkedIn real y el correo de su currículum; la semilla de "Refinar" obtuvo el
+dominio `kentcdodds.com` y la empresa.

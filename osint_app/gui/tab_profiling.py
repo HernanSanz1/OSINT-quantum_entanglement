@@ -80,6 +80,7 @@ class ProfilerThread(QThread):
                     'matched': c.matched_fields,
                     'verdict': c.user_verdict,
                     'warning': c.warning,
+                    'extra': c.extra_data,
                 }
                 for c in candidates
             ]
@@ -722,6 +723,24 @@ Snippet:
 
             self._log(f"Confirmado: {summary}")
             self.app.toast.show("Candidato confirmado", kind="success")
+            self._promote_to_case(c)
+
+    def _promote_to_case(self, candidate: Dict):
+        """Pasa al caso activo lo que aporta un candidato confirmado (usuario, correo, empresa, perfil…)."""
+        case_id = getattr(self.app, "active_case_id", None)
+        if not case_id:
+            return
+        try:
+            from ..profiler_engine import promote_confirmed_to_case
+            added = promote_confirmed_to_case(case_id, [candidate])
+        except Exception as e:
+            self._log(f"⚠️ No se pudo añadir al caso: {e}")
+            return
+        if added:
+            self._log("📌 Añadido al caso: " + ", ".join(f"{k}={v}" for k, v in added))
+            for page_name, widget in self.app.pages:
+                if page_name in ("Datos", "Casos") and hasattr(widget, "refresh"):
+                    widget.refresh()
 
     def _on_reject_candidate(self):
         """Descartar candidato seleccionado."""
