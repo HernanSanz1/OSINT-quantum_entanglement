@@ -12,6 +12,8 @@ from .wayback import WaybackMachineTool
 from .crtsh import CrtShTool
 from .domain_whois import DomainWhoisTool
 from .mail_health import MailHealthTool
+from .file_metadata import FileMetadataTool
+from .link_shield import LinkShieldTool
 from .tech_detect import TechDetectTool
 from .web_search import WebSearchTool, GitHubOSINTTool, UsernameVariantsTool
 
@@ -38,6 +40,8 @@ ALL_TOOLS = [
     CrtShTool,
     DomainWhoisTool,
     MailHealthTool,
+    FileMetadataTool,
+    LinkShieldTool,
     TechDetectTool,
     PhoneNumbersTool,
     HoleheTool,

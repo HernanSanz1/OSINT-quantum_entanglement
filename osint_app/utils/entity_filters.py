@@ -18,6 +18,7 @@ PHONE_PATTERN = (r'(?<![\w/.])(?:\+\d{1,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{3,4}[-.\
                  r'|(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4})(?![\w/])')
 
 _IP_RE = re.compile(r'^(?:\d{1,3}\.){3}\d{1,3}$')
+_DECIMAL_RE = re.compile(r'^-?\d+\.\d+$')           # 39.112579: coordenada, precio o versión, no teléfono
 _TIMESTAMP_RE = re.compile(
     r'^(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?:(?:[01]\d|2[0-3])[0-5]\d[0-5]\d)?$')
 
@@ -58,7 +59,7 @@ def is_plausible_phone(value: str) -> bool:
         return False
     if _TIMESTAMP_RE.match(digits):               # 20000815065837 = marca de tiempo (p. ej. Wayback)
         return False
-    return not _IP_RE.match(value.strip())
+    return not (_IP_RE.match(value.strip()) or _DECIMAL_RE.match(value.strip()))
 
 
 def is_dns_txt_record(title: str) -> bool:

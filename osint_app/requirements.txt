@@ -13,6 +13,11 @@ ipwhois>=1.2.0
 # ── Phone number analysis ─────────────────────────────────────────────────────
 phonenumbers>=8.13.0
 
+# ── File metadata (EXIF de imágenes, PDF) ─────────────────────────────────────
+Pillow>=10.0.0
+pypdf>=4.0.0
+defusedxml>=0.7.1     # lectura segura de XML de documentos Office
+
 # ── System resource monitoring ────────────────────────────────────────────────
 psutil>=5.9.0
 

@@ -31,7 +31,7 @@ def test_is_noise_domain(domain, noise):
 
 @pytest.mark.parametrize("phone,ok", [
     ("20000815065837", False), ("19980526", False), ("123456", False), ("1234567890123456", False),
-    ("151.101.64.223", False), ("+593 2 299 3000", True), ("0987654321", True),
+    ("151.101.64.223", False), ("39.112579", False), ("-79.48246", False), ("2.208333", False), ("+593 2 299 3000", True), ("022.551.234", True), ("0987654321", True),
 ])
 def test_is_plausible_phone(phone, ok):
     assert is_plausible_phone(phone) is ok
@@ -109,3 +109,10 @@ def test_dns_txt_tokens_are_not_hashes_in_framework_extractor():
     results = [R(title="DNS TXT: empresa.com", snippet=MD5, url=""),
                R(title="Muestra", snippet="md5 " + "b" * 32, url="")]
     assert FrameworkExtractor().extract_from_results(results)["hash"] == ["b" * 32]
+
+
+def test_gps_coordinates_are_not_phones():
+    # bug hallado con una foto real: la latitud 39.112579 se extraía como teléfono
+    text = "GPS: 39.112579, -79.48246 Fecha: 2012-06-15 10:44:10 precio 1234.5678"
+    assert not [e for e in CorrelationExtractor.extract(text, "t") if e.entity_type == "phone"]
+    assert FrameworkExtractor().extract(text)["phone"] == []
