@@ -59,3 +59,8 @@ def is_plausible_phone(value: str) -> bool:
     if _TIMESTAMP_RE.match(digits):               # 20000815065837 = marca de tiempo (p. ej. Wayback)
         return False
     return not _IP_RE.match(value.strip())
+
+
+def is_dns_txt_record(title: str) -> bool:
+    """Registros TXT del DNS: guardan tokens de verificación de servicios (Twilio, Google…), no hashes de archivos."""
+    return str(title or "").upper().startswith("DNS TXT")

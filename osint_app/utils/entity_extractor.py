@@ -5,7 +5,7 @@ Used to auto-populate case data from tool reports.
 import re
 from typing import Dict, List
 
-from .entity_filters import DOMAIN_PATTERN, PHONE_PATTERN, is_noise_domain, is_plausible_phone
+from .entity_filters import DOMAIN_PATTERN, PHONE_PATTERN, is_dns_txt_record, is_noise_domain, is_plausible_phone
 
 
 # ── Patterns ──────────────────────────────────────────────────────────────────
@@ -56,7 +56,10 @@ class EntityExtractor:
 
     def extract_from_results(self, results: List) -> Dict[str, List[str]]:
         """Extract from a list of SearchResult objects."""
-        combined = " ".join(
-            f"{r.title} {r.snippet} {r.url}" for r in results
-        )
-        return self.extract(combined)
+        def text(rs):
+            return " ".join(f"{r.title} {r.snippet} {r.url}" for r in rs)
+
+        out = self.extract(text(results))
+        # los registros TXT del DNS guardan tokens de verificación, no hashes de archivos
+        out["hash"] = self.extract(text(r for r in results if not is_dns_txt_record(r.title)))["hash"]
+        return out

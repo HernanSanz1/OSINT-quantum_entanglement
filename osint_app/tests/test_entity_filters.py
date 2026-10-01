@@ -84,3 +84,28 @@ def test_tool_own_hosts_are_not_entities():
     text = "https://crt.sh/?q=empresa.com https://rdap.org/domain/empresa.com sub.empresa.com"
     out = {e.value for e in CorrelationExtractor.extract(text, "t") if e.entity_type == "domain"}
     assert out == {"sub.empresa.com", "empresa.com"}      # sin "mpresa.com" ni "crt.sh" ni "rdap.org"
+
+
+MD5 = "d41d8cd98f00b204e9800998ecf8427e"
+
+
+def test_dns_txt_tokens_are_not_hashes_in_correlation(temp_db):
+    import json
+    from osint_app.case_manager import CaseManager
+    from osint_app.correlation_engine import CorrelationEngine
+    raw = json.dumps([
+        {"title": "DNS TXT: empresa.com", "snippet": MD5},
+        {"title": "DNS TXT: empresa.com", "snippet": "twilio-domain-verification=" + MD5[::-1]},
+        {"title": "Malware conocido", "snippet": "sha256 de muestra " + "a" * 64 + " md5 " + "b" * 32},
+    ])
+    eng = CorrelationEngine(CaseManager().create("t", "").id)
+    eng.process_tool_results("dnspython", raw)
+    hashes = {e.value for e in eng.entities.values() if e.entity_type.startswith("hash_")}
+    assert hashes == {"a" * 64, "b" * 32}       # los de un resultado normal se conservan
+
+
+def test_dns_txt_tokens_are_not_hashes_in_framework_extractor():
+    from types import SimpleNamespace as R
+    results = [R(title="DNS TXT: empresa.com", snippet=MD5, url=""),
+               R(title="Muestra", snippet="md5 " + "b" * 32, url="")]
+    assert FrameworkExtractor().extract_from_results(results)["hash"] == ["b" * 32]

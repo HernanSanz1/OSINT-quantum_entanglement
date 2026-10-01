@@ -26,7 +26,7 @@ from collections import defaultdict
 from .db.feedback_db import db
 from .core.models import TargetData, DataType
 from .utils.entity_filters import (
-    DOMAIN_PATTERN, PHONE_PATTERN, is_noise_domain, is_plausible_phone,
+    DOMAIN_PATTERN, PHONE_PATTERN, is_dns_txt_record, is_noise_domain, is_plausible_phone,
 )
 
 
@@ -281,7 +281,10 @@ class CorrelationEngine:
             all_entities = []
             for item in data:
                 if isinstance(item, dict):
-                    all_entities.extend(EntityExtractor.extract_from_json(item, tool_name))
+                    found = EntityExtractor.extract_from_json(item, tool_name)
+                    if is_dns_txt_record(item.get("title")):     # token de verificación, no un hash
+                        found = [e for e in found if not e.entity_type.startswith("hash_")]
+                    all_entities.extend(found)
                 elif isinstance(item, str):
                     all_entities.extend(EntityExtractor.extract(item, tool_name))
             return self.add_entities(all_entities)
