@@ -24,7 +24,7 @@ Estado general: la integración continua está en verde (Ubuntu y Windows, Pytho
 | A3 falsos "owns"/"same_person" | **Corregido** | 12 casos de test |
 | A4 ruido del extractor | **Corregido** (correos falsos, IPs inválidas o privadas, `@código`) | Misma extracción real de python.org: 76 entidades, ninguna legítima perdida |
 | A5 puntuación de nombres, teléfonos y URLs | **Corregido** (módulo nuevo `person_match`) | Los 6 casos de la tabla ahora dan lo esperado; 30 tests nuevos |
-| A6 homónimos LATAM, ciudad, empresa | **Pendiente** | |
+| A6 homónimos LATAM, ciudad, empresa | **Hecho**: señales graduadas (ver sección 7); la función estricta y su métrica no cambiaron | Métrica etiquetada de 20 casos (precisión 100%, recall 100%); búsqueda web real con "Carlos Andrade" (Ecuador): 3 de 16 marcados, los 3 de `mx.linkedin.com` |
 | A7 GitHub confundía error con "no existe"; variantes puntuaban 90 siempre | **Corregido** | API real de GitHub: `torvalds` 90, `linus` (otra persona) 40, cuentas sin nombre 55 |
 | A8 clasificación `x.com` por subcadena | **Corregido** | 15 casos de test |
 | A9 dorks con categorías delicadas | **Pendiente**: es una decisión de política tuya | |
@@ -317,3 +317,37 @@ sustituye** al objetivo con el que se lanzan las demás herramientas.
 Errores que solo salieron con datos reales: títulos que genera la propia herramienta
 ("Lenguajes principales de x") tomados como nombre, `@epicweb-dev` cortado como `@epicweb` y
 "Replies by Linus Torvalds" tomado como nombre.
+
+
+---
+
+## 7. A6 — señales graduadas de homónimo (hecho)
+
+La función estricta `homonym_warning` (país claramente ajeno) **no cambió** y su métrica (precisión 100%,
+recall 100%) sigue igual. Encima se añadieron señales más débiles, cada una con su penalización; nunca se
+descarta un resultado (enfoque A): solo se avisa y baja la puntuación. El total se limita a 40 puntos.
+
+| Señal | Ejemplo para un objetivo de Ecuador | Penalización |
+|---|---|---|
+| País ajeno (la de siempre) | "Madrid, Spain" | 30 |
+| País vecino | "Bogotá, Colombia", "Lima, Perú" | 15 |
+| Ciudad de otro país latinoamericano | "Medellín", "Monterrey" | 15 |
+| Ciudad de fuera de Latinoamérica | "Miami" | 25 |
+| LinkedIn de otro país | `mx.linkedin.com`, `pe.linkedin.com` | 20 |
+| Sitio con extensión de otro país | `.com.mx`, `.es`, `.com.ar` | 10 |
+| Otra ciudad del mismo país que el contexto | contexto "Loja", resultado "Guayaquil" | 8 |
+
+Si el texto menciona el país del objetivo o una de sus ciudades, se considera ligado a él y no se aplican
+las señales débiles. Si ya hay un país ajeno, su ciudad no se suma otra vez.
+
+**Falsos positivos evitados a propósito:** una ciudad solo cuenta si aparece con mayúscula inicial, y la lista
+excluye las que son también apellidos o nombres (Mendoza, Rosario, Zamora, Ibarra, Quevedo, Pereira, Trujillo,
+Orlando, Roma…) o que existen en varios países (Valencia, Córdoba, Santiago, Cuenca, Guadalajara…).
+"Juan Mendoza" en Quito o "la lima y la manta del cuarto" no generan ninguna señal.
+
+Además, la **empresa** del objetivo ahora suma 15 puntos si aparece en el resultado (antes no puntuaba).
+
+**Limitaciones:** el objetivo necesita un país reconocible (Latinoamérica, España, EE. UU. o Brasil) para las
+señales débiles. Los homónimos sin ninguna pista de lugar siguen sin detectarse. Los resultados que son
+**directorios** de LinkedIn ("600+ Carlos Andrade profiles") puntúan como candidatos aunque no sean una persona:
+mejora pendiente.

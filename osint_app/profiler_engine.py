@@ -32,7 +32,7 @@ from .tools import build_tool_registry, ALL_TOOLS
 from .core.models import QueryParameters, SearchResult
 from .correlation_engine import CorrelationEngine
 from .utils import homonyms
-from .utils.person_match import name_match, normalize_url, phone_in_text, username_in_text
+from .utils.person_match import name_match, normalize_text, normalize_url, phone_in_text, username_in_text
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ class ProfilerEngine:
     """
 
     # Cuánto baja la confianza de un candidato con señal de homónimo (no se borra).
-    HOMONYM_PENALTY = 30.0
+    HOMONYM_PENALTY = homonyms.STRONG_PENALTY
 
     # Búsqueda encadenada (segunda ronda): con los usernames descubiertos en la
     # primera ronda, se relanzan estas herramientas. Se limita el número de
@@ -379,11 +379,12 @@ class ProfilerEngine:
                 confidence, matched = self._calculate_confidence(sr, seed)
 
                 if confidence >= min_confidence:
-                    # Señal de homónimo (enfoque A): avisa y penaliza, no descarta.
+                    # Señales de homónimo (enfoque A): avisan y penalizan según su fuerza, nunca descartan.
                     text = f"{sr.title} {sr.snippet} {sr.url}"
-                    warning = homonyms.homonym_warning(text, seed.country) or ""
-                    if warning:
-                        confidence = max(0.0, confidence - self.HOMONYM_PENALTY)
+                    signals = homonyms.homonym_signals(text, sr.url, seed.country, seed.context)
+                    warning = homonyms.warning_text(signals)
+                    if signals:
+                        confidence = max(0.0, confidence - homonyms.total_penalty(signals))
 
                     candidate = Candidate(
                         source_tool=tool_result.tool_name,
@@ -454,6 +455,13 @@ class ProfilerEngine:
             if context_matches >= 2:
                 score += 15
                 matched.append('context')
+
+        # Empresa: corrobora que es la persona correcta (y no un homónimo de otra empresa)
+        if seed.company and len(normalize_text(seed.company)) >= 3:
+            company = normalize_text(seed.company)
+            if re.search(rf"(?<![a-z0-9]){re.escape(company)}(?![a-z0-9])", normalize_text(text)):
+                score += 15
+                matched.append('company')
 
         # Dominio
         if seed.domain and seed.domain.lower() in text:
