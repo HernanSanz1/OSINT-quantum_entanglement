@@ -34,7 +34,8 @@ Estado general: la integración continua está en verde (Ubuntu y Windows, Pytho
 | M3 promoción de lo confirmado al caso | **Hecho** (sección 8) | 18 tests nuevos y flujo real con GitHub y búsqueda web |
 | M2 semilla más rica | **Hecho** (sección 9) | Flujo real con datos solo adicionales; pestaña real probada en Windows; 16 tests nuevos |
 | Directorios de LinkedIn como candidatos | **Hecho** (sección 10) | 28 tests; ver la nota sobre la verificación en vivo |
-| M1, M4 a M8 | **Pendientes** | |
+| M4 seguridad de los datos | **Hecho** (sección 11), con límites | Migración con tu base real (1 caso, 1 dato, 3 reportes, idéntica); DPAPI real en Windows; ventana real con el aviso |
+| M1, M5 a M8 | **Pendientes** | |
 
 Pruebas: de 429 a **538** tests, todos en verde; ruff y bandit limpios.
 
@@ -436,3 +437,37 @@ porque DuckDuckGo bloqueaba por ráfaga de consultas.
 **Defecto propio hallado al probar:** mis primeras expresiones terminaban con un carácter invisible de "retroceso"
 (la secuencia de escape se perdió al generar el archivo); se corrigió y se revisó **todo el código** sin hallar
 otros caracteres de control.
+
+
+---
+
+## 11. M4 — seguridad de los datos (hecho, con límites)
+
+Los casos tienen datos personales de terceros. Qué cambió:
+
+| Antes | Ahora |
+|---|---|
+| La base de casos estaba dentro de la carpeta del proyecto, que en este equipo está en **OneDrive** (se sincroniza con la nube de Microsoft) | Va a `%LOCALAPPDATA%\SENTINEL` (fuera de la nube). Se puede cambiar con la variable `SENTINEL_DATA_DIR` |
+| Las claves de API se guardaban en texto plano (`~/.osint_v2_keys`; el `chmod 600` no hace nada en Windows) | Se cifran con **DPAPI de Windows**: solo tu usuario de Windows, en este equipo, puede leerlas. Las que ya estaban en claro se cifran solas al leerlas |
+| Nada avisaba si los datos quedaban en la nube | Al abrir el programa, un aviso rojo si la carpeta de datos está en OneDrive, Dropbox, Google Drive, iCloud, etc. |
+| Los tests podían tocar la base real | Un `conftest.py` en la raíz fuerza una carpeta temporal: los tests no crean, migran ni modifican tus casos |
+
+**La migración nunca pierde datos:** copia la base antigua con la copia segura de SQLite (aunque esté en uso),
+comprueba que las filas coinciden y solo entonces la deja en su sitio. **No borra ni mueve el original.** Si la copia
+falla, el programa sigue usando la base original en vez de arrancar vacío. Si el baúl cifrado no se puede leer
+(p. ej. copiado desde otro equipo), se respalda en `.unreadable.bak` antes de reemplazarlo.
+
+**Verificado con tus datos reales:** la base copiada es idéntica a la original (1 caso, 1 dato, 3 reportes) y el programa
+ve tu caso desde la ruta nueva; el aviso de nube aparece en la ventana real al apuntar a la carpeta de OneDrive.
+
+**Pendiente tuyo:** la base original sigue en `osint_app/data/osint_v2.db`, **dentro de OneDrive**, y por tanto
+sincronizada. El programa ya no la usa. Cuando confirmes que todo está bien, bórrala (o muévela) para que deje de
+estar en la nube.
+
+**Límites (lo que esto NO resuelve):**
+- La base nueva sigue **sin cifrar en disco**. Protege la carpeta de tu usuario de Windows, pero no un disco
+  robado: conviene tener **BitLocker** activo. Cifrar la base exigiría SQLCipher (difícil de instalar en Windows) o
+  pedir una contraseña al abrir.
+- Los **informes exportados** a `Descargas` (JSON y HTML) siguen en texto plano.
+- Lo que ya se haya sincronizado a OneDrive antes de este cambio puede conservar versiones anteriores en su historial.
+- El cifrado de claves es solo de Windows; en otros sistemas se guardan en claro con permisos de solo propietario.

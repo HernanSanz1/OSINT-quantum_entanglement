@@ -9,11 +9,14 @@ Priority order:
 This file NEVER stores keys in the project directory.
 Keys are NEVER logged and NEVER appear in __repr__ / __str__ of any object.
 """
+import base64
 import json
 import logging
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
+
+from . import dpapi
 
 logger = logging.getLogger(__name__)
 
@@ -100,25 +103,48 @@ class SecretVault:
 
     # ── File I/O ──────────────────────────────────────────────────────────────
 
+    # En Windows el archivo va cifrado con DPAPI: solo este usuario de Windows, en este equipo, puede leerlo.
+    # Formato: {"_format": "dpapi-v1", "data": "<base64 del JSON cifrado>"}. Un archivo antiguo en texto plano
+    # se sigue leyendo y se vuelve a guardar cifrado en el acto.
+    _FORMAT = "dpapi-v1"
+
     def _read_vault(self) -> Dict[str, str]:
         if not self._vault_path.exists():
             return {}
         try:
-            text = self._vault_path.read_text(encoding="utf-8")
-            data = json.loads(text)
+            raw = json.loads(self._vault_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict) and raw.get("_format") == self._FORMAT:
+                data = json.loads(dpapi.unprotect(base64.b64decode(raw["data"])).decode("utf-8"))
+                encrypted = True
+            else:
+                data, encrypted = raw, False
             # Ensure only string values — never log content
-            return {k: str(v) for k, v in data.items() if isinstance(v, str)}
+            clean = {k: str(v) for k, v in data.items() if isinstance(v, str)}
         except Exception as e:
             logger.debug(f"SecretVault read error: {type(e).__name__}")
+            self._unreadable = True
             return {}
+        if not encrypted and clean and dpapi.AVAILABLE:
+            self._write_vault(clean)            # claves que estaban en texto plano: se cifran ahora
+        return clean
 
     def _write_vault(self, data: Dict[str, str]) -> None:
         try:
-            self._vault_path.write_text(
-                json.dumps(data, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            # Restrict file permissions: owner read/write only (600)
+            if getattr(self, "_unreadable", False) and self._vault_path.exists():
+                # El archivo existente no se pudo leer (p. ej. cifrado en otro equipo): se respalda antes de reemplazarlo
+                backup = self._vault_path.with_name(self._vault_path.name + ".unreadable.bak")
+                backup.write_bytes(self._vault_path.read_bytes())
+                logger.error(f"SecretVault: el baúl existente no se pudo leer; se guardó una copia en {backup}")
+                self._unreadable = False
+            payload = json.dumps(data, indent=2, ensure_ascii=False)
+            if dpapi.AVAILABLE:
+                try:
+                    blob = base64.b64encode(dpapi.protect(payload.encode("utf-8"))).decode("ascii")
+                    payload = json.dumps({"_format": self._FORMAT, "data": blob}, indent=2)
+                except OSError as e:
+                    logger.error(f"SecretVault: no se pudo cifrar con DPAPI ({e}); se guarda sin cifrar")
+            self._vault_path.write_text(payload, encoding="utf-8")
+            # Restrict file permissions: owner read/write only (600). En Windows no tiene efecto: ahí protege el cifrado.
             self._vault_path.chmod(0o600)
         except Exception as e:
             logger.error(f"SecretVault write error: {type(e).__name__}")

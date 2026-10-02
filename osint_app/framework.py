@@ -4,7 +4,6 @@ Runs one tool at a time, extracts entities from results, and saves reports.
 """
 import json, time, logging
 from typing import Dict, List, Optional
-from pathlib import Path
 
 from .core.models import (
     QueryParameters, SearchResult, TargetData, ToolReport,
@@ -12,12 +11,13 @@ from .core.models import (
 from .tools import build_tool_registry
 from .db.feedback_db import db
 from .utils.compatibility import DataCompatibilityEngine
+from .utils.data_paths import data_dir
 from .utils.entity_extractor import EntityExtractor
 from .utils.resource_monitor import ResourceMonitor
 from .utils.secret_vault import vault
 
 logger = logging.getLogger(__name__)
-CONFIG_PATH = Path(__file__).parent / "data" / "osint_config.json"
+CONFIG_PATH = data_dir() / "osint_config.json"
 
 
 class OSINTFramework:

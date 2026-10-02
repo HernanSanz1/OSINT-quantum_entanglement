@@ -9,9 +9,11 @@ from typing import Dict, List, Optional
 from pathlib import Path
 
 from ..core.models import Case, TargetData, ToolReport, AICorrelation, CaseStatus
+from ..utils.data_paths import resolve_db_path
 
 logger = logging.getLogger(__name__)
-DB_PATH = Path(__file__).parent.parent / "data" / "osint_v2.db"
+# Fuera de la carpeta del proyecto (que puede estar en OneDrive); ver utils/data_paths.py
+DB_PATH = resolve_db_path()
 
 
 class Database:

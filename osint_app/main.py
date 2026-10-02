@@ -50,6 +50,14 @@ def main():
                 
         window = OSINTGUI()
         window.show()
+
+        # Los casos tienen datos personales de terceros: avisar si quedan en una carpeta sincronizada con la nube
+        from osint_app.db.feedback_db import DB_PATH
+        from osint_app.utils.data_paths import synced_warning
+        cloud_warning = synced_warning(DB_PATH.parent)
+        if cloud_warning:
+            logging.warning(cloud_warning)
+            window.toast.show(cloud_warning, kind="error")
         sys.exit(app.exec())
     except Exception as e:
         logging.critical(f"Error al lanzar GUI: {e}", exc_info=True)
