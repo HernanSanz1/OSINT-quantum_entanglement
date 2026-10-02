@@ -126,7 +126,7 @@ def test_extra_identifiers_skip_primary_duplicates_and_are_capped():
     eng, calls = engine_with("Holehe")
     seed = SeedData(name="X Y", email="a@x.com", extra_emails=["A@X.COM", "b@x.com", "c@x.com", "d@x.com", "e@x.com"])
     eng.run_extra_identifiers(seed)
-    assert [c[3] for c in calls] == ["b@x.com", "c@x.com", "d@x.com"]            # sin el principal, y solo 3
+    assert sorted(c[3] for c in calls) == ["b@x.com", "c@x.com", "d@x.com"]     # sin el principal, solo 3 (el orden de las llamadas en paralelo varía)
 
 
 def test_extra_identifiers_respect_tool_selection_and_availability():
