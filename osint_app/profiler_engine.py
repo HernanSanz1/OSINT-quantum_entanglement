@@ -39,6 +39,25 @@ from .utils.identity import name_from_profile_title, parse_profile_url, profile_
 logger = logging.getLogger(__name__)
 
 
+def unique_values(values, strip_at: bool = False) -> List[str]:
+    """Valores sin vacíos ni repetidos (sin distinguir mayúsculas), en el orden en que llegaron."""
+    out: List[str] = []
+    seen = set()
+    for value in values:
+        text = str(value or "").strip()
+        if strip_at:
+            text = text.lstrip("@").strip()
+        if text and text.lower() not in seen:
+            seen.add(text.lower())
+            out.append(text)
+    return out
+
+
+def parse_list(text: str, strip_at: bool = False) -> List[str]:
+    """'a@x.com, b@y.com; c@z.com' → ['a@x.com', 'b@y.com', 'c@z.com']. Para los campos de varios valores."""
+    return unique_values(re.split(r"[,;\n]+", text or ""), strip_at=strip_at)
+
+
 @dataclass
 class SeedData:
     """Datos semilla del objetivo."""
@@ -49,7 +68,26 @@ class SeedData:
     username: Optional[str] = None
     phone: Optional[str] = None
     domain: Optional[str] = None
-    company: Optional[str] = None
+    company: Optional[str] = None            # empleador
+    # Más datos del objetivo (todos opcionales)
+    city: str = ""
+    university: str = ""
+    aliases: List[str] = field(default_factory=list)          # apodos y variantes del nombre ("Carlos Andrade León")
+    extra_emails: List[str] = field(default_factory=list)
+    extra_usernames: List[str] = field(default_factory=list)
+    extra_phones: List[str] = field(default_factory=list)
+
+    def all_names(self) -> List[str]:
+        return unique_values([self.name, *self.aliases])
+
+    def all_emails(self) -> List[str]:
+        return unique_values([self.email, *self.extra_emails])
+
+    def all_usernames(self) -> List[str]:
+        return unique_values([self.username, *self.extra_usernames], strip_at=True)
+
+    def all_phones(self) -> List[str]:
+        return unique_values([self.phone, *self.extra_phones])
 
     def to_query_params(self) -> QueryParameters:
         """Convierte a QueryParameters para las herramientas.
@@ -58,7 +96,7 @@ class SeedData:
         UsernameVariants lo usan como contexto extra de búsqueda y para
         extraer el año. (Antes se perdían por el camino.)
         """
-        observable = " ".join(p for p in (self.context, self.country) if p).strip()
+        observable = " ".join(p for p in (self.context, self.country, self.city) if p).strip()
         return QueryParameters(
             target_name=self.name,
             email=self.email or "",
@@ -67,6 +105,8 @@ class SeedData:
             company=self.company or "",
             phone=self.phone or "",
             observable=observable,
+            location=self.city or "",
+            university=self.university or "",
         )
 
 
@@ -266,6 +306,8 @@ class ProfilerEngine:
 
         self.results = results
 
+        self.run_extra_identifiers(seed, max_workers=max_workers, timeout_per_tool=timeout_per_tool, only_tools=only_tools)
+
         if chain:
             round1_hits = [sr for tr in results for sr in tr.results]
             discovered = extract_usernames_from_results(round1_hits)
@@ -356,13 +398,63 @@ class ProfilerEngine:
             qp.username = u
             for tool_name in tools:
                 tasks.append((tool_name, qp, f"{tool_name}:{u}"))
+        return self._run_labelled_tasks(tasks, max_workers, timeout_per_tool)
 
+    def _run_labelled_tasks(self, tasks: List[Tuple[str, QueryParameters, str]], max_workers: int,
+                            timeout_per_tool: int) -> List[ToolResult]:
+        """Ejecuta (herramienta, parámetros, etiqueta) en paralelo y añade los resultados a self.results."""
+        if not tasks:
+            return []
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
         future_to_label = {executor.submit(self._execute_tool, tn, qp, label): label for (tn, qp, label) in tasks}
         new_results = self._gather(executor, future_to_label, timeout_per_tool * 2)
-
         self.results.extend(new_results)
         return new_results
+
+    # Herramientas que se relanzan por cada identificador adicional de la semilla
+    EXTRA_TOOLS = {
+        "username": CHAINED_USERNAME_TOOLS,
+        "email": ["Holehe", "Google Dorks"],
+        "phone": ["phonenumbers", "Google Dorks"],
+        "alias": ["WebSearch", "UsernameVariants"],
+    }
+    MAX_EXTRA_PER_KIND = 3
+
+    def run_extra_identifiers(self, seed: SeedData, max_workers: int = 6, timeout_per_tool: int = 90,
+                              only_tools: List[str] = None) -> List[ToolResult]:
+        """Relanza las herramientas adecuadas por cada alias, correo, usuario o teléfono ADICIONAL de la semilla.
+
+        La primera ronda ya cubrió el principal. Se limita a MAX_EXTRA_PER_KIND de cada tipo para no
+        multiplicar las peticiones (y que los buscadores no bloqueen).
+        """
+        requested = set(only_tools) if only_tools else None
+
+        def usable(names):
+            return [t for t in names if t in self.tools and self.tools[t].is_available
+                    and (requested is None or t in requested)]
+
+        def extras(values, primary, strip_at=False):
+            skip = (primary or "").lower().lstrip("@")
+            return [v for v in unique_values(values, strip_at=strip_at) if v.lower().lstrip("@") != skip][:self.MAX_EXTRA_PER_KIND]
+
+        plan = (
+            ("username", extras(seed.extra_usernames, seed.username, strip_at=True), "username"),
+            ("email", extras(seed.extra_emails, seed.email), "email"),
+            ("phone", extras(seed.extra_phones, seed.phone), "phone"),
+            ("alias", extras(seed.aliases, seed.name), "target_name"),
+        )
+        tasks = []
+        for kind, values, param in plan:
+            tools = usable(self.EXTRA_TOOLS[kind])
+            for value in values:
+                for tool_name in tools:
+                    qp = seed.to_query_params()
+                    setattr(qp, param, value)
+                    tasks.append((tool_name, qp, f"{tool_name}:{value}"))
+        if not tasks:
+            return []
+        self._log(f"➕ Datos adicionales de la semilla: {len(tasks)} búsquedas")
+        return self._run_labelled_tasks(tasks, max_workers, timeout_per_tool)
 
     def extract_candidates(self, seed: SeedData, min_confidence: float = 30.0) -> List[Candidate]:
         """
@@ -384,7 +476,7 @@ class ProfilerEngine:
                 if confidence >= min_confidence:
                     # Señales de homónimo (enfoque A): avisan y penalizan según su fuerza, nunca descartan.
                     text = f"{sr.title} {sr.snippet} {sr.url}"
-                    signals = homonyms.homonym_signals(text, sr.url, seed.country, seed.context)
+                    signals = homonyms.homonym_signals(text, sr.url, seed.country, f"{seed.context} {seed.city}")
                     warning = homonyms.warning_text(signals)
                     if signals:
                         confidence = max(0.0, confidence - homonyms.total_penalty(signals))
@@ -431,20 +523,21 @@ class ProfilerEngine:
         score = 0.0
         matched = []
 
-        # Nombre: palabras completas, sin depender de tildes, mayúsculas ni del orden
-        if seed.name:
-            points, kind = name_match(seed.name, text)
+        # Nombre o alias: palabras completas, sin depender de tildes, mayúsculas ni del orden
+        names = seed.all_names()
+        if names:
+            (points, kind), used = max(((name_match(n, text), n) for n in names), key=lambda r: r[0][0])
             score += points
             if kind:
-                matched.append(kind)
+                matched.append(kind if used == seed.name else ("alias" if kind == "name" else "alias_partial"))
 
         # Email (muy alto valor)
-        if seed.email and seed.email.lower() in text:
+        if any(e.lower() in text for e in seed.all_emails()):
             score += 35
             matched.append('email')
 
         # Username
-        if seed.username and username_in_text(seed.username, text):
+        if any(username_in_text(u, text) for u in seed.all_usernames()):
             score += 25
             matched.append('username')
 
@@ -460,12 +553,13 @@ class ProfilerEngine:
                 score += 15
                 matched.append('context')
 
-        # Empresa: corrobora que es la persona correcta (y no un homónimo de otra empresa)
-        if seed.company and len(normalize_text(seed.company)) >= 3:
-            company = normalize_text(seed.company)
-            if re.search(rf"(?<![a-z0-9]){re.escape(company)}(?![a-z0-9])", normalize_text(text)):
-                score += 15
-                matched.append('company')
+        # Empleador, universidad y ciudad: corroboran que es la persona correcta (y no un homónimo)
+        norm = normalize_text(text)
+        for label, value, points in (("company", seed.company, 15), ("university", seed.university, 15), ("city", seed.city, 10)):
+            phrase = normalize_text(value or "")
+            if len(phrase) >= 3 and re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", norm):
+                score += points
+                matched.append(label)
 
         # Dominio
         if seed.domain and seed.domain.lower() in text:
@@ -473,7 +567,7 @@ class ProfilerEngine:
             matched.append('domain')
 
         # Phone
-        if seed.phone and phone_in_text(seed.phone, text):
+        if any(phone_in_text(p, text) for p in seed.all_phones()):
             score += 30
             matched.append('phone')
 
@@ -553,12 +647,21 @@ class ProfilerEngine:
                 ("name", seed.name), ("context", seed.context), ("country", seed.country),
                 ("email", seed.email), ("username", seed.username),
                 ("phone", seed.phone), ("domain", seed.domain), ("company", seed.company),
+                ("location", seed.city), ("university", seed.university),
             ]
             for field_type, value in seed_fields:
                 if value:
                     db.add_target_data(TargetData(
                         case_id=case_id, field_type=field_type, value=value,
                         source="seed", confidence=100,
+                    ))
+            # Los datos adicionales quedan con confianza algo menor: el principal sigue siendo el objetivo
+            for field_type, values in (("name", seed.aliases), ("email", seed.extra_emails),
+                                       ("username", seed.extra_usernames), ("phone", seed.extra_phones)):
+                for value in unique_values(values, strip_at=(field_type == "username")):
+                    db.add_target_data(TargetData(
+                        case_id=case_id, field_type=field_type, value=value,
+                        source="seed", confidence=95,
                     ))
 
         for tr in self.results:

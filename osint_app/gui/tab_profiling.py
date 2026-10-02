@@ -30,7 +30,7 @@ from PySide6.QtGui import QColor, QFont
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from osint_app.profiler_engine import ProfilerEngine, SeedData, Candidate
+from osint_app.profiler_engine import ProfilerEngine, SeedData, Candidate, parse_list
 from osint_app.tools import build_tool_registry
 
 
@@ -293,6 +293,39 @@ class ProfilingTab(QWidget):
         self.input_domain.setFixedHeight(40)
         left_layout.addWidget(self.input_domain)
 
+        # Más datos del objetivo (plegable, para no recargar la pantalla)
+        self.btn_more = QPushButton("▸ Más datos del objetivo (alias, otros correos, ciudad…)")
+        self.btn_more.setCheckable(True)
+        self.btn_more.setStyleSheet("text-align: left; padding: 6px; background: transparent; color: #00d4ff; border: none;")
+        self.btn_more.toggled.connect(self._toggle_more)
+        left_layout.addWidget(self.btn_more)
+
+        self.more_box = QWidget()
+        more_layout = QVBoxLayout(self.more_box)
+        more_layout.setContentsMargins(0, 0, 0, 0)
+        more_layout.setSpacing(2)
+        more_fields = (
+            ("input_company", "Empresa donde trabaja", "Banco Pichincha"),
+            ("input_university", "Universidad", "UTPL"),
+            ("input_city", "Ciudad", "Loja"),
+            ("input_aliases", "Alias, apodos o variantes del nombre (separados por coma)", "Carlos Andrade León, Charly Andrade"),
+            ("input_more_emails", "Otros correos (separados por coma)", "otro@gmail.com, trabajo@empresa.com"),
+            ("input_more_usernames", "Otros usernames (separados por coma)", "@charly, candrade"),
+            ("input_more_phones", "Otros teléfonos (separados por coma)", "+593988888888"),
+        )
+        for attr, label, placeholder in more_fields:
+            lbl = QLabel(label)
+            lbl.setStyleSheet(label_style)
+            more_layout.addWidget(lbl)
+            edit_widget = QLineEdit()
+            edit_widget.setPlaceholderText(placeholder)
+            edit_widget.setStyleSheet(input_style)
+            edit_widget.setFixedHeight(40)
+            setattr(self, attr, edit_widget)
+            more_layout.addWidget(edit_widget)
+        self.more_box.setVisible(False)
+        left_layout.addWidget(self.more_box)
+
         # Tools Selection - compacto
         lbl_tools = QLabel("HERRAMIENTAS")
         lbl_tools.setStyleSheet("color: #00d4ff; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin-top: 10px;")
@@ -517,6 +550,9 @@ class ProfilingTab(QWidget):
         self.input_email.clear()
         self.input_phone.clear()
         self.input_domain.clear()
+        for widget in (self.input_company, self.input_university, self.input_city, self.input_aliases,
+                       self.input_more_emails, self.input_more_usernames, self.input_more_phones):
+            widget.clear()
         self.confirmed_list.clear()
         self.candidates_table.setRowCount(0)
         self.candidate_details.clear()
@@ -530,30 +566,37 @@ class ProfilingTab(QWidget):
         self._log("Nuevo perfil iniciado")
         self.app.toast.show("Nuevo perfil iniciado", kind="info")
 
+    def _toggle_more(self, shown: bool):
+        self.more_box.setVisible(shown)
+        self.btn_more.setText(("▾" if shown else "▸") + " Más datos del objetivo (alias, otros correos, ciudad…)")
+
+    def _seed_from_inputs(self) -> SeedData:
+        """Arma la semilla con todos los campos de la pantalla, incluidos los datos adicionales."""
+        return SeedData(
+            name=self.input_name.text().strip(),
+            context=self.input_context.text().strip(),
+            country=self.input_country.currentText(),
+            username=self.input_username.text().strip() or None,
+            email=self.input_email.text().strip() or None,
+            phone=self.input_phone.text().strip() or None,
+            domain=self.input_domain.text().strip() or None,
+            company=self.input_company.text().strip() or None,
+            university=self.input_university.text().strip(),
+            city=self.input_city.text().strip(),
+            aliases=parse_list(self.input_aliases.text()),
+            extra_emails=parse_list(self.input_more_emails.text()),
+            extra_usernames=parse_list(self.input_more_usernames.text(), strip_at=True),
+            extra_phones=parse_list(self.input_more_phones.text()),
+        )
+
     def _on_search(self):
         """Iniciar perfilamiento con los datos semilla"""
-        name = self.input_name.text().strip()
-        context = self.input_context.text().strip()
-        country = self.input_country.currentText()
-        username = self.input_username.text().strip() or None
-        email = self.input_email.text().strip() or None
-        phone = self.input_phone.text().strip() or None
-        domain = self.input_domain.text().strip() or None
+        seed = self._seed_from_inputs()
+        name, context, country = seed.name, seed.context, seed.country
 
         if not name:
             self.app.toast.show("Ingresa un nombre para buscar", kind="error")
             return
-
-        # Crear seed
-        seed = SeedData(
-            name=name,
-            context=context,
-            country=country,
-            username=username,
-            email=email,
-            phone=phone,
-            domain=domain
-        )
 
         self._set_busy(True)
         self._log(f"Iniciando perfilamiento: {name}")
@@ -775,15 +818,7 @@ Snippet:
         from ..profiler_engine import SeedData, enrich_seed_from_candidates
 
         confirmed = [c for c in self.candidates_data if c.get("url") in self.confirmed_urls]
-        base = SeedData(
-            name=self.input_name.text().strip(),
-            context=self.input_context.text().strip(),
-            country=self.input_country.currentText(),
-            username=self.input_username.text().strip() or None,
-            email=self.input_email.text().strip() or None,
-            phone=self.input_phone.text().strip() or None,
-            domain=self.input_domain.text().strip() or None,
-        )
+        base = self._seed_from_inputs()
         enriched = enrich_seed_from_candidates(base, confirmed)
 
         # Reflejar los datos nuevos en los campos para que el usuario los vea
@@ -794,6 +829,8 @@ Snippet:
             self.input_email.setText(enriched.email); new_bits.append(f"email={enriched.email}")
         if enriched.domain and not base.domain:
             self.input_domain.setText(enriched.domain); new_bits.append(f"dominio={enriched.domain}")
+        if enriched.company and not base.company:
+            self.input_company.setText(enriched.company); new_bits.append(f"empresa={enriched.company}")
 
         if not new_bits:
             self.app.toast.show("Los candidatos confirmados no aportan datos nuevos", kind="info")

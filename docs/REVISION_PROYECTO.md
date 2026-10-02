@@ -32,7 +32,8 @@ Estado general: la integración continua está en verde (Ubuntu y Windows, Pytho
 | Candidatos sin URL se fundían en uno solo (hallado después) | **Corregido** | Test: 3 resultados distintos ya dan 3 candidatos |
 | Link Shield + antigüedad del dominio | **Hecho** y medido con datos reales | Phishing marcado alto: 9% a 20% |
 | M3 promoción de lo confirmado al caso | **Hecho** (sección 8) | 18 tests nuevos y flujo real con GitHub y búsqueda web |
-| M1, M2, M4 a M8 | **Pendientes** | |
+| M2 semilla más rica | **Hecho** (sección 9) | Flujo real con datos solo adicionales; pestaña real probada en Windows; 16 tests nuevos |
+| M1, M4 a M8 | **Pendientes** | |
 
 Pruebas: de 429 a **538** tests, todos en verde; ruff y bandit limpios.
 
@@ -378,3 +379,33 @@ en la pestaña de datos.
 Verificado con datos reales (Kent C. Dodds, figura pública): de 47 candidatos, al confirmar tres pasaron al
 caso su perfil de GitHub, su LinkedIn real y el correo de su currículum; la semilla de "Refinar" obtuvo el
 dominio `kentcdodds.com` y la empresa.
+
+
+---
+
+## 9. M2 — semilla más rica (hecho)
+
+La semilla de una persona ya no es solo un nombre, un correo, un usuario y un teléfono. En la pestaña de
+perfilamiento hay una sección plegable **"Más datos del objetivo"** con:
+
+| Campo | Para qué sirve |
+|---|---|
+| **Empresa donde trabaja**, **Universidad**, **Ciudad** | Corroboran que un resultado es de la persona correcta: suman 15, 15 y 10 puntos si aparecen. La ciudad además da contexto a las señales de homónimo (otra ciudad del mismo país) y a las búsquedas |
+| **Alias, apodos o variantes del nombre** | Se puntúan igual que el nombre ("Carlos Andrade León", "Charly Andrade") y se relanza la búsqueda con cada uno |
+| **Otros correos, usernames y teléfonos** | Se comprueban en los resultados y se relanzan las herramientas adecuadas por cada uno |
+
+Qué herramientas se relanzan por cada dato adicional: **usernames** → GitHub, Sherlock y Maigret; **correos** →
+Holehe y Google Dorks; **teléfonos** → phonenumbers y Google Dorks; **alias** → WebSearch y UsernameVariants.
+Se limita a **3 de cada tipo** para no multiplicar las peticiones (los buscadores bloquean por ráfaga) y se
+respeta la selección de herramientas del usuario.
+
+En el caso, los datos adicionales se guardan con confianza 95 y el principal con 100, así que **el objetivo
+no cambia**. Los alias se unen al nombre mediante la relación `same_name` de la correlación.
+
+La pantalla arma la semilla en un solo lugar (`_seed_from_inputs`), que ahora usan **Iniciar** y **Refinar**
+(antes repetían el código y habrían olvidado los campos nuevos). Los campos aceptan comas, punto y coma o
+saltos de línea, y quitan vacíos y repetidos.
+
+Verificado con datos reales (Kent C. Dodds): con el usuario y el alias solo como datos adicionales, se lanzó
+`GitHubOSINT:kentcdodds` (24 resultados) y el mejor candidato puntuó 85 coincidiendo en nombre, usuario, país y
+ciudad. La pestaña real se probó sin pantalla en Windows (se salta en Linux por seguridad).
