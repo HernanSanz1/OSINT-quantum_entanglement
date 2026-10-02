@@ -33,6 +33,7 @@ Estado general: la integración continua está en verde (Ubuntu y Windows, Pytho
 | Link Shield + antigüedad del dominio | **Hecho** y medido con datos reales | Phishing marcado alto: 9% a 20% |
 | M3 promoción de lo confirmado al caso | **Hecho** (sección 8) | 18 tests nuevos y flujo real con GitHub y búsqueda web |
 | M2 semilla más rica | **Hecho** (sección 9) | Flujo real con datos solo adicionales; pestaña real probada en Windows; 16 tests nuevos |
+| Directorios de LinkedIn como candidatos | **Hecho** (sección 10) | 28 tests; ver la nota sobre la verificación en vivo |
 | M1, M4 a M8 | **Pendientes** | |
 
 Pruebas: de 429 a **538** tests, todos en verde; ruff y bandit limpios.
@@ -409,3 +410,29 @@ saltos de línea, y quitan vacíos y repetidos.
 Verificado con datos reales (Kent C. Dodds): con el usuario y el alias solo como datos adicionales, se lanzó
 `GitHubOSINT:kentcdodds` (24 resultados) y el mejor candidato puntuó 85 coincidiendo en nombre, usuario, país y
 ciudad. La pestaña real se probó sin pantalla en Windows (se salta en Linux por seguridad).
+
+
+---
+
+## 10. Listados de personas fuera de los candidatos (hecho)
+
+Los resultados que son un **listado** y no una persona (por ejemplo `600+ "Carlos Andrade" profiles | LinkedIn`,
+que apuntaba a `linkedin.com/pub/dir/...`) puntuaban como candidatos porque contienen el nombre buscado. Ahora
+se dejan fuera de la lista de candidatos y **siguen guardados en los reportes** de la herramienta (no se pierde
+nada); el registro avisa: "Omitidos N listados que no son una persona ... siguen en los reportes".
+
+Se consideran listados: los directorios de LinkedIn (`/pub/dir/`, `/directory/`) y de Facebook (`/public/`), los
+buscadores de personas (Spokeo, Whitepages, Radaris, BeenVerified, TruePeopleSearch, PeekYou…) y los títulos del
+tipo `600+ "Nombre" profiles`, `400+ profiles`, `1.200 perfiles de Nombre`, `50 people named Nombre`.
+
+**No** se omiten los perfiles reales: `ec.linkedin.com/in/...`, las URLs antiguas `linkedin.com/pub/nombre/12/345/678`,
+las páginas `facebook.com/people/...` ni títulos como "3 profiles of the Open Source community" o "Los 10 mejores
+perfiles de GitHub".
+
+**Verificación:** los tres directorios de LinkedIn reales de la búsqueda "Carlos Andrade" (título y URL exactos) se
+detectan, y su perfil real de `ec.linkedin.com` se conserva. No se pudo repetir la búsqueda en vivo al final
+porque DuckDuckGo bloqueaba por ráfaga de consultas.
+
+**Defecto propio hallado al probar:** mis primeras expresiones terminaban con un carácter invisible de "retroceso"
+(la secuencia de escape se perdió al generar el archivo); se corrigió y se revisó **todo el código** sin hallar
+otros caracteres de control.

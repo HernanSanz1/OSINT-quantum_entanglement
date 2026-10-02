@@ -35,6 +35,7 @@ from .utils import homonyms
 from .utils.person_match import name_match, normalize_text, normalize_url, phone_in_text, username_in_text
 from .utils.entity_filters import FREEMAIL_DOMAINS, ROLE_ACCOUNTS, is_valid_email
 from .utils.identity import name_from_profile_title, parse_profile_url, profile_key
+from .utils.directories import is_directory_result
 
 logger = logging.getLogger(__name__)
 
@@ -464,12 +465,19 @@ class ProfilerEngine:
         self._log(f"Extrayendo candidatos de {len(self.results)} herramientas...")
 
         all_candidates = []
+        self.skipped_listings: Dict[str, int] = {}
 
         for tool_result in self.results:
             if tool_result.status != 'ok':
                 continue
 
             for sr in tool_result.results:
+                # Los listados de personas ("600+ perfiles", directorios) no son candidatos; siguen en los reportes
+                listing = is_directory_result(sr.title, sr.url)
+                if listing:
+                    self.skipped_listings[listing] = self.skipped_listings.get(listing, 0) + 1
+                    continue
+
                 # Calcular confianza basica
                 confidence, matched = self._calculate_confidence(sr, seed)
 
@@ -511,6 +519,9 @@ class ProfilerEngine:
 
         self.candidates = unique_candidates
         self._log(f"Candidatos extraidos: {len(unique_candidates)} unicos")
+        if self.skipped_listings:
+            detail = ", ".join(f"{n} {kind}" for kind, n in self.skipped_listings.items())
+            self._log(f"Omitidos {sum(self.skipped_listings.values())} listados que no son una persona ({detail}); siguen en los reportes")
 
         return unique_candidates
 
