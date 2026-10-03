@@ -2,40 +2,36 @@
 
 Plataforma unificada de inteligencia: perfilamiento de personas, reconocimiento de infraestructura (EAMS), y Cyber Threat Intelligence.
 
-## Perfilamiento Inteligente (SmartProfiler)
+## Perfilamiento de personas (ProfilerEngine)
 
-El SmartProfiler hace correlación automática: solo guarda datos que coincidan con el objetivo.
+Lanza varias herramientas en paralelo, puntúa cada resultado contra los datos del objetivo y deja la decisión al investigador.
 
 ```python
-from osint_app.smart_profiler import smart_profile
+from osint_app.profiler_engine import ProfilerEngine, SeedData
 
-# Buscar persona con contexto
-result = smart_profile(
-    name='Juan Riofrio',
-    context='UDLA Ecuador nacido 2006',  # El año ayuda a generar variantes
-    country='Ecuador'
+seed = SeedData(
+    name='Juan Riofrio', context='UDLA Ecuador nacido 2006', country='Ecuador',
+    city='Quito', university='UDLA',
+    aliases=['Juan Riofrio Pérez'],            # apodos y variantes del nombre
+    extra_usernames=['jriofrio'], extra_emails=['otro@gmail.com'],   # datos adicionales
 )
-
-# Con username conocido (lo pone primero en las variantes)
-result = smart_profile(
-    name='Juan Riofrio',
-    context='UDLA Ecuador',
-    country='Ecuador',
-    username='jdriofrio2006'
-)
+engine = ProfilerEngine(progress_callback=print)
+engine.run_parallel(seed, chain=True)          # chain=True: segunda ronda con los usuarios descubiertos
+candidates = engine.extract_candidates(seed)   # lista ordenada por confianza
+case_id = engine.save_to_case(seed)            # guarda semilla y reportes en un caso
 ```
 
 ### Qué hace:
-1. Genera variantes inteligentes de username (jriofrio, jdriofrio, juanriofrio2006, etc.)
-2. Busca cada variante en GitHub
-3. Evalúa cada candidato contra los datos semilla
-4. Rechaza automáticamente perfiles que no coinciden (ej: Juan Ramos de España)
-5. Solo guarda datos con alta correlación
+1. Lanza las herramientas aplicables y, además, una ronda por cada alias, correo, usuario o teléfono adicional (máx. 3 de cada tipo)
+2. Puntúa cada resultado: nombre (sin tildes ni orden), usuario, correo, teléfono, empresa, universidad, ciudad, país
+3. Marca **posibles homónimos** con señales graduadas (país ajeno o vecino, ciudad de otro país, LinkedIn o extensión de otro país)
+4. Deja fuera de los candidatos los listados de personas (directorios, buscadores), que siguen en los reportes
+5. Al confirmar un candidato (`promote_confirmed_to_case`), lo que aporta pasa al caso como dato confirmado
 
-### Reglas de rechazo automático:
-- Nombre completamente diferente
-- País claramente diferente (España vs Ecuador)
-- Perfil profesional cuando buscamos estudiante
+### Reglas:
+- **Nunca se descarta un resultado automáticamente**: las señales de homónimo solo avisan y bajan la puntuación
+- Lo descubierto no sustituye al objetivo: se guarda aparte (`found_*`) hasta que el investigador lo confirma
+- No hay IA: todo son reglas explicables
 
 ## Cuándo usar este skill
 
@@ -51,14 +47,14 @@ Invocar cuando el usuario pida:
 ## Ubicación del proyecto
 
 ```
-~/jarvis/OSINT-quantum_entanglement/
+OSINT-quantum_entanglement/
 ├── osint_app/                    # Aplicación principal
 │   ├── gui/                      # Interfaz gráfica PySide6
 │   ├── tools/                    # Herramientas OSINT
 │   ├── correlation_engine.py     # Motor de correlación automática
 │   ├── framework.py              # Orquestador de herramientas
 │   ├── case_manager.py           # Gestión de casos
-│   └── db/                       # SQLite (osint_v2.db)
+│   └── db/                       # SQLite (en %LOCALAPPDATA%/SENTINEL, ver utils/data_paths.py)
 └── sentinel_unified/
     └── modules/cti/              # Módulos CTI (harvest, dossier, render)
 ```
@@ -69,7 +65,7 @@ Invocar cuando el usuario pida:
 
 ```python
 # Abrir la app
-cd ~/jarvis/OSINT-quantum_entanglement && python3 -m osint_app.main
+cd OSINT-quantum_entanglement && python -m osint_app.main
 
 # O ejecutar desde CLI
 from osint_app.case_manager import CaseManager
@@ -119,7 +115,7 @@ theHarvester -d empresa.com -b all
 
 ```bash
 # Ubicación de scripts CTI
-cd ~/jarvis/OSINT-quantum_entanglement/sentinel_unified/modules/cti
+cd OSINT-quantum_entanglement/sentinel_unified/modules/cti
 
 # Recolectar feeds
 python3 harvest.py --dry-run
@@ -263,7 +259,7 @@ Tablas:
 
 ```bash
 # Lanzar GUI
-cd ~/jarvis/OSINT-quantum_entanglement && python3 -m osint_app.main
+cd OSINT-quantum_entanglement && python -m osint_app.main
 
 # Verificar herramientas
 python3 -m osint_app.main --check-tools

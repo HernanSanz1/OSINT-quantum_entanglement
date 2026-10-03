@@ -15,7 +15,15 @@ def main():
     parser.add_argument("--cli", action="store_true", help="Run in CLI mode (no GUI)")
     parser.add_argument("--check-tools", action="store_true",
                         help="Print tool availability and exit")
+    parser.add_argument("--keys", action="store_true",
+                        help="Muestra qué claves de API están configuradas (nunca su valor)")
+    parser.add_argument("--set-key", metavar="NOMBRE",
+                        help="Guarda una clave de API; la pide por teclado sin mostrarla (ej: --set-key GitHub)")
     args = parser.parse_args()
+
+    if args.keys or args.set_key:
+        from osint_app.utils import key_cli
+        sys.exit(key_cli.show_keys() if args.keys else key_cli.set_key_interactive(args.set_key))
 
     if args.check_tools:
         from osint_app.tools import build_tool_registry

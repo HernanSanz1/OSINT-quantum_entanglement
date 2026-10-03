@@ -86,6 +86,10 @@ def test_looks_like_person_name(text, ok):
     ("jriofrio+tag", "Juan Riofrio", True), ("jperez", "Juan Carlos Pérez Mora", True), ("jmora", "Juan Carlos Pérez Mora", True), ("jgomez", "Juan Carlos Pérez Mora", False),
     ("riofrio", "Juan Riofrio", True),            # apellido largo solo
     ("juan", "Juan Riofrio", False),              # nombre corto solo: ambiguo
+    ("jriofrio99", "Juan Riofrio", True), ("juan.riofrio2006", "Juan Riofrio", True), ("riofrio2006", "Juan Riofrio", True),
+    ("riofrioj06", "Juan Riofrio", True),         # un año o número al final no cambia de quién es el usuario
+    ("juan2006", "Juan Riofrio", False), ("2006", "Juan Riofrio", False), ("jriofrio_dev", "Juan Riofrio", False),
+    ("jriofrio12345", "Juan Riofrio", False),     # más de 4 dígitos: ya no parece un año
     ("maria", "Juan Riofrio", False), ("admin", "Juan Riofrio", False), ("", "Juan Riofrio", False), ("jriofrio", "Juan", False),
 ])
 def test_handle_matches_name(handle, name, ok):

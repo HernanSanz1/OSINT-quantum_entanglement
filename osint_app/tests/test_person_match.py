@@ -23,7 +23,12 @@ def test_name_tokens_drop_particles_and_short_words():
     ("Riofrio Juan", "Juan Riofrio, ingeniero", 40, "name"),          # orden apellido-nombre
     ("Juan Pérez Mora", "Juan Perez en Quito", 25, "name_partial"),   # sin el segundo apellido
     ("Juan Carlos Pérez Mora", "Juan Perez", 25, "name_partial"),
-    ("Juan Pérez", "solo Pérez trabaja aquí", 10, ""),
+    ("Juan Pérez", "solo Pérez trabaja aquí", 10, ""),                # solo el apellido: 10
+    ("Juan Pérez", "solo Juan trabaja aquí", 5, ""),                   # solo el nombre de pila: 5
+    ("Juan Carlos Riofrio", "Pedro Carlos", 5, ""),                    # "Carlos" es el segundo nombre, no el apellido
+    ("Juan Carlos Riofrio", "Pedro Riofrio", 10, ""),
+    ("Juan Carlos Pérez Mora", "Pedro Mora", 10, ""), ("Juan Carlos Pérez Mora", "Pedro Pérez", 10, ""),    # 4 palabras: dos apellidos
+    ("Juan Carlos Pérez Mora", "Pedro Carlos", 5, ""),
     ("Juan Pérez", "otra persona", 0, ""),
     ("", "Juan Pérez", 0, ""),
     ("Li Wu", "Li Wu", 0, ""),                                        # palabras demasiado cortas: sin datos

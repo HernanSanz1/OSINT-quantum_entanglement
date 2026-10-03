@@ -85,8 +85,7 @@ def sanitize_shell_arg(value: str) -> str:
 def validate_url(url: str) -> bool:
     """
     Return True only if the URL is http/https and NOT a local/private address.
-    Blocks SSRF attempts against internal services.
-    Exception: Ollama localhost is handled separately by OllamaBrain directly.
+    Blocks SSRF attempts against internal services (localhost, redes privadas).
     """
     if not url or not isinstance(url, str):
         return False

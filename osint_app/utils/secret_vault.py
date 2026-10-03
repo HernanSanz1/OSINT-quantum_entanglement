@@ -2,7 +2,7 @@
 SecretVault — API key storage outside the project directory.
 
 Priority order:
-  1. Environment variables (OSINT_OPENAI_KEY, OSINT_VENICE_KEY, …)
+  1. Environment variables (OSINT_HUNTER_KEY, GITHUB_TOKEN, …)
   2. ~/.osint_v2_keys  (a JSON file in the user's home dir, NOT in the repo)
   3. In-memory only (keys set at runtime and never persisted)
 
@@ -26,8 +26,6 @@ _VAULT_PATH = Path.home() / ".osint_v2_keys"
 # Environment variable names
 _ENV_MAP: Dict[str, str] = {
     "GitHub":    "GITHUB_TOKEN",
-    "ChatGPT":   "OSINT_OPENAI_KEY",
-    "Venice":    "OSINT_VENICE_KEY",
     "Hunter.io": "OSINT_HUNTER_KEY",
     "CENSYS":    "OSINT_CENSYS_KEY",
     "IntelOwl":  "OSINT_INTELOWL_KEY",

@@ -27,12 +27,3 @@ def test_homonym_warning_text():
 
 def test_homonym_warning_none_without_country():
     assert homonyms.homonym_warning("Madrid, Spain", "") is None
-
-
-def test_smart_profiler_still_uses_shared_logic():
-    # Regresión: smart_profiler delega en el módulo compartido sin cambiar
-    # su comportamiento.
-    from osint_app.smart_profiler import SmartProfiler
-    sp = SmartProfiler.__new__(SmartProfiler)
-    assert sp._is_different_country("madrid, spain", "ecuador") is True
-    assert sp._is_different_country("quito, ecuador", "ecuador") is False

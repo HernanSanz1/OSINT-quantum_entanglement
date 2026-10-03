@@ -549,6 +549,20 @@ class UsernameVariantsTool(OSINTTool):
                 ])
 
         # ═══════════════════════════════════════════════════════════════════════
+        # INICIAL + APELLIDO + AÑO DEL OBJETIVO (jriofrio2006, jriofrio06, juanr2006)
+        # El bloque de años de más abajo solo usa las primeras variantes básicas y nunca llegaba a estas.
+        # Rescatado de smart_profiler.
+        # ═══════════════════════════════════════════════════════════════════════
+        if year and last:
+            f1, l1 = first[0], last[0]
+            initial_bases = [f"{f1}{last}", f"{f1}.{last}", f"{f1}_{last}", f"{first}{l1}", f"{last}{f1}"]
+            if middle:
+                initial_bases.append(f"{f1}{middle[0]}{last}")
+            for base in initial_bases:
+                for y in (year, year[-2:]):
+                    variants.update([f"{base}{y}", f"{base}_{y}", f"{base}.{y}"])
+
+        # ═══════════════════════════════════════════════════════════════════════
         # CON MIDDLE NAME
         # ═══════════════════════════════════════════════════════════════════════
         if middle and last:

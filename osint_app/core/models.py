@@ -264,15 +264,3 @@ class CompatibilityResult:
         for f, h in self.missing_hints.items():
             msgs.append(f"   • {f}: {h}")
         return "\n".join(msgs)
-
-
-# ── AICorrelation ─────────────────────────────────────────────────────────────
-
-@dataclass
-class AICorrelation:
-    case_id: int
-    report_ids: List[int]
-    prompt: str
-    response: str
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    id: Optional[int] = None

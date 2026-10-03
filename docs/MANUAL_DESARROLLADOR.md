@@ -7,50 +7,46 @@
 ## 1. Estructura del proyecto
 
 ```
-IAprototipe/
+OSINT-quantum_entanglement/
+├── conftest.py                 # pytest: carpeta de datos TEMPORAL (los tests nunca tocan los casos reales)
 ├── osint_app/
+│   ├── main.py                 # entrada: GUI, --check-tools, --keys, --set-key
+│   ├── framework.py            # OSINTFramework — ejecuta una herramienta sobre un caso
+│   ├── profiler_engine.py      # ★ Perfilamiento de personas: semilla, rondas, candidatos, confirmar/refinar
+│   ├── correlation_engine.py   # ★ Entidades y relaciones entre los datos de un caso
+│   ├── cti_link.py             # Cruce de lo hallado con el CTI
+│   ├── case_manager.py         # CRUD de casos
 │   ├── core/
-│   │   ├── models.py          # Dataclasses: Case, ToolReport, TargetData, AICorrelation…
-│   │   └── base_tool.py       # OSINTTool — interfaz abstracta para todas las tools
-│   ├── utils/
-│   │   ├── sanitizer.py       # ★ Sanitización: shell, SSRF, DB, snippets
-│   │   ├── secret_vault.py    # ★ API keys seguro en ~/.osint_v2_keys (chmod 600)
-│   │   ├── tool_checker.py    # Verificación e instalación de dependencias
-│   │   ├── compatibility.py   # DataCompatibilityEngine — score de compatibilidad tool↔case
-│   │   ├── entity_extractor.py # Regex extractor de entidades (emails, IPs, dominios…)
-│   │   ├── resource_monitor.py # CPU/RAM monitor
-│   │   └── cache.py / rate_limiter.py
+│   │   ├── models.py           # Case, TargetData, ToolReport, SearchResult, QueryParameters…
+│   │   └── base_tool.py        # OSINTTool — interfaz de todas las herramientas
 │   ├── db/
-│   │   └── feedback_db.py     # SQLite: cases, target_data, tool_reports, ai_correlations
-│   ├── tools/
-│   │   ├── google_dorks.py    # Google Dorks (requests)
-│   │   ├── hunter.py          # Hunter.io API
-│   │   ├── social_tools.py    # Sherlock, Holehe, GHunt, snscrape
-│   │   ├── network_tools.py   # ★ dnspython, ipwhois, CENSYS, TheHarvester, Wayback, phone
-│   │   ├── heavy_tools.py     # ★ Subfinder, AMASS, SpiderFoot, Recon-ng, sn0int, Maigret
-│   │   ├── threat_intel.py    # IntelOwl, OpenCTI, MISP, Cortex, IntelMQ
-│   │   └── __init__.py        # TOOL_REGISTRY — instancia cualquier tool por nombre
-│   ├── gui/
-│   │   ├── app.py             # ★ Shell principal — Sentinel palette + Tool Checker popup
-│   │   ├── tab_cases.py       # Tab casos — CRUD
-│   │   ├── tab_data.py        # Tab datos objetivos
-│   │   ├── tab_tools.py       # Tab herramientas — cards con indicadores compatibilidad
-│   │   ├── tab_reports.py     # Tab reportes — export JSON/HTML
-│   │   └── tab_ai.py          # Tab IA — Triple-Brain view + chat
-│   ├── llm_brains.py          # ★ OllamaBrain, OpenAIBrain, VeniceBrain
-│   ├── ai_engine.py           # ★ MultiLLMEngine — análisis paralelo + consenso
-│   ├── framework.py           # OSINTFramework — ejecución secuencial de tools
-│   ├── case_manager.py        # CaseManager — CRUD de casos
-│   └── reports/
-│       └── html_report.py     # Generador HTML dark
-├── docs/
-│   ├── MANUAL_USUARIO.md
-│   └── MANUAL_DESARROLLADOR.md
-├── .gitignore                 # ★ Protege DB, keys, cache de git
-└── requirements.txt
+│   │   └── feedback_db.py      # SQLite: cases, target_data, tool_reports, data_extracts
+│   ├── tools/                  # una herramienta por archivo (ver docs/tools/)
+│   │   ├── web_search.py       # WebSearch, GitHubOSINT, UsernameVariants
+│   │   ├── google_dorks.py, hunter.py, social_tools.py, network_tools.py, heavy_tools.py, threat_intel.py
+│   │   ├── crtsh.py, domain_whois.py, mail_health.py, tech_detect.py, wayback.py
+│   │   ├── file_metadata.py    # EXIF / PDF / Office
+│   │   └── link_shield.py      # riesgo de URLs
+│   ├── utils/
+│   │   ├── sanitizer.py        # ★ sanitización de entradas, SSRF, texto
+│   │   ├── secret_vault.py     # ★ claves de API (cifradas con DPAPI en Windows)  +  key_cli.py, dpapi.py
+│   │   ├── data_paths.py       # ★ dónde van los datos y la migración segura de la base
+│   │   ├── identity.py         # perfiles sociales, nombres y su relación con usuarios y correos
+│   │   ├── person_match.py     # comparar nombres, teléfonos, usuarios y URLs (sin tildes ni orden)
+│   │   ├── homonyms.py, geo_data.py  # señales de posible homónimo
+│   │   ├── directories.py      # listados de personas que no son candidatos
+│   │   ├── entity_filters.py, entity_extractor.py, tlds.txt  # extracción de entidades sin ruido
+│   │   └── compatibility.py, cache.py, rate_limiter.py, resource_monitor.py, tool_checker.py
+│   ├── gui/                    # PySide6: app.py, tab_cases/data/tools/profiling/correlation/cti/reports.py, style.qss
+│   ├── reports/html_report.py
+│   └── tests/                  # pytest, sin red ni base real
+├── sentinel_unified/modules/cti/   # módulos CTI (recolección, dossiers)
+├── docs/                       # manuales, fichas de herramientas (docs/tools/) y REVISION_PROYECTO.md
+└── osint_app/requirements.txt
 ```
 
-★ = Archivos modificados en la v2 Sentinel Edition
+★ = piezas centrales. La carpeta `osint_app/ai/` y `smart_profiler.py` se eliminaron: la IA ya no forma parte del
+proyecto y su lógica útil se rescató en `UsernameVariants`, `identity.py` y `person_match.py`.
 
 ---
 
@@ -130,6 +126,8 @@ subprocess.run(f"mi-tool -d {query_params.domain}", shell=True)  # INYECCIÓN
 
 ### 3.2 API Keys
 
+Las claves se guardan con `python -m osint_app.main --set-key NOMBRE` (la pide oculta; nunca como argumento) y, en Windows, cifradas con DPAPI.
+
 ```python
 # ✅ CORRECTO — usar SecretVault
 from ..utils.secret_vault import vault
@@ -183,40 +181,20 @@ requests.get("http://...")                # sin TLS
 
 ---
 
-## 4. Paleta Sentinel (GUI)
+## 4. Interfaz gráfica (GUI)
 
-```python
-# osint_app/gui/app.py — importar SP
-from .app import SP   # dict con todos los colores
+La interfaz es **PySide6 (Qt)**. Los estilos están en `osint_app/gui/style.qss`; `gui/sentinel_theme.py` solo conserva
+funciones vacías por compatibilidad. Cada pestaña es un `QWidget` en `osint_app/gui/tab_*.py` y se registra en
+`OSINTGUI.pages` (`gui/app.py`).
 
-SP = {
-    "bg":       "#0d1117",   # fondo principal
-    "surface":  "#161b22",   # superficies/cards
-    "elevated": "#21262d",   # inputs, botones
-    "border":   "#30363d",   # bordes
-    "text":     "#e6edf3",   # texto principal
-    "muted":    "#8b949e",   # texto secundario
-    "accent":   "#58a6ff",   # azul Sentinel — acciones primarias
-    "success":  "#3fb950",   # verde
-    "warning":  "#d29922",   # ámbar
-    "danger":   "#f85149",   # rojo
-    "purple":   "#bc8cff",   # cerebro Venice
-}
-```
-
-Para usar en widgets:
-```python
-tk.Label(parent, bg=SP["surface"], fg=SP["accent"], text="Título")
-ttk.Button(parent, style="Accent.TButton", text="Acción primaria")
-ttk.Button(parent, style="Danger.TButton",  text="Eliminar")
-ttk.Button(parent, style="Success.TButton", text="Guardar")
-```
+Las pruebas que abren Qt solo corren en Windows o con `SENTINEL_GUI_TESTS=1` (abrir Qt en un servidor Linux sin
+librerías gráficas puede abortar todo el proceso de pytest).
 
 ---
 
 ## 5. Base de datos (SQLite)
 
-La DB se guarda en `osint_app/data/osint_v2.db` (ignorada por `.gitignore`).
+La DB se guarda **fuera del proyecto**: en Windows `%LOCALAPPDATA%\SENTINEL\osint_v2.db` (o `SENTINEL_DATA_DIR`). Ver `utils/data_paths.py`: la versión anterior la guardaba en `osint_app/data/` y se migra por copia sin borrar el original.
 
 ```python
 from ..db.feedback_db import db   # singleton global
@@ -257,10 +235,9 @@ python3 -m bandit -r osint_app/ -ll
 
 **Estado actual:** ✅ **Sin puertos abiertos**
 
-La aplicación **no levanta ningún servidor**. Todas las conexiones son **salientes**:
-- Ollama: `http://localhost:11434` — solo accesible localmente
-- VeniceBrain: `https://api.venice.ai` — saliente, autenticado con Bearer token
-- OpenAIBrain: `https://api.openai.com` — saliente, autenticado con Bearer token
+La aplicación **no levanta ningún servidor**. Todas las conexiones son **salientes**, hacia fuentes públicas
+(buscadores, GitHub, registros RDAP, DNS, crt.sh, Wayback…) y hacia los servicios que tengan clave (Hunter.io, CENSYS…).
+`Link Shield` y `File Metadata` bloquean destinos locales y privados y validan cada redirección.
 
 Para verificar en tiempo real:
 ```bash

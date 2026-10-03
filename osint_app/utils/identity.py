@@ -181,4 +181,6 @@ def handle_matches_name(handle: str, name: str) -> bool:
         candidates.add(last)
     if len(first) >= 6:
         candidates.add(first)
-    return h in candidates
+    # Un año o número al final no cambia de quién es el usuario: jriofrio99, juan.riofrio2006 (rescatado de smart_profiler)
+    without_digits = re.sub(r"\d{1,4}$", "", h)
+    return h in candidates or (bool(without_digits) and without_digits in candidates)

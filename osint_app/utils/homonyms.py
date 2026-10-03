@@ -3,7 +3,7 @@
 Un homónimo es alguien con el mismo nombre que NO es el objetivo. Aquí solo se
 detectan señales blandas (que se muestran como aviso); la decisión de aceptar o
 descartar es siempre del investigador. Antes esta lógica estaba duplicada en
-smart_profiler.py; ahora vive aquí y la usan los dos perfiladores.
+smart_profiler.py (ya eliminado); ahora vive aquí y la usa el perfilador.
 """
 import re
 import unicodedata

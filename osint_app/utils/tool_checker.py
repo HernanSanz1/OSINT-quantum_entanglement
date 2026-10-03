@@ -32,20 +32,15 @@ _PYTHON_DEPS: List[Dict] = [
     {"import": "dns.resolver",  "pip": "dnspython",     "required": True},
     {"import": "ipwhois",       "pip": "ipwhois",       "required": True},
     {"import": "phonenumbers",  "pip": "phonenumbers",  "required": True},
-    {"import": "openai",        "pip": "openai",        "required": False,
-     "note": "Requerido para ChatGPT y Venice"},
-    {"import": "pandas",        "pip": "pandas",        "required": False,
-     "note": "Análisis de datos avanzado"},
-    {"import": "networkx",      "pip": "networkx",      "required": False},
-    {"import": "lxml",          "pip": "lxml",          "required": False},
+    # File Metadata (EXIF, PDF y documentos Office)
+    {"import": "PIL",           "pip": "Pillow",        "required": True},
+    {"import": "pypdf",         "pip": "pypdf",         "required": True},
+    {"import": "defusedxml",    "pip": "defusedxml",    "required": True},
 ]
 
 # ── Binary tools ──────────────────────────────────────────────────────────────
 
 _BINARY_TOOLS: List[Dict] = [
-    # Required binary — core workflow
-    {"bin": "ollama", "name": "Ollama (LLM local)", "required": False,
-     "install": "brew install ollama  OR  curl https://ollama.ai/install.sh | sh"},
     # Optional binary tools
     {"bin": "subfinder",    "name": "Subfinder",      "required": False,
      "install": "go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"},

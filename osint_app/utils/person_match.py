@@ -27,7 +27,7 @@ def name_match(name: str, text: str) -> Tuple[float, str]:
     """(puntos, tipo) de cuánto aparece `name` en `text`, por palabras completas.
 
     40 'name': están todas las palabras del nombre (en cualquier orden y sin tildes).
-    25 'name_partial': al menos dos. 10 '': solo una.
+    25 'name_partial': al menos dos. Solo una: 10 si es un apellido, 5 si es el nombre de pila o un segundo nombre.
     """
     tokens = name_tokens(name)
     if not tokens:
@@ -39,7 +39,11 @@ def name_match(name: str, text: str) -> Tuple[float, str]:
     if hits >= 2:
         return 25.0, "name_partial"
     if hits == 1:
-        return 10.0, ""
+        # Coincidir solo en el apellido dice más que coincidir solo en el nombre de pila o en el segundo nombre
+        # (en nombres de 4 palabras, los apellidos son las dos últimas). Rescatado de smart_profiler.
+        surnames = {tokens[-1]} | ({tokens[-2]} if len(tokens) >= 4 else set())
+        only_hit = next(t for t in tokens if t in words)
+        return (10.0 if only_hit in surnames else 5.0), ""
     return 0.0, ""
 
 

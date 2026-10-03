@@ -40,11 +40,6 @@ class ReportsTab(QWidget):
         self.lbl_rep.setStyleSheet("font-weight: bold; color: #00d4ff;")
         top_btn_lay.addWidget(self.lbl_rep)
         
-        btn_ai = QPushButton("🧠 Send to AI")
-        btn_ai.setObjectName("btnPrimary")
-        btn_ai.clicked.connect(self._send_to_ai)
-        top_btn_lay.addWidget(btn_ai)
-        
         right_layout.addLayout(top_btn_lay)
         
         self.viewer = QPlainTextEdit()
@@ -95,15 +90,6 @@ class ReportsTab(QWidget):
         except:
             self.viewer.setPlainText(str(item.data(1, Qt.UserRole)))
 
-    def _send_to_ai(self):
-        if not self._current_report_id:
-            self.app.toast.show("Selecciona un reporte.")
-            return
-        
-        # Switch to AI tab
-        self.app._switch_tab(4)
-        self.app.toast.show("Activa los reportes que deseas en la pestaña de IA", kind="success")
-        
     def on_open(self):
         self.refresh()
 

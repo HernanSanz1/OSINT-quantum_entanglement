@@ -35,7 +35,8 @@ Estado general: la integración continua está en verde (Ubuntu y Windows, Pytho
 | M2 semilla más rica | **Hecho** (sección 9) | Flujo real con datos solo adicionales; pestaña real probada en Windows; 16 tests nuevos |
 | Directorios de LinkedIn como candidatos | **Hecho** (sección 10) | 28 tests; ver la nota sobre la verificación en vivo |
 | M4 seguridad de los datos | **Hecho** (sección 11), con límites | Migración con tu base real (1 caso, 1 dato, 3 reportes, idéntica); DPAPI real en Windows; ventana real con el aviso |
-| M1, M5 a M8 | **Pendientes** | |
+| M1 restos de la IA y código duplicado | **Hecho** (sección 12) | Inventario completo, rescates con tests, ventana real construida sin el botón de IA |
+| M5 a M8 | **Pendientes** | |
 
 Pruebas: de 429 a **538** tests, todos en verde; ruff y bandit limpios.
 
@@ -471,3 +472,38 @@ estar en la nube.
 - Los **informes exportados** a `Descargas` (JSON y HTML) siguen en texto plano.
 - Lo que ya se haya sincronizado a OneDrive antes de este cambio puede conservar versiones anteriores en su historial.
 - El cifrado de claves es solo de Windows; en otros sistemas se guardan en claro con permisos de solo propietario.
+
+
+---
+
+## 12. M1 — limpieza de los restos de la IA (hecho)
+
+Primero un inventario de todo lo que quedaba y, antes de borrar, una búsqueda de lo rescatable.
+
+**Eliminado** (los archivos siguen en el historial de git, por si hiciera falta recuperarlos):
+- `osint_app/smart_profiler.py` (501 líneas): duplicaba a `profiler_engine.py` y no lo usaba ninguna parte del programa.
+- `osint_app/ai/` (carpeta vacía).
+- El botón **"🧠 Send to AI"** de Reportes: saltaba a la pestaña número 4, que hoy es *Correlación*, con un mensaje sobre
+  "la pestaña de IA". Era un defecto visible para el usuario.
+- Código muerto de `ai_correlations` (modelo `AICorrelation` y dos métodos de la base). **La tabla vacía se conserva** en el
+  esquema para no tocar bases existentes.
+- Claves ChatGPT y Venice del baúl; entradas de `openai`, `Ollama`, `pandas`, `networkx` y `lxml` de `tool_checker`, y las
+  dependencias `openai`, `pandas`, `networkx` y `lxml` de `requirements.txt` (ninguna se importaba).
+- Comentarios obsoletos (Ollama en `sanitizer`, "la IA filtra…").
+
+**Rescatado de `smart_profiler` antes de borrarlo** (con tests):
+1. **Variantes de usuario con inicial + apellido + año** (`jriofrio2006`, `jriofrio06`, `juanr2006`…): el bloque de años de
+   `UsernameVariants` solo usaba las 15 primeras variantes básicas y nunca las combinaba con las iniciales.
+2. **Usuarios con número al final** (`jriofrio99`, `juan.riofrio2006`) ahora cuentan como forma del nombre en la correlación.
+3. **El apellido pesa más que el nombre de pila o el segundo nombre** cuando solo coincide una palabra (10 contra 5 puntos).
+
+**No rescatado a propósito:** las reglas de **rechazo automático** (contradicen el enfoque de nunca descartar), la regla de
+"estudiante frente a empresa grande" (demasiado específica) y el patrón `jdriofrio` (era el usuario de su propio autor).
+
+**Documentación corregida:** `MANUAL_USUARIO.md` se reescribió (describía una "IA Triple", Ollama, macOS y **una ruta
+personal de otra persona**); `MANUAL_DESARROLLADOR.md` (estructura real del proyecto, interfaz PySide6 en vez de una paleta de
+Tkinter inexistente, base de datos y conexiones) y `SKILL_SENTINEL.md` (el ejemplo ahora usa `ProfilerEngine`).
+
+**Hueco que apareció y se cerró:** no existía ninguna pantalla para guardar claves de API (vivía en la pestaña de IA
+eliminada) y el baúl ahora va cifrado. Nuevo: `python -m osint_app.main --set-key GitHub` (pide la clave oculta; nunca como
+argumento, para que no quede en el historial de la consola) y `--keys` (qué claves hay, sin mostrar valores).

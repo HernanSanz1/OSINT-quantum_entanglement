@@ -1,5 +1,5 @@
 """
-v2 SQLite schema — Cases, TargetData, ToolReports, DataExtracts, AICorrelations.
+v2 SQLite schema — Cases, TargetData, ToolReports, DataExtracts.
 """
 import sqlite3
 import json
@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from pathlib import Path
 
-from ..core.models import Case, TargetData, ToolReport, AICorrelation, CaseStatus
+from ..core.models import Case, TargetData, ToolReport, CaseStatus
 from ..utils.data_paths import resolve_db_path
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,7 @@ class Database:
                     FOREIGN KEY (report_id) REFERENCES tool_reports(id),
                     FOREIGN KEY (case_id) REFERENCES cases(id)
                 );
+                -- Tabla heredada de la antigua función de IA: ya no se usa, se conserva para no tocar bases existentes
                 CREATE TABLE IF NOT EXISTS ai_correlations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     case_id INTEGER NOT NULL,
@@ -207,31 +208,6 @@ class Database:
         for r in rows:
             result.setdefault(r["field_type"], []).append(r["value"])
         return result
-
-    # ── AICorrelations ────────────────────────────────────────────────────────
-
-    def save_correlation(self, corr: AICorrelation) -> int:
-        with sqlite3.connect(self.db_path) as c:
-            cur = c.execute(
-                "INSERT INTO ai_correlations (case_id, report_ids, prompt, response, created_at) VALUES (?,?,?,?,?)",
-                (corr.case_id, json.dumps(corr.report_ids),
-                 corr.prompt, corr.response, corr.created_at)
-            )
-            return cur.lastrowid  # type: ignore
-
-    def get_correlations(self, case_id: int) -> List[AICorrelation]:
-        with sqlite3.connect(self.db_path) as c:
-            c.row_factory = sqlite3.Row
-            rows = c.execute(
-                "SELECT * FROM ai_correlations WHERE case_id=? ORDER BY created_at DESC",
-                (case_id,)
-            ).fetchall()
-        return [AICorrelation(
-            id=r["id"], case_id=r["case_id"],
-            report_ids=json.loads(r["report_ids"]),
-            prompt=r["prompt"], response=r["response"],
-            created_at=r["created_at"]
-        ) for r in rows]
 
 
 # Global singleton
