@@ -6,7 +6,7 @@
 
 ## 1. Estructura del proyecto
 
-```
+```text
 OSINT-quantum_entanglement/
 ├── conftest.py                 # pytest: carpeta de datos TEMPORAL (los tests nunca tocan los casos reales)
 ├── osint_app/

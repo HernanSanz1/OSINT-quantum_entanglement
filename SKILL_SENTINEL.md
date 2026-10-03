@@ -21,14 +21,14 @@ candidates = engine.extract_candidates(seed)   # lista ordenada por confianza
 case_id = engine.save_to_case(seed)            # guarda semilla y reportes en un caso
 ```
 
-### Qué hace:
+### Qué hace
 1. Lanza las herramientas aplicables y, además, una ronda por cada alias, correo, usuario o teléfono adicional (máx. 3 de cada tipo)
 2. Puntúa cada resultado: nombre (sin tildes ni orden), usuario, correo, teléfono, empresa, universidad, ciudad, país
 3. Marca **posibles homónimos** con señales graduadas (país ajeno o vecino, ciudad de otro país, LinkedIn o extensión de otro país)
 4. Deja fuera de los candidatos los listados de personas (directorios, buscadores), que siguen en los reportes
 5. Al confirmar un candidato (`promote_confirmed_to_case`), lo que aporta pasa al caso como dato confirmado
 
-### Reglas:
+### Reglas
 - **Nunca se descarta un resultado automáticamente**: las señales de homónimo solo avisan y bajan la puntuación
 - Lo descubierto no sustituye al objetivo: se guarda aparte (`found_*`) hasta que el investigador lo confirma
 - No hay IA: todo son reglas explicables
@@ -46,7 +46,7 @@ Invocar cuando el usuario pida:
 
 ## Ubicación del proyecto
 
-```
+```text
 OSINT-quantum_entanglement/
 ├── osint_app/                    # Aplicación principal
 │   ├── gui/                      # Interfaz gráfica PySide6
@@ -193,7 +193,7 @@ shared = correlator.find_cross_correlations()
 
 ## Flujo completo: Investigación de organización
 
-```
+```text
 1. CREAR CASO
    Tipo: mixed (OSINT + CTI)
    
