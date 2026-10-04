@@ -185,7 +185,8 @@ def test_found_identity_is_stored_apart_and_restored(temp_db):
          "extra_data": {"name": "Juan Riofrio", "company": "UTPL", "location": "Loja, Ecuador"}}]))
 
     stored = {(d.field_type, d.value) for d in temp_db.get_target_data(case.id)}
-    assert ("found_name", "Pedro Gomez") in stored and ("found_profile", "https://github.com/jriofrio") in stored
+    assert ("found_profile", "https://github.com/jriofrio") in stored
+    assert ("found_name", "Pedro Gomez") not in stored            # resultado de búsqueda sobre OTRA persona: no se le atribuye
     assert ("name", "Pedro Gomez") not in stored                                    # no se mezcla con los datos del investigador
 
     params = QueryParameters.from_target_data(temp_db.get_target_data(case.id))
@@ -194,7 +195,7 @@ def test_found_identity_is_stored_apart_and_restored(temp_db):
     again = CorrelationEngine(case.id)                                              # reabrir el caso
     assert {"profile", "name", "company", "location", "username"} <= {e.entity_type for e in again.entities.values()}
     kinds = {c.relation_type for c in again.correlations}
-    assert {"profile_of", "named_in", "name_in_handle"} <= kinds
+    assert {"profile_of", "name_in_handle"} <= kinds          # "named_in" venía solo del dato ajeno (Pedro Gomez)
     github_profile = "https://github.com/jriofrio"
     assert not any(c.relation_type == "named_in" and c.entity_a.value == github_profile and c.entity_b.value == "Pedro Gomez"
                    for c in again.correlations)

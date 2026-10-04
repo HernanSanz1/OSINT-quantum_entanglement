@@ -6,6 +6,7 @@ import subprocess, shutil, logging, shlex, re
 from typing import List
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
 from ..core.base_tool import OSINTTool
+from ..utils.sanitizer import sanitize_snippet
 
 logger = logging.getLogger(__name__)
 
@@ -281,8 +282,9 @@ class InstagramTool(OSINTTool):
             )
         )
         self.is_heavy = False
-        self.is_available = shutil.which("instaloader") is not None
+        self.is_available = self.check_available()
         self._binary_names = ["instaloader"]
+        self._python_pkgs = ["instaloader"]
         self._install_cmd = (
             "Guía de Instalación Instaloader (Entorno Virtual):\n"
             "1. Abre la terminal en IAprototipe.\n"
@@ -295,52 +297,90 @@ class InstagramTool(OSINTTool):
 
     def check_available(self) -> bool:
         import importlib.util
-        self.is_available = (shutil.which("instaloader") is not None) or (importlib.util.find_spec("instaloader") is not None)
+        self.is_available = importlib.util.find_spec("instaloader") is not None     # se usa su API de Python
         return self.is_available
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
-        import importlib.util, sys
-        
-        cmd_path = shutil.which("instaloader")
-        has_module = importlib.util.find_spec("instaloader") is not None
-        
-        if not cmd_path and not has_module:
+        """Metadatos públicos del perfil (o de una publicación) con la API de Instaloader, sin descargar fotos.
+
+        Verificado en real (2026-10-04):
+        - Antes se lanzaba `instaloader --login=anon`, que significa "inicia sesión como el usuario anon": el
+          programa esperaba la contraseña por teclado y la herramienta se colgaba 120 s sin resultado. Además,
+          sin más opciones descargaba todas las fotos al disco.
+        - Instagram responde HTTP 429 a TODA consulta anónima: hace falta una sesión. Si el usuario la creó
+          (`instaloader --login SU_USUARIO`) y guardó su usuario con `--set-key Instagram`, se reutiliza.
+        """
+        try:
+            import instaloader
+        except ImportError:
             return []
-            
-        # `observable` solo sirve si es el código de una publicación; un texto libre (contexto) no es un perfil
+
         shortcode = query_params.observable if _SHORTCODE_RE.match(query_params.observable or "") else ""
-        target = shortcode or _clean_username(query_params.username)
-        if not target:
+        username = _clean_username(query_params.username)
+        if not shortcode and not username:
             self._report_progress("⚠️ Instaloader: falta un usuario válido o el código de una publicación.")
             return []
 
-        # Basic anonymous scraping
-        if has_module:
-            cmd = [sys.executable, "-m", "instaloader", "--login=anon", "--fast-update"]
-        else:
-            cmd = [cmd_path, "--login=anon", "--fast-update"]
-        
-        if query_params.extra_args:
-             cmd.extend(shlex.split(query_params.extra_args))
-        else:
-             if shortcode:
-                  cmd.extend(["--post", target])
-             else:
-                  cmd.append(target)
+        loader = instaloader.Instaloader(download_pictures=False, download_videos=False,
+                                         download_video_thumbnails=False, save_metadata=False,
+                                         quiet=True, max_connection_attempts=1, request_timeout=20)
+        session_user = (self.api_key or "").strip()
+        if not session_user:
+            from ..utils.secret_vault import vault
+            session_user = (vault.get("Instagram") or "").strip()
+        if session_user:
+            try:
+                loader.load_session_from_file(session_user)
+            except (FileNotFoundError, OSError):
+                self._report_progress(f"⚠️ Instaloader: no hay sesión guardada de '{session_user}'. "
+                                      f"Créala con: instaloader --login {session_user}")
+        try:
+            if shortcode:
+                post = instaloader.Post.from_shortcode(loader.context, shortcode)
+                return [SearchResult(
+                    title=f"Publicación de Instagram de @{post.owner_username}",
+                    url=f"https://www.instagram.com/p/{shortcode}",
+                    snippet=sanitize_snippet(f"Fecha: {post.date_utc:%Y-%m-%d} · Me gusta: {post.likes} · "
+                                             f"Ubicación: {getattr(post.location, 'name', '') or 'sin datos'} · "
+                                             f"Texto: {(post.caption or '')[:300]}"),
+                    source_tool=self.name, category="Social Media", relevance_score=85,
+                    extra_data={"username": post.owner_username, "platform": "Instagram"},
+                )]
+            profile = instaloader.Profile.from_username(loader.context, username)
+        except instaloader.exceptions.ProfileNotExistsException:
+            self._report_progress(f"✅ Instaloader: la cuenta @{username} no existe.")
+            return []
+        except (instaloader.exceptions.LoginRequiredException, instaloader.exceptions.ConnectionException,
+                instaloader.exceptions.QueryReturnedBadRequestException) as e:
+            blocked = "429" in str(e) or "login" in str(e).lower() or isinstance(e, instaloader.exceptions.LoginRequiredException)
+            self._report_progress(
+                "⚠️ Instaloader: Instagram no permite consultas anónimas (HTTP 429). Inicia sesión una vez con "
+                "`instaloader --login TU_USUARIO` (mejor una cuenta secundaria) y guarda ese usuario con "
+                "`python -m osint_app.main --set-key Instagram`." if blocked and not session_user else
+                f"⚠️ Instaloader: Instagram rechazó la consulta ({type(e).__name__}).")
+            return []
+        except Exception as e:
+            self._report_progress(f"❌ Instaloader: error inesperado ({type(e).__name__}).")
+            return []
 
-        out, code = _run(cmd, timeout=120)
-        if code == -1:
-            self._report_progress("⚠️ Instaloader: se agotó el tiempo o no se pudo ejecutar; no hay resultados.")
-
-        if not out.strip():
-             return []
-             
-        # Guard against huge outputs
-        snippet = out[:1000] + "..." if len(out) > 1000 else out
-             
+        facts = [f"Nombre: {profile.full_name or 'sin nombre'}", f"Seguidores: {profile.followers}",
+                 f"Siguiendo: {profile.followees}", f"Publicaciones: {profile.mediacount}"]
+        if profile.is_verified:
+            facts.append("Cuenta verificada")
+        if profile.is_private:
+            facts.append("Cuenta privada")
+        if profile.business_category_name:
+            facts.append(f"Categoría: {profile.business_category_name}")
+        if profile.external_url:
+            facts.append(f"Web: {profile.external_url}")
+        if profile.biography:
+            facts.append(f"Bio: {profile.biography[:300]}")
         return [SearchResult(
-            title=f"Extracción Instaloader: {target}",
-            url=f"https://instagram.com/p/{target}" if shortcode else f"https://instagram.com/{target}",
-            snippet=snippet,
-            source_tool=self.name, category="Social Media", relevance_score=85,
+            title=f"Instagram: {profile.full_name or username} (@{profile.username})",
+            url=f"https://www.instagram.com/{profile.username}",
+            snippet=sanitize_snippet(" · ".join(facts)),
+            source_tool=self.name, category="Social Media", relevance_score=90 if profile.is_verified else 80,
+            extra_data={"name": profile.full_name, "username": profile.username, "platform": "Instagram",
+                        "followers": profile.followers, "external_url": profile.external_url,
+                        "verified": profile.is_verified},
         )]

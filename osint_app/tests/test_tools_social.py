@@ -1,14 +1,12 @@
 """Sherlock, Holehe, GHunt, Instaloader y snscrape: sin binarios ni red (el subproceso se simula)."""
-import importlib.util
 import subprocess
-import sys
 
 import pytest
 
 from osint_app.core.models import QueryParameters
 from osint_app.tools import social_tools
 from osint_app.tools.social_tools import (
-    GHuntTool, HoleheTool, InstagramTool, SherlockTool, SnscrapeYoutubeTool, _clean_email, _clean_username, _run,
+    GHuntTool, HoleheTool, SherlockTool, SnscrapeYoutubeTool, _clean_email, _clean_username, _run,
 )
 
 
@@ -190,70 +188,7 @@ def test_ghunt_edge_cases(program):
     assert any("se agotó el tiempo" in m for m in seen)
 
 
-# ── Instaloader ──────────────────────────────────────────────────────────────
-
-@pytest.fixture
-def instaloader(program, monkeypatch):
-    def install(output="Perfil descargado", code=0, module=True, binary=True):
-        state = program(output, code, installed=("instaloader",) if binary else ())
-        real = importlib.util.find_spec
-        monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a: (object() if module else None) if name == "instaloader" else real(name, *a))
-        return state
-    return install
-
-
-def test_instaloader_profile_by_username(instaloader):
-    state = instaloader()
-    (result,) = InstagramTool().execute(QueryParameters(username="@maria.lopez"))
-    assert result.url == "https://instagram.com/maria.lopez" and result.title == "Extracción Instaloader: maria.lopez"
-    cmd, timeout = state["calls"][0]
-    assert cmd == [sys.executable, "-m", "instaloader", "--login=anon", "--fast-update", "maria.lopez"] and timeout == 120
-
-
-def test_instaloader_post_by_shortcode_and_falls_back_to_the_binary(instaloader):
-    state = instaloader(module=False)
-    (result,) = InstagramTool().execute(QueryParameters(observable="CxYz-_12345", username="maria"))
-    assert result.url == "https://instagram.com/p/CxYz-_12345"
-    assert state["calls"][0][0] == ["/bin/instaloader", "--login=anon", "--fast-update", "--post", "CxYz-_12345"]
-
-
-def test_instaloader_ignores_a_free_text_context_as_target(instaloader):
-    # el perfilador (y los casos) guardan contexto libre como "ingeniero UDLA Ecuador" en observable: antes se lanzaba como "perfil"
-    state = instaloader()
-    InstagramTool().execute(QueryParameters(observable="ingeniero UDLA Ecuador", username="maria"))
-    assert state["calls"][0][0][-1] == "maria" and "ingeniero" not in " ".join(state["calls"][0][0])
-    state = instaloader()
-    tool = InstagramTool()
-    seen = progress_of(tool)
-    assert tool.execute(QueryParameters(observable="ingeniero UDLA Ecuador")) == [] and state["calls"] == []
-    assert any("falta un usuario válido" in m for m in seen)
-
-
-def test_instaloader_validation_nothing_to_run_and_timeouts(instaloader):
-    state = instaloader()
-    assert InstagramTool().execute(QueryParameters(username="--login=otro")) == [] and state["calls"] == []
-    instaloader(binary=False, module=False)
-    assert InstagramTool().execute(QueryParameters(username="maria")) == []                                  # no instalada
-    instaloader(output="   ")
-    assert InstagramTool().execute(QueryParameters(username="maria")) == []                                  # sin salida
-    instaloader(code=-1, output="")
-    tool = InstagramTool()
-    seen = progress_of(tool)
-    assert tool.execute(QueryParameters(username="maria")) == [] and any("se agotó el tiempo" in m for m in seen)
-
-
-def test_instaloader_long_output_is_truncated_and_extra_args_are_used(instaloader):
-    state = instaloader(output="x" * 5000)
-    (result,) = InstagramTool().execute(QueryParameters(username="maria", extra_args="--no-videos"))
-    assert len(result.snippet) == 1003 and result.snippet.endswith("...")
-    assert state["calls"][0][0][-1] == "--no-videos" and "maria" not in state["calls"][0][0]                 # con extra_args se usan solo esos
-
-
-def test_instaloader_availability_checks_module_or_binary(instaloader):
-    instaloader(module=False, binary=False)
-    assert InstagramTool().check_available() is False
-    instaloader(module=True, binary=False)
-    assert InstagramTool().check_available() is True
+# ── Instaloader: verificado en real (Instagram exige sesión: HTTP 429 a consultas anónimas) ──
 
 
 # ── snscrape (obsoleta) ──────────────────────────────────────────────────────

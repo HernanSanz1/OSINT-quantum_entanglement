@@ -16,6 +16,7 @@ Basado en metodología de inteligencia militar:
 - Dissemination (reportes)
 """
 import re
+from urllib.parse import urlsplit
 import json
 import hashlib
 from typing import Dict, List, Tuple, Optional
@@ -26,6 +27,7 @@ from itertools import combinations, product
 from .db.feedback_db import db
 from .core.models import TargetData
 from .utils.entity_filters import (
+    is_platform_domain,
     DOMAIN_PATTERN, FREEMAIL_DOMAINS, PHONE_PATTERN, ROLE_ACCOUNTS, is_code_handle, is_dns_txt_record,
     is_noise_domain, is_plausible_phone, is_public_ip, is_valid_email,
 )
@@ -149,6 +151,15 @@ class EntityExtractor:
         """
         found: List[Entity] = []
         extra = item.get("extra_data") if isinstance(item.get("extra_data"), dict) else {}
+        # Variantes de usuario que la herramienta ya marcó como de OTRA persona o sin confirmar (GitHub Match < 70)
+        if item.get("category") == "GitHub Match" and (item.get("relevance_score") or 0) < 70:
+            return []
+        if extra.get("official_site"):
+            host = (urlsplit(item.get("url") or "").hostname or "").lower()
+            if host.startswith("www."):
+                host = host[4:]
+            if host:
+                found.append(Entity("domain", host, source, confidence=75))
         parsed = parse_profile_url(item.get("url") or "")
         canonical = parsed[2] if parsed else ""
         origin = f"{source} @ {canonical}" if canonical else source
@@ -189,6 +200,24 @@ class EntityExtractor:
         return cls.extract(" ".join(text_parts), source)
 
 
+_IMAGE_KEYS = ("image", "avatar", "photo", "picture", "thumbnail", "icon")
+
+
+def _without_location_noise(item: Dict) -> Dict:
+    """El resultado sin su URL (dice DÓNDE se encontró: tiktok.com, wikipedia.org…) ni URLs de imágenes (CDN).
+
+    Antes cada plataforma y cada CDN de avatares salía como "dominio" del objetivo (27 en un caso real) y eso
+    disparaba sugerencias absurdas como Subfinder. La URL se sigue usando para reconocer el perfil.
+    """
+    clean = {k: v for k, v in item.items() if k != "url"}
+    for key in ("extra_data", "raw_data"):
+        inner = clean.get(key)
+        if isinstance(inner, dict):
+            clean[key] = {k: v for k, v in inner.items()
+                          if k.lower() != "url" and not any(w in k.lower() for w in _IMAGE_KEYS)}
+    return clean
+
+
 class CorrelationEngine:
     """Motor de correlación automática para un caso"""
 
@@ -223,6 +252,8 @@ class CorrelationEngine:
     def _load_existing(self):
         """Carga entidades de datos existentes del caso"""
         target_data = db.get_target_data(self.case_id)
+        # Nombre(s) del objetivo dados por el analista: sirven para no atribuirle lo que habla de otra persona
+        self.target_names = [td.value for td in target_data if td.field_type == "name" and td.source == "seed" and td.value]
         for td in target_data:
             found = td.field_type.startswith("found_")
             entity = Entity(
@@ -420,7 +451,13 @@ class CorrelationEngine:
             all_entities = []
             for item in data:
                 if isinstance(item, dict):
-                    found = EntityExtractor.extract_from_json(item, tool_name)
+                    # La URL del resultado dice DÓNDE se encontró (tiktok.com, wikipedia.org…), no es un dato de la
+                    # persona: se usa solo para reconocer el perfil (extract_identity). Antes cada plataforma salía
+                    # como "dominio" del objetivo (27 en un caso real) y disparaba sugerencias como Subfinder.
+                    if not self._mentions_target(tool_name, item):
+                        continue
+                    found = EntityExtractor.extract_from_json(_without_location_noise(item), tool_name)
+                    found = [e for e in found if not (e.entity_type == "domain" and self._is_foreign_platform(e.value))]
                     found += EntityExtractor.extract_identity(item, tool_name)
                     if is_dns_txt_record(item.get("title")):     # token de verificación, no un hash
                         found = [e for e in found if not e.entity_type.startswith("hash_")]
@@ -433,6 +470,28 @@ class CorrelationEngine:
             return self.add_entities(entities)
 
         return 0
+
+    # Herramientas que devuelven MENCIONES (cualquier página que coincida con la búsqueda), no datos de la persona
+    MENTION_TOOLS = ("WebSearch", "Google Dorks")
+
+    def _mentions_target(self, tool_name: str, item: Dict) -> bool:
+        """En resultados de búsqueda, exige que el texto nombre al objetivo (nombre de pila + un apellido).
+
+        Caso real: '"Jefferson Pérez Quezada" site:github.com' devolvía cuentas de otros "Jefferson" y la
+        correlación las atribuía al objetivo como perfiles suyos.
+        """
+        if not self.target_names or tool_name.split(":")[0] not in self.MENTION_TOOLS:
+            return True
+        text = f"{item.get('title', '')} {item.get('snippet', '')}"
+        return max(name_match(n, text)[0] for n in self.target_names) >= 25
+
+    def _is_foreign_platform(self, domain: str) -> bool:
+        """Una plataforma (youtube.com, github.com…) no es dominio del objetivo, salvo que el caso la investigue."""
+        if not is_platform_domain(domain):
+            return False
+        seeds = {e.value.lower() for e in self.entities.values() if e.entity_type == "domain" and e.source == "seed"}
+        d = domain.lower()
+        return not any(d == s or d.endswith("." + s) for s in seeds)
 
     def get_profile_summary(self) -> Dict:
         """Genera resumen del perfil correlacionado"""

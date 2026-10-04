@@ -33,6 +33,20 @@ FILE_EXTENSIONS = (
 # Hosts de infraestructura de las propias herramientas: no forman parte del objetivo
 IGNORED_DOMAINS = {"web.archive.org", "rdap.org", "crt.sh", "openstreetmap.org"}
 
+# Plataformas donde se ENCUENTRA a la gente: que aparezcan en un texto no las hace "dominio" de la persona
+PLATFORM_DOMAINS = {
+    "facebook.com", "instagram.com", "x.com", "twitter.com", "linkedin.com", "tiktok.com", "youtube.com", "youtu.be",
+    "github.com", "gitlab.com", "wikipedia.org", "wikidata.org", "wikimedia.org", "threads.net", "threads.com",
+    "reddit.com", "medium.com", "t.me", "telegram.org", "pinterest.com", "tumblr.com", "snapchat.com", "twitch.tv",
+    "google.com", "bing.com", "yahoo.com", "duckduckgo.com", "blogspot.com", "wordpress.com", "pscp.tv",
+    "periscope.tv", "bsky.app", "mastodon.social", "scribd.com", "slideshare.net", "academia.edu", "grokipedia.com",
+}
+
+
+def is_platform_domain(value: str) -> bool:
+    v = value.lower().rstrip(".")
+    return any(v == d or v.endswith("." + d) for d in PLATFORM_DOMAINS)
+
 
 @lru_cache(maxsize=1)
 def _tlds() -> frozenset:
@@ -55,13 +69,25 @@ def is_noise_domain(value: str) -> bool:
     return v.endswith(FILE_EXTENSIONS) or ignored or not has_known_tld(v)
 
 
-def is_plausible_phone(value: str) -> bool:
+def is_plausible_phone(value: str, default_region: str = "EC") -> bool:
     digits = re.sub(r'\D', '', value)
     if not 7 <= len(digits) <= 15:                # E.164: 15 dígitos como máximo
         return False
     if _TIMESTAMP_RE.match(digits):               # 20000815065837 = marca de tiempo (p. ej. Wayback)
         return False
-    return not (_IP_RE.match(value.strip()) or _DECIMAL_RE.match(value.strip()))
+    if _IP_RE.match(value.strip()) or _DECIMAL_RE.match(value.strip()):
+        return False
+    # Validación real del plan de numeración (librería phonenumbers, ya dependencia del proyecto). Antes bastaba
+    # con tener 7–15 dígitos: en un caso real salían "100047132710726" (ID de Facebook) o "23000 120000".
+    try:
+        import phonenumbers
+    except ImportError:
+        return True
+    try:
+        number = phonenumbers.parse(value, None if value.strip().startswith("+") else default_region)
+    except phonenumbers.NumberParseException:
+        return False
+    return phonenumbers.is_valid_number(number)
 
 
 # Proveedores de correo gratuito: un correo @gmail.com no "pertenece" al dominio gmail.com de nadie

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 import threading
 import time
 import urllib.parse
@@ -258,6 +259,22 @@ def _strip_tags(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text or "")
 
 
+_MERGED = re.compile(r"\.\.\.(?=\S)")
+
+
+def _unmerge(hit: Dict[str, str]) -> Dict[str, str]:
+    """Separa resultados que el motor entrega pegados ("Título A ...Título B ...Título C").
+
+    Visto en real (Yahoo vía ddgs, carruseles de vídeo): un vídeo de YouTube traía como título y texto los de
+    varios resultados, incluido el de una página de Facebook con un teléfono, que acababa atribuido al vídeo.
+    Se conserva solo el primer título (el de esa URL) y se descarta el texto, que mezcla otras páginas.
+    """
+    title = hit.get("title", "")
+    if _MERGED.search(title):
+        return {**hit, "title": _MERGED.split(title, 1)[0].strip() + " …", "snippet": ""}
+    return hit
+
+
 def _engines() -> List[Tuple[str, Callable[[str, int], List[Dict[str, str]]]]]:
     engines = []
     if _brave_key():
@@ -288,7 +305,7 @@ def web_search(query: str, max_results: int = 10, engines: Optional[List[str]] =
             continue
         _wait_turn(name)
         try:
-            hits = [h for h in fn(query, max_results) if h.get("url", "").startswith(("http://", "https://"))]
+            hits = [_unmerge(h) for h in fn(query, max_results) if h.get("url", "").startswith(("http://", "https://"))]
         except EngineBlocked as e:
             _cool_down(name, str(e))
             outcome.attempts.append((name, f"bloqueado: {e}"))

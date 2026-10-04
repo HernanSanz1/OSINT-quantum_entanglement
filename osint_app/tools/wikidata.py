@@ -336,6 +336,6 @@ class WikidataTool(OSINTTool):
                 title=f"Web oficial de {person}", url=site,
                 snippet=f"Sitio web oficial de {person} según Wikidata ({e.get('id')}).",
                 source_tool=self.name, category="Web", relevance_score=85,
-                extra_data={"name": person},
+                extra_data={"name": person, "official_site": True},
             ))
         return results

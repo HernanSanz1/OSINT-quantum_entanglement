@@ -33,6 +33,11 @@ _ENV_MAP: Dict[str, str] = {
     "MISP":      "OSINT_MISP_KEY",
     "Cortex":    "OSINT_CORTEX_KEY",
     "IntelMQ":   "OSINT_INTELMQ_KEY",
+    # Búsqueda web estable (sin captcha): API oficial de Brave (plan gratuito) o un SearXNG propio (su URL)
+    "BraveSearch": "OSINT_BRAVE_KEY",
+    "SearXNG":     "OSINT_SEARXNG_URL",
+    # Usuario de Instagram con sesión creada por `instaloader --login USUARIO` (no es una contraseña)
+    "Instagram":   "OSINT_INSTAGRAM_USER",
 }
 
 

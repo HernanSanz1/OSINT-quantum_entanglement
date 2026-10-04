@@ -53,7 +53,7 @@ def main():
         # Load QSS styles
         qss_path = os.path.join(os.path.dirname(__file__), 'gui', 'style.qss')
         if os.path.exists(qss_path):
-            with open(qss_path, 'r') as f:
+            with open(qss_path, 'r', encoding='utf-8') as f:
                 app.setStyleSheet(f.read())
                 
         window = OSINTGUI()
