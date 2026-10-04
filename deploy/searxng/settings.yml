@@ -1,0 +1,24 @@
+# Plantilla de SearXNG para SENTINEL (búsqueda web propia, sin captcha de un solo buscador).
+# NO contiene secretos: scripts/searxng_local.py la copia a la carpeta de datos del usuario
+# (%LOCALAPPDATA%\SENTINEL\searxng en Windows) y cambia __SECRET__ por una clave aleatoria.
+use_default_settings: true
+
+general:
+  instance_name: "SENTINEL SearXNG"
+
+server:
+  secret_key: "__SECRET__"
+  # Solo se usa desde el propio equipo (el puerto se publica en 127.0.0.1): sin límite anti-bots
+  limiter: false
+  image_proxy: false
+  public_instance: false
+
+search:
+  safe_search: 0
+  # SENTINEL lee los resultados en JSON (sin esto la instancia responde 403)
+  formats:
+    - html
+    - json
+
+ui:
+  default_locale: "es"

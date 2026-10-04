@@ -149,7 +149,19 @@ Caso real de Jefferson Pérez: **55 entidades con ruido → 20 relevantes**.
 | Servidores CTI (IntelOwl y otros) | Son plantillas sin código | Hace falta un servidor de prueba para programar y verificar cada cliente |
 | Homónimos con el mismo nombre y apellido | Solo con el nombre no se pueden separar | Añadir contexto (ciudad, empresa, universidad): el sistema lo usa para desempatar |
 
-## 5. Cómo se verificó
+## 5. Configuración hecha con el usuario (Windows)
+
+- **Token de GitHub:** guardado cifrado por el propio usuario; límite de 60 a 5.000 consultas por hora. Cada persona
+  que use SENTINEL debe crear el suyo (no se comparte: queda ligado a su cuenta).
+- **SearXNG personal con Docker:** `python scripts/searxng_local.py start` crea la configuración del usuario (con su
+  propia clave secreta, fuera del proyecto), levanta el contenedor solo en `127.0.0.1:8888` y lo conecta con SENTINEL.
+  Medido con 10 búsquedas reales de personas: 94 resultados relevantes en 21 s frente a 74 en 49 s sin él. Si Docker
+  está apagado, SENTINEL sigue con los respaldos sin colgarse.
+- **Requisitos de Docker en Windows Home** (vistos en real): activar "Plataforma de máquina virtual" con
+  `wsl --install --no-distribution` y reiniciar, instalar Docker Desktop con `winget install -e --id Docker.DockerDesktop`.
+  Docker Desktop exige licencia de pago en organizaciones de más de 250 empleados o 10 millones de USD de facturación.
+
+## 6. Cómo se verificó
 
 - Herramientas ejecutadas contra objetivos reales: Daniel Noboa, Rafael Correa, Guillermo Lasso, Luisa González,
   María Paula Romo, Andrés Arauz, Gabriela Sommerfeld, Jefferson Pérez, Linus Torvalds, Satya Nadella, Kent C. Dodds,
