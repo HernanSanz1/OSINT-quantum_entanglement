@@ -575,3 +575,12 @@ las de social y pesadas no llegan ni a importar (usan funciones nuevas).
 **No verificado (sin el programa instalado):** el formato real de salida de Maigret (`--json` suele escribir un
 archivo, no stdout; si es así, la herramienta siempre devolverá "JSON no válido") y si Recon-ng repite en su salida los
 comandos del guion (podría dar falsos subdominios). Quedan anotados para probar con los programas instalados.
+
+## 14. Auditoría con pruebas reales (octubre 2026)
+
+A petición del usuario, toda la verificación pasa a hacerse con objetivos reales y públicos, no con simulaciones.
+El informe completo (hallazgos, correcciones, herramientas nuevas, limitaciones y cómo superarlas) está en
+[AUDITORIA_REAL.md](AUDITORIA_REAL.md), y la batería de pruebas reales se repite con `python scripts/auditoria_real.py`
+(18 de 18 correctas al cierre). Lo más grave que encontró: la búsqueda de personas daba 0 resultados en silencio por el
+captcha de DuckDuckGo, el perfilador descartaba los perfiles hallados por usuario y Maigret, Holehe e Instaloader
+estaban rotos sin que ninguna prueba simulada lo detectara.
