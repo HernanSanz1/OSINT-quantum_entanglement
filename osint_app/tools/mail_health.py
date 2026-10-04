@@ -264,6 +264,21 @@ class MailHealthTool(OSINTTool):
         mx = parse_mx(mx_raw or [])
         spf_records = _only(txt_raw or [], "v=spf1")
         spf = parse_spf(spf_records[0]) if spf_records else None
+        if spf and not spf["all"] and spf["redirect"]:
+            # "redirect=" delega la política en otro registro: gmail.com y yahoo.com lo usan. Antes se mostraba
+            # "sin 'all'" y el riesgo salía mal calculado; ahora se sigue la delegación (hasta 3 saltos).
+            target = spf["redirect"]
+            for _ in range(3):
+                sub = self._spf_of(target)
+                if not sub:
+                    break
+                parsed = parse_spf(sub)
+                if parsed["all"]:
+                    spf = {**spf, "all": parsed["all"], "all_via": target}
+                    break
+                if not parsed["redirect"]:
+                    break
+                target = parsed["redirect"]
         dmarc, dmarc_domain = self._find_dmarc(domain)
         info = {
             "domain": domain,
@@ -316,6 +331,8 @@ class MailHealthTool(OSINTTool):
             spf = "ausente"
         elif info["spf"]["all"]:
             spf = {"-": "-all (estricto)", "~": "~all (suave)", "?": "?all (neutral)", "+": "+all (abierto)"}[info["spf"]["all"]]
+            if info["spf"].get("all_via"):
+                spf += f" vía redirect a {info['spf']['all_via']}"
         else:
             spf = "sin 'all'"
         dmarc = f"p={info['dmarc']['policy'] or '?'}" if info["dmarc"] else "ausente"

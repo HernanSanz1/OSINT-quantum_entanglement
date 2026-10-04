@@ -17,6 +17,7 @@ from .link_shield import LinkShieldTool
 from .tech_detect import TechDetectTool
 from .web_search import WebSearchTool, GitHubOSINTTool, UsernameVariantsTool
 from .wikidata import WikidataTool
+from .ip_reputation import IpReputationTool
 
 from .heavy_tools import (
     SubfinderTool, AmassTool, SpiderFootTool,
@@ -37,6 +38,7 @@ ALL_TOOLS = [
     HunterTool,
     DnspythonTool,
     IpWhoisTool,
+    IpReputationTool,
     CensysTool,
     WaybackMachineTool,
     CrtShTool,

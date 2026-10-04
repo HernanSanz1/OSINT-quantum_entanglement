@@ -421,6 +421,10 @@ class LinkShieldTool(OSINTTool):
         age = self._domain_age(final_host)
         if age:
             findings += age_findings(age.get("age_days"))
+        # Listas públicas de amenazas ACTIVAS: un enlace ya reportado como phishing o malware es alto riesgo
+        # aunque su texto parezca inocente (antes solo se juzgaba la forma de la URL)
+        from .ip_reputation import feed_hits
+        findings += feed_hits(chain)
         score = min(100, sum(WEIGHTS[s] for s, _ in findings))
         level = "alto" if score >= HIGH_FROM else "medio" if score >= MEDIUM_FROM else "bajo"
 

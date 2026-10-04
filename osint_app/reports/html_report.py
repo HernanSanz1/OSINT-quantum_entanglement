@@ -1,10 +1,10 @@
 """
 HTML report generator v2 — works with ToolReport objects OR raw SearchResult lists.
 """
+import html
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Union
 
 
 CATEGORY_COLORS = {
@@ -29,6 +29,19 @@ CATEGORY_COLORS = {
     "General":        "#6c7086",
     "Config Error":   "#585b70",
 }
+
+
+def _esc(value) -> str:
+    """Texto seguro para HTML. Títulos, textos y URLs vienen de páginas, perfiles y registros de TERCEROS: sin
+    escapar, un objetivo podía plantar <script> en su bio o en el título de su web y ejecutarlo en el equipo del
+    analista al abrir el informe (auditoría 2026-10-04)."""
+    return html.escape(str(value if value is not None else ""), quote=True)
+
+
+def _safe_href(url: str) -> str:
+    """Solo enlaces http(s): un "javascript:" o "data:" escapado sigue ejecutándose al hacer clic."""
+    url = str(url or "").strip()
+    return url if url.lower().startswith(("http://", "https://")) else ""
 
 
 def generate_html(source) -> str:
@@ -66,23 +79,28 @@ def generate_html(source) -> str:
         cats_count[c]  = cats_count.get(c, 0) + 1
 
     tool_rows = "".join(
-        f"<tr><td>{t}</td><td>{c}</td></tr>" for t, c in tools_count.items()
+        f"<tr><td>{_esc(t)}</td><td>{c}</td></tr>" for t, c in tools_count.items()
     )
     cat_rows = "".join(
-        f"<tr><td>{c}</td><td>{n}</td></tr>" for c, n in cats_count.items()
+        f"<tr><td>{_esc(c)}</td><td>{n}</td></tr>" for c, n in cats_count.items()
     )
 
     # ─── Result cards ─────────────────────────────────────────────────────────
     cards = ""
     for r in results:
         color   = CATEGORY_COLORS.get(r.get("category", "General"), "#6c7086")
-        title   = r.get("title", "Sin título")
-        url     = r.get("url", "")
-        snippet = r.get("snippet", "")
-        cat     = r.get("category", "General")
-        stool   = r.get("source_tool", tool_name)
-        score   = r.get("relevance_score", 0)
-        href    = f'<a href="{url}" target="_blank">{title}</a>' if url else title
+        title   = _esc(r.get("title", "Sin título"))
+        raw_url = r.get("url", "")
+        url     = _esc(raw_url)
+        snippet = _esc(r.get("snippet", ""))
+        cat     = _esc(r.get("category", "General"))
+        stool   = _esc(r.get("source_tool", tool_name))
+        try:
+            score = int(r.get("relevance_score", 0) or 0)
+        except (TypeError, ValueError):
+            score = 0
+        link    = _safe_href(raw_url)
+        href    = f'<a href="{_esc(link)}" target="_blank" rel="noopener noreferrer">{title}</a>' if link else title
         cards += f"""
         <div class="card" style="border-left:4px solid {color}">
           <h3>{href}</h3>
@@ -100,7 +118,7 @@ def generate_html(source) -> str:
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Reporte OSINT — {tool_name} — {run_at}</title>
+  <title>Reporte OSINT — {_esc(tool_name)} — {_esc(run_at)}</title>
   <style>
     :root {{--bg:#1e1e2e;--surface:#313244;--text:#cdd6f4;--accent:#89b4fa}}
     *{{box-sizing:border-box;margin:0;padding:0}}
@@ -123,9 +141,9 @@ def generate_html(source) -> str:
   </style>
 </head>
 <body>
-  <h1>🔍 Reporte OSINT — {tool_name}</h1>
-  <p class="subtitle">Generado: {datetime.now():%Y-%m-%d %H:%M:%S} &nbsp;|&nbsp; Ejecución: {run_at} &nbsp;|&nbsp; Total: <strong>{len(results)}</strong> resultados</p>
-  <p class="subtitle">{summary}</p>
+  <h1>🔍 Reporte OSINT — {_esc(tool_name)}</h1>
+  <p class="subtitle">Generado: {datetime.now():%Y-%m-%d %H:%M:%S} &nbsp;|&nbsp; Ejecución: {_esc(run_at)} &nbsp;|&nbsp; Total: <strong>{len(results)}</strong> resultados</p>
+  <p class="subtitle">{_esc(summary)}</p>
 
   <h2>Resumen</h2>
   <div class="summary-grid">

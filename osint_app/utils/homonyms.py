@@ -174,7 +174,13 @@ def homonym_signals(text: str, url: str, seed_country: str, seed_context: str = 
     countries = _countries_in(norm)
     cities = _cities_in(text)
     own = cities.get(target, set())
-    tied_to_target = target in countries or bool(own)
+    # Un sitio del propio país del objetivo (expreso.ec para alguien de Ecuador) también lo liga a él: una
+    # biografía nombra ciudades extranjeras de su vida (Jefferson Pérez → "Atlanta 1996") sin que sea otra persona
+    try:
+        host_tld = (urlsplit(url or "").hostname or "").rsplit(".", 1)[-1].lower()
+    except ValueError:
+        host_tld = ""
+    tied_to_target = target in countries or bool(own) or host_tld == target
 
     if not tied_to_target and not strong:        # con un país ajeno ya detectado, la ciudad es la misma evidencia
         flagged: Set[str] = set()

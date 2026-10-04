@@ -136,6 +136,9 @@ class Candidate:
     extra_data: Dict[str, Any] = field(default_factory=dict)   # datos estructurados del resultado (GitHub: empresa, ubicación…)
 
 
+NON_CANDIDATE_CATEGORIES = {"Aviso", "Error", "Config Error", "Alerta"}
+
+
 class ProfilerEngine:
     """
     Motor de perfilamiento que orquesta todas las herramientas.
@@ -223,12 +226,25 @@ class ProfilerEngine:
                 elif req == 'phone' and seed.phone:
                     has_data = True
 
-            if has_data:
+            # Si la herramienta exige un dato que la semilla no tiene (Sherlock sin usuario, GitHub sin usuario…),
+            # no se lanza: antes corría, devolvía 0 al instante y el informe decía "ok, 0 resultados".
+            if has_data and not self._missing_mandatory(tool_name, seed):
                 available.append((tool_name, config['priority']))
 
         # Ordenar por prioridad
         available.sort(key=lambda x: x[1])
         return [t[0] for t in available]
+
+    _SEED_FIELD = {"target_name": "name", "username": "username", "email": "email", "domain": "domain",
+                   "phone": "phone", "company": "company"}
+
+    def _missing_mandatory(self, tool_name: str, seed: SeedData) -> bool:
+        reqs = getattr(self.tools[tool_name], "requirements", None)
+        for field_name in getattr(reqs, "mandatory", []) or []:
+            attr = self._SEED_FIELD.get(field_name)
+            if attr and not getattr(seed, attr, None):
+                return True
+        return False
 
     def _select_tools_to_run(self, seed: SeedData, only_tools: List[str] = None) -> List[str]:
         """Herramientas aplicables, filtradas por la selección del usuario.
@@ -325,9 +341,14 @@ class ProfilerEngine:
     CHAIN_MIN_CONFIDENCE = 40
 
     def _is_about_target(self, result: SearchResult, seed: SeedData) -> bool:
-        """True si el resultado coincide con la persona por nombre (completo o nombre+apellido) o por correo."""
+        """True si el resultado coincide con la persona: nombre completo o correo, o nombre+apellido corroborado
+        por país, ciudad, contexto, empresa o universidad (el X de Jefferson Pérez: nombre+apellido y Ecuador)."""
         confidence, matched = self._calculate_confidence(result, seed)
-        return confidence >= self.CHAIN_MIN_CONFIDENCE and bool({"name", "alias", "email"} & set(matched))
+        fields = set(matched)
+        if confidence >= self.CHAIN_MIN_CONFIDENCE and {"name", "alias", "email"} & fields:
+            return True
+        corroborated = {"country", "city", "context", "company", "university"} & fields
+        return confidence >= 35 and bool({"name_partial", "alias_partial"} & fields) and bool(corroborated)
 
     def _gather(self, executor, future_to_name: Dict, total_timeout: float) -> List[ToolResult]:
         """Recoge los resultados de las tareas lanzadas, sin perder ninguno si el tiempo se agota.
@@ -391,6 +412,9 @@ class ProfilerEngine:
         usernames = usernames[:self.MAX_CHAINED_USERNAMES]
         if not usernames:
             return []
+        # Se recuerdan para puntuar: un perfil con este usuario ES un candidato (se descubrió desde un resultado
+        # verificado). Antes Sherlock/Maigret encontraban 14 perfiles de "jeffersonperezq" y se descartaban todos.
+        self.chained_usernames = list(dict.fromkeys([*getattr(self, "chained_usernames", []), *usernames]))
 
         requested = set(only_tools) if only_tools else None
         tools = [
@@ -482,6 +506,10 @@ class ProfilerEngine:
                 continue
 
             for sr in tool_result.results:
+                # Avisos y errores de las herramientas ("GitHub limitó las consultas", "integración pendiente") no
+                # son datos de la persona: antes aparecían como candidatos de 30 puntos sin URL
+                if (sr.category or "").split(" /")[0] in NON_CANDIDATE_CATEGORIES:
+                    continue
                 # Los listados de personas ("600+ perfiles", directorios) no son candidatos; siguen en los reportes
                 listing = is_directory_result(sr.title, sr.url)
                 if listing:
@@ -562,6 +590,9 @@ class ProfilerEngine:
         if any(username_in_text(u, text) for u in seed.all_usernames()):
             score += 30
             matched.append('username')
+        elif any(username_in_text(u, text) for u in getattr(self, "chained_usernames", [])):
+            score += 30
+            matched.append('username_chained')
 
         # Pais/contexto
         if seed.country and seed.country.lower() in text:
@@ -790,16 +821,6 @@ class ProfilerEngine:
 
 
 _EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
-_GITHUB_USER_RE = re.compile(r'github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)', re.I)
-# Primeros segmentos de github.com que NO son un usuario.
-_GITHUB_RESERVED = {
-    "search", "orgs", "topics", "about", "login", "settings", "explore",
-    "users", "sponsors", "marketplace", "collections", "trending",
-    "features", "pricing", "notifications", "new",
-}
-_LINKEDIN_RE = re.compile(r'linkedin\.com/in/([A-Za-z0-9\-_%.]+)', re.I)
-_TWITTER_RE = re.compile(r'(?:twitter\.com|x\.com)/([A-Za-z0-9_]+)', re.I)
-_TWITTER_RESERVED = {"search", "explore", "i", "home", "hashtag", "share", "intent", "settings"}
 
 
 def extract_usernames_from_results(results) -> List[str]:
@@ -815,23 +836,19 @@ def extract_usernames_from_results(results) -> List[str]:
         if value and value not in found:
             found.append(value)
 
+    # Analizador estricto de perfiles (utils/identity): el dominio debe ser exactamente el de la plataforma.
+    # Antes una expresión sin anclar encontraba "github.com/<algo>" dentro de cualquier URL y en la prueba real
+    # con Kent C. Dodds lanzó la segunda ronda sobre el usuario inexistente "profiles" (197 resultados ajenos).
     for r in results:
         url = getattr(r, "url", "") if not isinstance(r, dict) else r.get("url", "")
-        if not url:
+        parsed = parse_profile_url(url) if url else None
+        if not parsed:
             continue
-
-        m = _GITHUB_USER_RE.search(url)
-        if m and m.group(1).lower() not in _GITHUB_RESERVED:
-            _add(m.group(1))
-
-        m = _LINKEDIN_RE.search(url)
-        if m:
-            _add(m.group(1))
-
-        m = _TWITTER_RE.search(url)
-        if m and m.group(1).lower() not in _TWITTER_RESERVED:
-            _add(m.group(1))
-
+        platform, handle, _canonical = parsed
+        if "/" in handle:
+            continue
+        if platform in _USERNAME_PLATFORMS or (platform == "linkedin" and not re.search(r"\d{5,}", handle)):
+            _add(handle)
     return found
 
 

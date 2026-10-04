@@ -79,7 +79,7 @@ def test_wayback_uses_https_and_expands_a_domain(wb):
     sent = wb(FakeResponse(200, CDX))
     WaybackMachineTool().execute(QueryParameters(domain="empresa.com"))
     assert sent["url"].startswith("https://")                                                  # antes: http en claro, con el objetivo investigado
-    assert sent["params"]["url"] == "empresa.com/*" and sent["params"]["limit"] == 300 and sent["params"]["filter"] == "statuscode:200"
+    assert sent["params"]["url"] == "empresa.com" and sent["params"]["matchType"] == "domain" and "filter" not in sent["params"]   # dominio: modo rápido (medido 1,6 s vs 30+ s)
     assert sent["timeout"] == 30 and "Mozilla" in sent["headers"]["User-Agent"]
 
 

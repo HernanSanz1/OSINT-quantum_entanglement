@@ -1,6 +1,10 @@
 """
 Threat Intelligence tools: IntelOwl, OpenCTI, MISP, Cortex, IntelMQ
-All require server instances or API keys.
+
+ESTADO REAL (auditoría 2026-10-04): son PLANTILLAS. `BASE_URL` nunca se configura (siempre "") y no hay código
+que consulte esos servidores: `execute` solo devuelve un aviso. Se mantienen para no perder la guía de instalación,
+pero dicen la verdad y remiten a "IP Reputation", que sí da CTI real sin servidor. Programar cada cliente exige un
+servidor de prueba para verificarlo en real.
 """
 import logging
 from typing import List
@@ -48,9 +52,9 @@ class _ThreatBaseTool(OSINTTool):
                 "status": "not_installed",
                 "icon": "🐳",
                 "message": (
-                    f"{self.name} requiere un servidor Docker levantado localmente.\n"
-                    f"No hay URL configurada. Levanta el servidor primero y luego\n"
-                    f"configura la URL en ~/.osint_v2_keys (o vía GUI)."
+                    f"🚧 {self.name}: integración PENDIENTE — SENTINEL todavía no tiene programada la\n"
+                    f"consulta a este servidor, así que levantarlo no basta. Para CTI real sin servidor usa\n"
+                    f"'IP Reputation' (Shodan InternetDB, GreyNoise, Tor, Spamhaus, FireHOL, URLhaus)."
                 ),
                 "install_cmd": (
                     f"# 1. Clona el repositorio:\n"
@@ -58,8 +62,9 @@ class _ThreatBaseTool(OSINTTool):
                     f"# 2. Levanta los servicios:\n"
                     f"{self._DOCKER_CMD}\n\n"
                     f"# 3. Accede en: http://localhost:{self._DEFAULT_PORT}\n"
-                    f"# 4. Agrega la API key en ~/.osint_v2_keys:\n"
-                    f'#    "{self.name}": "tu-api-key"'
+                    f"# 4. Guarda la API key (queda cifrada):\n"
+                    f"#    python -m osint_app.main --set-key {self.name}\n"
+                    f"# (cuando la integración esté programada)"
                 ),
             }
 
@@ -90,17 +95,15 @@ class _ThreatBaseTool(OSINTTool):
                     f"{self.name}: servidor ✅ responde en {self.BASE_URL}\n"
                     f"Pero falta la API key para autenticarse."
                 ),
-                "install_cmd": (
-                    f'# En ~/.osint_v2_keys agrega:\n'
-                    f'"{self.name}": "tu-api-key-aqui"'
-                ),
+                "install_cmd": f"python -m osint_app.main --set-key {self.name}",
             }
 
         # 4. Todo listo
         return {
-            "status": "ready",
-            "icon": "✅",
-            "message": f"{self.name} listo — servidor en {self.BASE_URL} responde correctamente.",
+            "status": "not_installed",
+            "icon": "🚧",
+            "message": (f"{self.name}: el servidor responde en {self.BASE_URL}, pero la integración aún no está "
+                        f"programada en SENTINEL. Usa 'IP Reputation' para CTI real."),
             "install_cmd": "",
         }
 
@@ -215,12 +218,13 @@ class IntelMQTool(_ThreatBaseTool):
 
 
 def _server_error_result(tool_name: str, server: str) -> List[SearchResult]:
-    """Placeholder result when server integration is not yet configured."""
+    """Aviso honesto: la integración con el servidor todavía no está programada."""
     return [SearchResult(
-        title=f"{tool_name} — servidor no configurado",
+        title=f"{tool_name} — integración pendiente",
         url="",
-        snippet=(f"Para usar {server} configura la URL del servidor y el API key "
-                 f"en la pestaña Configuración."),
+        snippet=(f"SENTINEL todavía no tiene programada la consulta a {server}: configurar el servidor no basta. "
+                 f"Para reputación de IPs y URLs usa la herramienta 'IP Reputation' "
+                 f"(Shodan InternetDB, GreyNoise, Tor, Spamhaus, FireHOL y URLhaus, sin clave)."),
         source_tool=tool_name, category="Config Error",
         relevance_score=0,
     )]

@@ -55,11 +55,9 @@ class WaybackMachineTool(OSINTTool):
             self._report_progress("⚠️ Wayback Machine: No se proporcionó Dominio ni URL.")
             return []
 
-        # We append a wildcard to search the whole domain path
-        if not target.endswith("/*"):
-            # If it's just a domain like "example.com", we expand it. If it's a specific file, we search just the file.
-            if target_domain and target == target_domain:
-                target = f"{target}/*"
+        # Dominio completo: matchType=domain (incluye subdominios). Medido en real con sri.gob.ec: 1,6 s frente a
+        # 13–30+ s de la consulta anterior "dominio/*" con filtro de estado en el servidor (que agotaba el tiempo).
+        whole_domain = bool(target_domain) and target == target_domain
 
         self._report_progress(f"🔍 Consultando Wayback Machine CDX API para: {target}...")
         
@@ -71,10 +69,13 @@ class WaybackMachineTool(OSINTTool):
             "url": target,
             "output": "json",
             "collapse": "urlkey", # group identical urls
-            "filter": "statuscode:200", # only successful snapshots
-            "limit": 300, # Limit the output
-            "fl": "original,timestamp,mimetype" # fields we want
+            "limit": 600,
+            "fl": "original,timestamp,mimetype,statuscode",
         }
+        if whole_domain:
+            params["matchType"] = "domain"
+        else:
+            params["filter"] = "statuscode:200"
 
         try:
             jitter = random.uniform(1.0, 3.0)
@@ -118,6 +119,10 @@ class WaybackMachineTool(OSINTTool):
                     break
                     
                 item = dict(zip(headers, row))
+                if item.get("statuscode", "200") not in ("200", "-"):     # solo capturas válidas (filtrado local)
+                    continue
+                if len(results) >= 300:
+                    break
                 orig_url = item.get("original", "")
                 timestamp = item.get("timestamp", "")
                 mime = item.get("mimetype", "unknown")

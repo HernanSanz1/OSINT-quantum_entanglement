@@ -80,7 +80,73 @@ SIGNATURES = [
     ("header-any", "x-owa-version", "Microsoft Exchange"),
     ("header-any", "atlassian", "Atlassian"),
     ("header-any", "x-jira", "Atlassian Jira"),
+    # ── Ampliación (auditoría 2026-10-04: firmas propias, verificadas en sitios reales; Wappalyzer es GPL) ──
+    ("server", "github.com", "GitHub Pages"),
+    ("server", "gws", "Google Web Server"),
+    ("server", "caddy", "Caddy"),
+    ("server", "envoy", "Envoy"),
+    ("header-any", "x-vercel-id", "Vercel"),
+    ("header-any", "x-nf-request-id", "Netlify"),
+    ("header-any", "x-azure-ref", "Microsoft Azure"),
+    ("header-any", "x-ms-request-id", "Microsoft Azure"),
+    ("header-any", "x-served-by cache-", "Fastly"),
+    ("header-any", "x-fastly", "Fastly"),
+    ("header-any", "x-github-request-id", "GitHub"),
+    ("header-any", "x-shopid", "Shopify"),
+    ("header-any", "x-sorting-hat", "Shopify"),
+    ("html", "cdn.shopify.com", "Shopify"),
+    ("html", "/_next/static", "Next.js"),
+    ("html", "__next_data__", "Next.js"),
+    ("html", "__nuxt", "Nuxt.js"),
+    ("html", "ng-version=", "Angular"),
+    ("html", "data-reactroot", "React"),
+    ("html", "/wp-json/", "WordPress"),
+    ("html", "/media/jui/", "Joomla"),
+    ("html", "/sites/default/files", "Drupal"),
+    ("html", "m.cfg = {", "Moodle"),                   # objeto JS propio de Moodle (no basta un enlace "moodle")
+    ("cookie", "moodlesession", "Moodle"),
+    ("html", "liferay.themedisplay", "Liferay"),
+    ("html", "/_layouts/15/", "Microsoft SharePoint"),
+    ("cookie", "laravel_session", "Laravel"),
+    ("cookie", "xsrf-token", "Laravel"),
+    ("cookie", "csrftoken", "Django"),
+    ("cookie", "phpsessid", "PHP"),
+    ("cookie", "asp.net_sessionid", "Microsoft ASP.NET"),
+    ("cookie", "jsessionid", "Java (Servlet)"),
+    ("html", "jquery", "jQuery"),
+    ("html", "bootstrap.min.css", "Bootstrap"),
+    ("html", "googletagmanager.com/gtm.js", "Google Tag Manager"),
+    ("html", "googletagmanager.com/gtag/js", "Google Analytics"),
+    ("html", "google-analytics.com", "Google Analytics"),
+    ("html", "connect.facebook.net", "Meta Pixel"),
+    ("html", "static.hotjar.com", "Hotjar"),
+    ("html", "recaptcha", "Google reCAPTCHA"),
+    ("html", "hcaptcha.com", "hCaptcha"),
+    ("html", "challenges.cloudflare.com/turnstile", "Cloudflare Turnstile"),
 ]
+
+# Versiones expuestas en cabeceras o en la meta "generator": en CTI dicen si el software está desactualizado
+_VERSION_PATTERNS = [
+    ("server", r"nginx/([\d.]+)", "nginx"), ("server", r"apache/([\d.]+)", "Apache"),
+    ("server", r"microsoft-iis/([\d.]+)", "Microsoft IIS"), ("server", r"openresty/([\d.]+)", "OpenResty"),
+    ("x-powered-by", r"php/([\d.]+)", "PHP"), ("x-powered-by", r"asp\.net[ /]?([\d.]+)?", "Microsoft ASP.NET"),
+    ("x-aspnet-version", r"([\d.]+)", "Microsoft ASP.NET"),
+    ("meta-generator", r"wordpress ([\d.]+)", "WordPress"), ("meta-generator", r"drupal ([\d.]+)", "Drupal"),
+    ("meta-generator", r"joomla!? ?([\d.]+)", "Joomla"),
+]
+
+
+def detect_versions(headers: Dict[str, str], html: str = "") -> Dict[str, str]:
+    """{tecnología: versión} cuando el sitio la expone (Server: Apache/2.4.41, X-Powered-By: PHP/7.4…)."""
+    h = {str(k).lower(): str(v).lower() for k, v in (headers or {}).items()}
+    sources = {"server": h.get("server", ""), "x-powered-by": h.get("x-powered-by", ""),
+               "x-aspnet-version": h.get("x-aspnet-version", ""), "meta-generator": _meta_generator(html).lower()}
+    out: Dict[str, str] = {}
+    for where, pattern, tech in _VERSION_PATTERNS:
+        m = re.search(pattern, sources.get(where, ""))
+        if m and m.group(1) and tech not in out:
+            out[tech] = m.group(1)
+    return out
 
 REQUIREMENTS = ToolRequirements(
     mandatory=["domain"],
@@ -170,20 +236,29 @@ class TechDetectTool(OSINTTool):
             return []
 
         techs = detect_technologies(headers, html)
+        # github.com y un sitio de GitHub Pages envían las mismas cabeceras: se distingue por el dominio
+        host = target.split("/")[0]
+        if "GitHub Pages" in techs:
+            is_github = host == "github.com" or host.endswith(".github.com")
+            techs = [t for t in techs if t != ("GitHub Pages" if is_github else "GitHub")]
+        versions = detect_versions(headers, html)
         if not techs:
             self._report_progress("Tech Detect: no se identificaron tecnologías conocidas.")
             return []
 
-        self._report_progress(f"✅ Tech Detect: {len(techs)} tecnologías — {', '.join(techs)}")
+        label = [f"{t} {versions[t]}" if t in versions else t for t in techs]
+        self._report_progress(f"✅ Tech Detect: {len(techs)} tecnologías — {', '.join(label)}")
         return [
             SearchResult(
-                title=tech,
+                title=f"{tech} {versions[tech]}" if tech in versions else tech,
                 url=f"https://{target.split('/')[0]}",
-                snippet=f"Tecnología detectada en {target}",
+                snippet=f"Tecnología detectada en {target}" + (
+                    f" · versión {versions[tech]} expuesta públicamente (útil para buscar vulnerabilidades conocidas)"
+                    if tech in versions else ""),
                 source_tool=self.name,
                 category="Technology",
-                relevance_score=70,
-                raw_data={"technology": tech, "domain": target.split("/")[0]},
+                relevance_score=75 if tech in versions else 70,
+                raw_data={"technology": tech, "domain": target.split("/")[0], "version": versions.get(tech, "")},
             )
             for tech in techs
         ]

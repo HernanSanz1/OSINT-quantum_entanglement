@@ -37,7 +37,9 @@ MAX_XML_BYTES = 1_000_000
 MAX_REDIRECTS = 3
 MAX_WAIT = 15                    # segundos máximos que se acatan de Retry-After (429/503)
 REQUEST_TIMEOUT = 25
-USER_AGENT = "SENTINEL-OSINT/2.0 (file-metadata; python-requests)"   # descriptivo: Wikimedia limita los UA genéricos
+# Con forma de contacto (URL del proyecto): la política de Wikimedia lo exige; sin ella respondía HTTP 429
+# incluso a la primera descarga (verificado 2026-10-04: mismo archivo → 429 sin contacto, 200 con contacto)
+USER_AGENT = "SENTINEL-OSINT/2.0 (https://github.com/HernanSanz1/OSINT-quantum_entanglement; file-metadata)"
 SEVERITY_SCORE = {"alta": 88, "media": 75, "baja": 60}
 OFFICE_PARTS = ("docProps/core.xml", "docProps/app.xml")
 

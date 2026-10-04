@@ -165,6 +165,7 @@ def test_trace_blocks_private_destination_and_reports_errors(net):
 def tool(monkeypatch):
     t = LinkShieldTool()
     monkeypatch.setattr(t, "_domain_age", lambda host: None)         # sin RDAP salvo en los tests de antigüedad
+    monkeypatch.setattr("osint_app.tools.ip_reputation.feed_hits", lambda urls: [])   # listas de amenazas: verificadas en real
     monkeypatch.setattr(t._rate, "wait_if_needed", lambda: None)
     return t
 

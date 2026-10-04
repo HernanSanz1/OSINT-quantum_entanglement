@@ -12,25 +12,23 @@ Flujo:
 Las herramientas disponibles se muestran en la GUI y se ejecutan en paralelo.
 """
 import json
-import threading
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QTableWidget, QTableWidgetItem, QPlainTextEdit,
-    QProgressBar, QFrame, QSplitter, QHeaderView, QMessageBox,
-    QGroupBox, QFormLayout, QTextEdit, QCheckBox, QComboBox,
+    QProgressBar, QFrame, QSplitter, QHeaderView, QGroupBox, QTextEdit, QComboBox,
     QListWidget, QListWidgetItem, QAbstractItemView
 )
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from osint_app.profiler_engine import ProfilerEngine, SeedData, Candidate, parse_list
+from osint_app.profiler_engine import ProfilerEngine, SeedData, parse_list
 from osint_app.tools import build_tool_registry
 
 
@@ -815,7 +813,7 @@ Snippet:
             self.app.toast.show("Confirma al menos un candidato primero", kind="error")
             return
 
-        from ..profiler_engine import SeedData, enrich_seed_from_candidates
+        from ..profiler_engine import enrich_seed_from_candidates
 
         confirmed = [c for c in self.candidates_data if c.get("url") in self.confirmed_urls]
         base = self._seed_from_inputs()
@@ -971,7 +969,7 @@ Snippet:
                 <td style="padding: 8px; border-bottom: 1px solid #333;">{i}</td>
                 <td style="padding: 8px; border-bottom: 1px solid #333;">{html_lib.escape(u['source'])}</td>
                 <td style="padding: 8px; border-bottom: 1px solid #333;">
-                    <a href="{html_lib.escape(u['url'])}" target="_blank" style="color: #00d4ff;">{html_lib.escape(u['title'][:60])}</a>
+                    <a href="{html_lib.escape(u['url']) if str(u['url']).lower().startswith(('http://', 'https://')) else '#'}" target="_blank" rel="noopener noreferrer" style="color: #00d4ff;">{html_lib.escape(u['title'][:60])}</a>
                 </td>
                 <td style="padding: 8px; border-bottom: 1px solid #333; color: {conf_color}; font-weight: bold;">{u['confidence']:.0f}%</td>
             </tr>

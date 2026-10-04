@@ -15,7 +15,7 @@ Solo sirve para personas con ficha en Wikidata (figuras públicas); para el rest
 """
 import logging
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
@@ -89,16 +89,33 @@ class WikidataTool(OSINTTool):
         resp.raise_for_status()
         return resp.json()
 
+    @staticmethod
+    def _short_forms(name: str) -> List[str]:
+        """Formas cortas con las que suele estar registrada una persona hispana en Wikidata.
+
+        "Jefferson Pérez Quezada" está como "Jefferson Pérez" (prueba real: con el nombre completo daba 0).
+        3 palabras: N A1 · 4: N1 A1 y N1 N2 A1.
+        """
+        parts = name.split()
+        if len(parts) == 3:
+            return [f"{parts[0]} {parts[1]}"]
+        if len(parts) >= 4:
+            return [f"{parts[0]} {parts[-2]}", f"{parts[0]} {parts[1]} {parts[-2]}"]
+        return []
+
     def _search_ids(self, name: str) -> List[str]:
         ids: List[str] = []
-        for lang in ("es", "en"):
-            data = self._api(action="wbsearchentities", search=name, language=lang, uselang=lang,
-                             type="item", limit=MAX_CANDIDATES)
-            for item in data.get("search", []):
-                if item["id"] not in ids:
-                    ids.append(item["id"])
-            if len(ids) >= MAX_CANDIDATES:
-                break
+        for query in [name, *self._short_forms(name)]:
+            for lang in ("es", "en"):
+                data = self._api(action="wbsearchentities", search=query, language=lang, uselang=lang,
+                                 type="item", limit=MAX_CANDIDATES)
+                for item in data.get("search", []):
+                    if item["id"] not in ids:
+                        ids.append(item["id"])
+                if len(ids) >= MAX_CANDIDATES:
+                    break
+            if ids:
+                break                                   # la forma completa (o la primera corta) ya encontró fichas
         return ids[:MAX_CANDIDATES]
 
     def _entities(self, ids: List[str], props: str) -> Dict[str, dict]:
@@ -210,7 +227,7 @@ class WikidataTool(OSINTTool):
                 # Otra persona con el mismo nombre que el contexto descarta: se muestra, pero no como la buscada
                 results.append(self._person_result(e, labels, points, ctx_words, True, len(scored), discarded=True))
         if not ambiguous:
-            results += self._social_results(best, name)
+            results += self._social_results(best, name, results[0].raw_data)
             self._report_progress(f"✅ Wikidata: {self._label(best)} — {self._description(best)} "
                                   f"({len(results) - 1} cuentas/datos vinculados)")
         else:
@@ -247,7 +264,12 @@ class WikidataTool(OSINTTool):
             if wiki in sitelinks:
                 fields[f"wikipedia_{lang}"] = f"https://{lang}.wikipedia.org/wiki/{sitelinks[wiki]['title'].replace(' ', '_')}"
 
+        aliases = [a["value"] for lang in ("es", "en") for a in e.get("aliases", {}).get(lang, [])]
+        if aliases:
+            fields["aliases"] = list(dict.fromkeys(aliases))[:5]
         parts = [fields["description"]]
+        if fields.get("aliases"):
+            parts.append("También conocido como: " + ", ".join(fields["aliases"]))
         if birth:
             parts.append(f"Nacimiento: {birth}" + (f" en {fields['Lugar de nacimiento'][0]}" if fields.get("Lugar de nacimiento") else ""))
         for label in ("Nacionalidad", "Cargos", "Ocupación", "Estudios", "Empleadores", "Partido"):
@@ -282,17 +304,26 @@ class WikidataTool(OSINTTool):
                 out[label] = list(dict.fromkeys(vals))
         return out
 
-    def _social_results(self, e: dict, name: str) -> List[SearchResult]:
-        """Una entrada por cuenta oficial: así el perfilador las trata como candidatos y extrae el usuario."""
+    def _social_results(self, e: dict, name: str, card: Optional[dict] = None) -> List[SearchResult]:
+        """Una entrada por cuenta oficial: así el perfilador las trata como candidatos y extrae el usuario.
+
+        El texto incluye la identidad de la ficha (nombre completo, descripción, nacionalidad, lugar de
+        nacimiento): antes solo decía "X de Jefferson Pérez", puntuaba 25 frente a "Jefferson Pérez Quezada" y
+        las cuentas oficiales verificadas se descartaban (prueba real).
+        """
         results = []
         person = self._label(e)
+        card = card or {}
+        identity = " · ".join(str(x) for x in (
+            card.get("Nombre de nacimiento") or card.get("Nombre nativo") or "", card.get("description", ""),
+            ", ".join(card.get("Nacionalidad") or []), ", ".join(card.get("Lugar de nacimiento") or [])) if x)
         for prop, (label, template) in SOCIAL.items():
             for handle in list(dict.fromkeys(v for v in self._values(e, prop) if isinstance(v, str) and v.strip()))[:3]:
                 url = template.format(handle) if template else ""
                 results.append(SearchResult(
                     title=f"{label} oficial de {person}: {handle}",
                     url=url,
-                    snippet=f"Cuenta {label} '{handle}' de {person} registrada en Wikidata ({e.get('id')}). "
+                    snippet=f"Cuenta {label} '{handle}' de {person} ({identity}) registrada en Wikidata ({e.get('id')}). "
                             f"Dato comunitario con referencias: confírmalo abriendo el perfil.",
                     source_tool=self.name,
                     category="Social Media",

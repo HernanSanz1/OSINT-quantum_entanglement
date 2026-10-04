@@ -2,7 +2,6 @@
 import pytest
 
 from osint_app.core.models import QueryParameters
-from osint_app.tools import tech_detect
 from osint_app.tools.tech_detect import TechDetectTool, detect_technologies
 
 
@@ -55,9 +54,9 @@ def test_execute_maps_techs_to_results(tool, monkeypatch):
 
     results = tool.execute(QueryParameters(domain="example.com"))
     titles = {r.title for r in results}
-    assert titles == {"nginx", "Drupal"}
+    assert titles == {"nginx", "Drupal 10"}                     # la versión expuesta se muestra (dato útil en CTI)
     assert all(r.category == "Technology" for r in results)
-    assert results[0].raw_data["technology"] in titles
+    assert results[0].raw_data["technology"] in {"nginx", "Drupal"}
 
 
 def test_execute_rejects_invalid_domain(tool, monkeypatch):
