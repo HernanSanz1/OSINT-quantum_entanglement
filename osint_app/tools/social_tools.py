@@ -2,12 +2,30 @@
 Social tools: Sherlock, Holehe, GHunt, snscrape
 All via subprocess — declared with ToolRequirements.
 """
-import subprocess, json, time, shutil, logging, shlex
+import subprocess, shutil, logging, shlex, re
 from typing import List
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
 from ..core.base_tool import OSINTTool
 
 logger = logging.getLogger(__name__)
+
+
+# Los datos que llegan al programa externo se validan: uno que empiece por "-" se leería como una OPCIÓN del
+# programa (y los usuarios pueden venir de URLs de resultados web de terceros en la búsqueda encadenada).
+_USERNAME_RE = re.compile(r"^[^\W-][\w.-]{0,63}$")
+_EMAIL_RE = re.compile(r"^[^\s@-][^\s@]*@[^\s@]+\.[^\s@]+$")
+_SHORTCODE_RE = re.compile(r"^[A-Za-z0-9_-]{10,40}$")      # código de una publicación de Instagram
+
+
+def _clean_username(value: str) -> str:
+    """Usuario sin '@' o '' si no es seguro pasarlo a un programa externo."""
+    user = (value or "").strip().lstrip("@")
+    return user if _USERNAME_RE.match(user) else ""
+
+
+def _clean_email(value: str) -> str:
+    email = (value or "").strip()
+    return email if _EMAIL_RE.match(email) else ""
 
 
 def _run(cmd: List[str], timeout: int = 300):
@@ -51,14 +69,20 @@ class SherlockTool(OSINTTool):
         cmd_path = shutil.which("sherlock")
         if not cmd_path:
             return []
-            
-        cmd_args = [cmd_path, query_params.username]
+        username = _clean_username(query_params.username)
+        if not username:
+            self._report_progress("⚠️ Sherlock: el usuario está vacío o no es válido (no puede empezar por '-').")
+            return []
+
+        cmd_args = [cmd_path, username]
         if query_params.extra_args:
             cmd_args.extend(shlex.split(query_params.extra_args))
         else:
             cmd_args.extend(["--print-found", "--timeout", "10"])
-            
+
         out, code = _run(cmd_args)
+        if code == -1:
+            self._report_progress("⚠️ Sherlock: se agotó el tiempo (5 min) o no se pudo ejecutar; no hay resultados.")
         results = []
         for line in out.splitlines():
             line = line.strip()
@@ -68,8 +92,8 @@ class SherlockTool(OSINTTool):
                 if len(parts) == 2:
                     site, url = parts[0].strip(), parts[1].strip()
                     results.append(SearchResult(
-                        title=f"Perfil en {site}: {query_params.username}",
-                        url=url, snippet=f"Username {query_params.username} encontrado en {site}",
+                        title=f"Perfil en {site}: {username}",
+                        url=url, snippet=f"Username {username} encontrado en {site}",
                         source_tool=self.name, category="Social Media", relevance_score=80,
                     ))
         return results
@@ -106,15 +130,25 @@ class HoleheTool(OSINTTool):
         cmd_path = shutil.which("holehe")
         if not cmd_path:
             return []
-        out, _ = _run([cmd_path, query_params.email, "--only-used"])
+        email = _clean_email(query_params.email)
+        if not email:
+            self._report_progress("⚠️ Holehe: el correo está vacío o no es válido.")
+            return []
+        out, code = _run([cmd_path, email, "--only-used"])
+        if code == -1:
+            self._report_progress("⚠️ Holehe: se agotó el tiempo o no se pudo ejecutar; no hay resultados.")
         results = []
         for line in out.splitlines():
             line = line.strip()
-            if "[+]" in line or "used" in line.lower():
-                service = line.replace("[+]", "").strip()
+            # Solo las líneas "[+] servicio" (antes también cualquier línea con "used": la propia ayuda de Holehe,
+            # "--only-used", se daba como un servicio donde el correo tiene cuenta)
+            if line.startswith("[+]"):
+                service = line[3:].strip()
+                if not service:
+                    continue
                 results.append(SearchResult(
                     title=f"Email registrado en: {service}",
-                    url="", snippet=f"{query_params.email} tiene cuenta en {service}",
+                    url="", snippet=f"{email} tiene cuenta en {service}",
                     source_tool=self.name, category="Email Social", relevance_score=85,
                 ))
         return results
@@ -154,17 +188,24 @@ class GHuntTool(OSINTTool):
         cmd_path = shutil.which("ghunt")
         if not cmd_path:
             return []
-        
-        cmd_args = [cmd_path, "email", query_params.email]
+        email = _clean_email(query_params.email)
+        if not email:
+            self._report_progress("⚠️ GHunt: el correo está vacío o no es válido.")
+            return []
+
+        cmd_args = [cmd_path, "email", email]
         if query_params.extra_args:
             cmd_args.extend(shlex.split(query_params.extra_args))
-            
-        out, _ = _run(cmd_args, timeout=120)
+
+        out, code = _run(cmd_args, timeout=120)
+        if code == -1:
+            self._report_progress("⚠️ GHunt: se agotó el tiempo o no se pudo ejecutar; no hay resultados.")
         if not out:
             return []
-            
-        # Detect auth error in merged stdout/stderr
-        if "load_and_auth" in out or "ghunt login" in out.lower() or "auth" in out.lower():
+
+        # Falta de sesión: solo por las marcas propias de GHunt (antes bastaba que la salida contuviera "auth",
+        # y un resultado normal con esa palabra se daba como "bloqueado")
+        if "load_and_auth" in out or "ghunt login" in out.lower():
             return [SearchResult(
                 title=f"⚠️ GHunt Bloqueado: Falta Autenticación",
                 url="", snippet="GHunt requiere que inicies sesión primero. Abre una terminal, activa el entorno y ejecuta 'ghunt login'.\n" + out[-200:],
@@ -172,7 +213,7 @@ class GHuntTool(OSINTTool):
             )]
             
         return [SearchResult(
-            title=f"GHunt — análisis de {query_params.email}",
+            title=f"GHunt — análisis de {email}",
             url=f"https://accounts.google.com/",
             snippet=out[:500],
             source_tool=self.name, category="Google Account", relevance_score=90,
@@ -243,7 +284,7 @@ class InstagramTool(OSINTTool):
         )
 
     def check_available(self) -> bool:
-        import importlib.util, sys
+        import importlib.util
         self.is_available = (shutil.which("instaloader") is not None) or (importlib.util.find_spec("instaloader") is not None)
         return self.is_available
 
@@ -256,10 +297,13 @@ class InstagramTool(OSINTTool):
         if not cmd_path and not has_module:
             return []
             
-        target = query_params.observable if query_params.observable else query_params.username
+        # `observable` solo sirve si es el código de una publicación; un texto libre (contexto) no es un perfil
+        shortcode = query_params.observable if _SHORTCODE_RE.match(query_params.observable or "") else ""
+        target = shortcode or _clean_username(query_params.username)
         if not target:
+            self._report_progress("⚠️ Instaloader: falta un usuario válido o el código de una publicación.")
             return []
-            
+
         # Basic anonymous scraping
         if has_module:
             cmd = [sys.executable, "-m", "instaloader", "--login=anon", "--fast-update"]
@@ -269,13 +313,15 @@ class InstagramTool(OSINTTool):
         if query_params.extra_args:
              cmd.extend(shlex.split(query_params.extra_args))
         else:
-             if query_params.observable and len(query_params.observable) >= 10:
+             if shortcode:
                   cmd.extend(["--post", target])
              else:
                   cmd.append(target)
-             
-        out, _ = _run(cmd, timeout=120)
-        
+
+        out, code = _run(cmd, timeout=120)
+        if code == -1:
+            self._report_progress("⚠️ Instaloader: se agotó el tiempo o no se pudo ejecutar; no hay resultados.")
+
         if not out.strip():
              return []
              
@@ -284,7 +330,7 @@ class InstagramTool(OSINTTool):
              
         return [SearchResult(
             title=f"Extracción Instaloader: {target}",
-            url=f"https://instagram.com/p/{target}" if "--post" in cmd else f"https://instagram.com/{target}",
+            url=f"https://instagram.com/p/{target}" if shortcode else f"https://instagram.com/{target}",
             snippet=snippet,
             source_tool=self.name, category="Social Media", relevance_score=85,
         )]

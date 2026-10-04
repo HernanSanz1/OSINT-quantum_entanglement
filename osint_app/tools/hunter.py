@@ -1,7 +1,7 @@
 """
 Hunter.io tool v2.
 """
-import time, logging
+import logging
 from typing import List
 import requests
 
@@ -38,21 +38,36 @@ class HunterTool(OSINTTool):
             results += self._verify(query_params.email)
         return results
 
+    # Motivos legibles cuando Hunter rechaza la consulta (antes se devolvía {} sin decir nada)
+    _HTTP_REASONS = {
+        401: "la clave de API no es válida", 403: "la clave no tiene permiso", 429: "se agotó el límite de consultas",
+        400: "Hunter no entendió la consulta", 404: "no encontró nada",
+    }
+
     def _get(self, ep: str, params: dict) -> dict:
-        params["api_key"] = self.api_key
+        # La clave va en una cabecera, NO en la URL: una URL con la clave acaba en registros y mensajes de error
         try:
-            r = requests.get(f"{self.BASE}/{ep}", params=params, timeout=15)
-            return r.json() if r.status_code == 200 else {}
+            r = requests.get(f"{self.BASE}/{ep}", params=params, headers={"X-API-KEY": self.api_key}, timeout=15)
         except Exception as e:
-            logger.error(f"Hunter error: {e}")
+            logger.error(f"Hunter error de red: {type(e).__name__}")       # solo el tipo: el texto del error puede incluir la URL
+            self._report_progress(f"❌ Hunter.io: error de red ({type(e).__name__}).")
+            return {}
+        if r.status_code != 200:
+            reason = self._HTTP_REASONS.get(r.status_code, "respondió con un error")
+            self._report_progress(f"⚠️ Hunter.io: {reason} (HTTP {r.status_code}).")
+            return {}
+        try:
+            return r.json()
+        except ValueError:
+            self._report_progress("⚠️ Hunter.io: respuesta que no es JSON.")
             return {}
 
     def _domain_search(self, domain: str) -> List[SearchResult]:
         data = self._get("domain-search", {"domain": domain, "limit": 100})
         out = []
-        for e in data.get("data", {}).get("emails", []):
+        for e in ((data.get("data") or {}).get("emails") or []):
             email = e.get("value", "")
-            conf  = e.get("confidence", 0)
+            conf  = e.get("confidence") or 0
             out.append(SearchResult(
                 title=f"{e.get('first_name','')} {e.get('last_name','')} — {e.get('position','')}",
                 url=f"https://hunter.io/verifier/{email}",
@@ -63,25 +78,27 @@ class HunterTool(OSINTTool):
 
     def _find_email(self, name: str, company: str) -> List[SearchResult]:
         parts = name.split()
-        data = self._get("email-finder", {
-            "first_name": parts[0], "last_name": " ".join(parts[1:]), "company": company
-        })
-        e = data.get("data", {})
+        if not parts:
+            return []
+        # Nombres hispanos de 4 palabras (N1 N2 A1 A2): el apellido es la 3.ª, no "Carlos Pérez Mora" entero
+        last = parts[2] if len(parts) >= 4 else " ".join(parts[1:])
+        data = self._get("email-finder", {"first_name": parts[0], "last_name": last, "company": company})
+        e = data.get("data") or {}
         if not e: return []
         return [SearchResult(
             title=f"Email: {name} @ {company}",
             url=f"https://hunter.io/verifier/{e.get('value','')}",
             snippet=f"Email: {e.get('value','')}  Score: {e.get('score',0)}",
             source_tool=self.name, category="Email",
-            relevance_score=int(e.get("score", 0)), raw_data=e)]
+            relevance_score=int(e.get("score") or 0), raw_data=e)]
 
     def _verify(self, email: str) -> List[SearchResult]:
         data = self._get("email-verifier", {"email": email})
-        e = data.get("data", {})
+        e = data.get("data") or {}
         if not e: return []
         return [SearchResult(
             title=f"Verificación: {email}",
             url=f"https://hunter.io/verifier/{email}",
             snippet=f"Estado: {e.get('status','')} Resultado: {e.get('result','')} Score: {e.get('score',0)}",
             source_tool=self.name, category="Email Verification",
-            relevance_score=int(e.get("score", 0)), raw_data=e)]
+            relevance_score=int(e.get("score") or 0), raw_data=e)]

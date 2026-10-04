@@ -8,14 +8,13 @@ SECURITY:
 - Output is hard-capped at MAX_OUTPUT_BYTES to prevent RAM exhaustion.
 - All calls have explicit timeout values.
 """
-import subprocess, json, shutil, logging, shlex, sys
+import subprocess, json, shutil, logging, shlex, sys, threading
 from typing import List
 from pathlib import Path
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
 from ..core.base_tool import OSINTTool
 from ..utils.sanitizer import (
-    sanitize_shell_arg, sanitize_snippet, MAX_INPUT_LEN,
-    validate_domain, validate_ip,
+    sanitize_shell_arg, sanitize_snippet, validate_domain, validate_ip,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,7 +39,7 @@ def _find_go_binary(name: str) -> str:
 
 import time
 
-def _run(tool, cmd: List[str], timeout: int = 300) -> tuple:
+def _run(tool, cmd: List[str], timeout: int = 300, stdin_text: str = "") -> tuple:
     """
     Safe subprocess runner.
     - Captures output, respects timeouts, and allows early cancellation via tool._is_cancelled.
@@ -48,11 +47,37 @@ def _run(tool, cmd: List[str], timeout: int = 300) -> tuple:
     try:
         p = subprocess.Popen(
             cmd,
+            stdin=subprocess.PIPE if stdin_text else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
-        
+        if stdin_text:
+            try:
+                p.stdin.write(stdin_text)
+                p.stdin.close()
+            except OSError:                       # el programa se cerró antes de leer su guion
+                pass
+
+        # La salida se lee MIENTRAS el programa corre. Antes solo se vigilaba `poll()` y se leía al final: si el
+        # programa imprimía más de lo que cabe en la tubería (~4 KB en Windows) se bloqueaba, se agotaba el tiempo
+        # y se perdía TODO el resultado.
+        chunks: List[str] = []
+        state = {"size": 0, "truncated": False}
+
+        def _drain():
+            for chunk in iter(lambda: p.stdout.read(8192), ""):
+                if state["size"] < MAX_OUTPUT_BYTES:
+                    chunks.append(chunk[:MAX_OUTPUT_BYTES - state["size"]])
+                    state["size"] += len(chunks[-1])
+                if state["size"] >= MAX_OUTPUT_BYTES:
+                    state["truncated"] = True              # se sigue leyendo (y descartando) para no bloquear al programa
+
+        reader = threading.Thread(target=_drain, daemon=True)
+        reader.start()
+
         start_t = time.time()
         # Escaneo en bucle para chequeo de cancelación temprana
         while p.poll() is None:
@@ -63,23 +88,20 @@ def _run(tool, cmd: List[str], timeout: int = 300) -> tuple:
                 except subprocess.TimeoutExpired:
                     p.kill()
                 return "🛑 Cancelado por el usuario", -1
-                
+
             if (time.time() - start_t) > timeout:
                 p.kill()
                 p.wait()
                 logger.warning(f"Timeout expired for: {cmd[0]}")
                 return "⚠️ Timeout", -1
-                
-            time.sleep(0.5)
 
-        stdout, stderr = p.communicate()
-        
-        # Cap output size
-        if len(stdout) > MAX_OUTPUT_BYTES:
+            time.sleep(0.1)
+
+        reader.join(timeout=5)
+        if state["truncated"]:
             logger.warning(f"{cmd[0]} output truncated at {MAX_OUTPUT_BYTES} bytes")
-            stdout = stdout[:MAX_OUTPUT_BYTES]
 
-        return stdout, p.returncode
+        return "".join(chunks), p.returncode
         
     except FileNotFoundError:
         logger.warning(f"Binary not found: {cmd[0]}")
@@ -87,6 +109,34 @@ def _run(tool, cmd: List[str], timeout: int = 300) -> tuple:
     except Exception as e:
         logger.error(f"_run({cmd[0]}): {e}")
         return f"❌ Excepción crítica de Python en {cmd[0]}: {e}", -1
+
+
+def _tool_failed(tool, label: str, out: str, rc: int) -> bool:
+    """True (y avisa) si el programa no llegó a dar resultados: no existe, se agotó el tiempo o se canceló.
+
+    `_run` devuelve en esos casos un TEXTO de aviso en vez de la salida; antes cada herramienta lo trataba como
+    si fuera salida real y lo mostraba como un resultado ("Subdominio: ⚠️ Timeout").
+    """
+    if rc != -1:
+        return False
+    if out.startswith("🛑"):
+        tool._report_progress(f"🛑 {label} cancelado por el usuario.")
+    elif out.startswith("⚠️"):
+        tool._report_progress(f"⚠️ {label}: se agotó el tiempo; no hay resultados.")
+    else:
+        tool._report_progress(f"❌ {label}: {out[:150]}")
+    return True
+
+
+def _hostnames(out: str, root: str) -> List[str]:
+    """Líneas de la salida que son nombres de host válidos (sin repetidos, orden original)."""
+    seen, hosts = set(), []
+    for line in out.splitlines():
+        host = line.strip().lower()
+        if host and host not in seen and validate_domain(host):
+            seen.add(host)
+            hosts.append(host)
+    return hosts[:MAX_RESULTS]
 
 
 def _looks_like_observable(value: str) -> bool:
@@ -107,13 +157,15 @@ def _looks_like_observable(value: str) -> bool:
 
 
 def _safe_domain(qp: QueryParameters) -> str:
-    """Return sanitized domain from query params."""
-    return sanitize_shell_arg(qp.domain or "")
+    """Dominio saneado y válido de los parámetros, o "" (un valor que no sea un dominio no se pasa al programa)."""
+    domain = sanitize_shell_arg(qp.domain or "")
+    return domain if validate_domain(domain) else ""
 
 
 def _safe_username(qp: QueryParameters) -> str:
-    """Return sanitized username from query params."""
-    return sanitize_shell_arg(qp.username or "")
+    """Usuario saneado, o "" si podría leerse como una OPCIÓN del programa (empieza por "-") o tiene espacios."""
+    user = sanitize_shell_arg(qp.username or "").lstrip("@")
+    return user if user and not user.startswith("-") and not any(c.isspace() for c in user) else ""
 
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
@@ -163,16 +215,16 @@ class SubfinderTool(OSINTTool):
             cmd_args.extend(shlex.split(query_params.extra_args))
             
         out, rc = _run(self, cmd_args)
+        if _tool_failed(self, "Subfinder", out, rc):
+            return []
         results = []
-        for line in out.splitlines()[:MAX_RESULTS]:
-            sub = line.strip()
-            if sub and not sub.startswith("🛑"):
-                results.append(SearchResult(
-                    title=f"Subdominio: {sub}",
-                    url=f"https://{sub}",
-                    snippet=sanitize_snippet(f"Encontrado por Subfinder en {domain}"),
-                    source_tool=self.name, category="Subdomain", relevance_score=70,
-                ))
+        for sub in _hostnames(out, domain):
+            results.append(SearchResult(
+                title=f"Subdominio: {sub}",
+                url=f"https://{sub}",
+                snippet=sanitize_snippet(f"Encontrado por Subfinder en {domain}"),
+                source_tool=self.name, category="Subdomain", relevance_score=70,
+            ))
         self._report_progress(f"✅ Subfinder: {len(results)} subdominios encontrados")
         return results
 
@@ -221,17 +273,17 @@ class AmassTool(OSINTTool):
         if query_params.extra_args:
             cmd_args.extend(shlex.split(query_params.extra_args))
             
-        out, _ = _run(self, cmd_args)
+        out, rc = _run(self, cmd_args)
+        if _tool_failed(self, "AMASS", out, rc):
+            return []
         results = []
-        for line in out.splitlines()[:MAX_RESULTS]:
-            sub = line.strip()
-            if sub and not sub.startswith("🛑"):
-                results.append(SearchResult(
-                    title=f"AMASS: {sub}",
-                    url=f"https://{sub}",
-                    snippet=sanitize_snippet(f"Descubierto por AMASS"),
-                    source_tool=self.name, category="Subdomain", relevance_score=72,
-                ))
+        for sub in _hostnames(out, domain):
+            results.append(SearchResult(
+                title=f"AMASS: {sub}",
+                url=f"https://{sub}",
+                snippet=sanitize_snippet(f"Descubierto por AMASS"),
+                source_tool=self.name, category="Subdomain", relevance_score=72,
+            ))
         self._report_progress(f"✅ AMASS: {len(results)} subdominios encontrados")
         return results
 
@@ -294,12 +346,14 @@ class SpiderFootTool(OSINTTool):
         else:
             cmd_args.extend(["-m", "sfp_dnsresolve,sfp_whois,sfp_emails"])
             
-        out, _ = _run(
+        out, rc = _run(
             self,
             cmd_args,
             timeout=300,
         )
-        
+        if _tool_failed(self, "SpiderFoot", out, rc):
+            return []
+
         if "Traceback" in out or "ModuleNotFoundError" in out or "Error" in out and not "SpiderFoot" in out:
             return [SearchResult(
                 title="❌ Error Crítico en SpiderFoot",
@@ -369,41 +423,14 @@ class ReconNgTool(OSINTTool):
             f"modules load recon/domains-hosts/certificate_transparency\n"
             f"run\nshow hosts\nexit\n"
         )
-        try:
-            p = subprocess.Popen(
-                [cmd_path],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            # Input no blocking
-            import time
-            start_t = time.time()
-            out = ""
-            # Enviar input
-            p.stdin.write(script)
-            p.stdin.flush()
-            p.stdin.close()
-            
-            while p.poll() is None:
-                if self._is_cancelled:
-                    p.terminate()
-                    p.wait()
-                    self._report_progress("🛑 Recon-ng cancelado por el usuario.")
-                    return []
-                if time.time() - start_t > 300:
-                    p.kill()
-                    return []
-                time.sleep(0.5)
-            
-            out = p.stdout.read()[:MAX_OUTPUT_BYTES]
-        except Exception as e:
-            logger.error(f"Recon-ng: {e}")
-            return [SearchResult(
-                title="❌ Error al iniciar Recon-ng",
-                url="", snippet=str(e), source_tool=self.name, category="Error", relevance_score=100,
-            )]
+        out, rc = _run(self, [cmd_path], timeout=300, stdin_text=script)
+        if out.startswith("🛑"):
+            self._report_progress("🛑 Recon-ng cancelado por el usuario.")
+            return []
+        if rc == -1:
+            # timeout o binario que no arranca: antes se devolvía [] (o una excepción) sin explicar nada
+            self._report_progress("⚠️ Recon-ng: " + ("se agotó el tiempo (5 min)." if out.startswith("⚠️") else out[:150]))
+            return []
         results = []
         for line in out.splitlines()[:MAX_RESULTS]:
             s = line.strip()
@@ -449,7 +476,9 @@ class MaigretTool(OSINTTool):
         if not username:
             return []
         self._report_progress(f"🔍 Maigret: buscando @{username} en 2000+ sitios…")
-        out, _ = _run(self, ["maigret", username, "--json", "--timeout", "10"], timeout=300)
+        out, rc = _run(self, ["maigret", username, "--json", "--timeout", "10"], timeout=300)
+        if _tool_failed(self, "Maigret", out, rc):
+            return []
         try:
             data = json.loads(out[:MAX_OUTPUT_BYTES])
             results = []
@@ -464,7 +493,7 @@ class MaigretTool(OSINTTool):
                     ))
             self._report_progress(f"✅ Maigret: {len(results)} perfiles encontrados")
             return results
-        except (json.JSONDecodeError, KeyError) as e:
+        except (json.JSONDecodeError, KeyError):
             self._report_progress("⚠️ Maigret: no se pudo parsear la salida JSON")
             return [SearchResult(
                 title="❌ Error en Maigret (Fallo de ejecución)",

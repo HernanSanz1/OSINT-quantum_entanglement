@@ -151,6 +151,7 @@ class QueryParameters:
     url: str = ""
     hash_value: str = ""
     observable: str = ""
+    context: str = ""        # texto libre de contexto (universidad, país, ciudad) para las búsquedas web; NO es un observable
     university: str = ""
     keywords: List[str] = field(default_factory=list)
     extra_args: str = ""
@@ -193,9 +194,10 @@ class QueryParameters:
             ip=best("ip"),
             url=best("url"),
             hash_value=best("hash"),
-            # Los casos creados por Perfilamiento guardan contexto y país sueltos: sin un observable explícito
-            # se usan como contexto de búsqueda (igual que hace SeedData), en vez de perderlos.
-            observable=best("observable") or " ".join(v for v in (best("context"), best("country"), best("location")) if v),
+            observable=best("observable"),      # solo el explícito: lo usan IntelOwl, OpenCTI, MISP, Cortex e Instaloader como objetivo
+            # Los casos creados por Perfilamiento guardan contexto y país sueltos: van en un campo PROPIO que solo
+            # leen las búsquedas web (nunca como un indicador a enviar a un servidor externo ni como un perfil).
+            context=" ".join(v for v in (best("context"), best("country"), best("location")) if v),
             university=best("university"),
             keywords=all_vals("note"),
             extra_args=extra_args
@@ -207,7 +209,7 @@ class QueryParameters:
             "domain": self.domain, "company": self.company, "role": self.role,
             "location": self.location, "phone": self.phone, "username": self.username,
             "ip": self.ip, "url": self.url, "hash_value": self.hash_value,
-            "observable": self.observable, "university": self.university, "keywords": self.keywords,
+            "observable": self.observable, "context": self.context, "university": self.university, "keywords": self.keywords,
         }
 
 

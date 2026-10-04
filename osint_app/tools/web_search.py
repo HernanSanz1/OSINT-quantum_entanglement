@@ -182,7 +182,8 @@ class WebSearchTool(OSINTTool):
         # Build search queries based on available data
         name = query_params.target_name or ""
         domain = query_params.domain or ""
-        observable = query_params.observable or ""  # Extra context like university
+        # Contexto extra (universidad, país, ciudad): el de los casos viene en `context`; el del perfilador, en `observable`
+        observable = query_params.context or query_params.observable or ""
 
         if name:
             # Main name search
@@ -720,7 +721,7 @@ class UsernameVariantsTool(OSINTTool):
 
         # Extract year if present in observable
         year = None
-        observable = query_params.observable or ""
+        observable = query_params.context or query_params.observable or ""
         import re
         year_match = re.search(r'(19|20)\d{2}', observable + name)
         if year_match:

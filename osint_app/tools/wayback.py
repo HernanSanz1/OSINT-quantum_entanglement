@@ -4,7 +4,7 @@ Retrieves historical snapshots and archived endpoints for a given URL or Domain.
 """
 import requests
 import logging
-from typing import List, Dict
+from typing import List
 import random
 import time
 
@@ -27,6 +27,10 @@ REQUIREMENTS = ToolRequirements(
     produces=["url", "domain"],
     hint="Necesita una URL o un Dominio para buscar en el archivo histórico.",
 )
+
+# HTTPS: la consulta contiene el objetivo investigado y no debe viajar en claro
+CDX_URL = "https://web.archive.org/cdx/search/cdx"
+
 
 class WaybackMachineTool(OSINTTool):
     def __init__(self):
@@ -60,7 +64,7 @@ class WaybackMachineTool(OSINTTool):
         self._report_progress(f"🔍 Consultando Wayback Machine CDX API para: {target}...")
         
         # CDX API endpoint
-        url = "http://web.archive.org/cdx/search/cdx"
+        url = CDX_URL
         
         # We limit to 300 to avoid freezing, filter by statuscode 200, and group by original URL so we don't get duplicates of the same page
         params = {
@@ -93,10 +97,15 @@ class WaybackMachineTool(OSINTTool):
                 self._report_progress("⚠️ Wayback Machine API retornó una respuesta inválida (no JSON).")
                 return []
                 
+            # La forma se comprueba ANTES que si está vacía: un {"error": "..."} de una sola clave no es "sin resultados"
+            if data and (not isinstance(data, list) or not isinstance(data[0], list)):
+                self._report_progress("⚠️ Wayback Machine: la API respondió con un formato inesperado.")
+                return []
+
             if not data or len(data) <= 1:
                 self._report_progress("⚠️ Wayback Machine: No se encontraron snapshots válidos.")
                 return []
-                
+
             # data[0] are the headers: ["original", "timestamp", "mimetype"]
             headers = data[0]
             rows = data[1:]
@@ -163,4 +172,5 @@ class WaybackMachineTool(OSINTTool):
             return []
         except Exception as e:
             logger.error(f"Wayback Machine runtime error: {e}")
+            self._report_progress(f"❌ Wayback Machine: error inesperado ({type(e).__name__}).")
             return []

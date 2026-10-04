@@ -172,9 +172,35 @@ def test_query_parameters_ignore_discovered_data_and_empty_case():
 def test_case_context_is_not_lost_when_running_a_tool_from_the_case():
     # Perfilamiento guarda contexto, país y ciudad como datos sueltos: antes se perdían al ejecutar una herramienta
     qp = QueryParameters.from_target_data([_td("name", "Juan"), _td("context", "ingeniero UDLA"), _td("country", "Ecuador"), _td("location", "Quito")])
-    assert qp.observable == "ingeniero UDLA Ecuador Quito"
+    assert qp.context == "ingeniero UDLA Ecuador Quito"
+    assert qp.observable == ""                    # el contexto NO se mezcla con el observable (ver los tests de abajo)
     explicit = QueryParameters.from_target_data([_td("observable", "1.2.3.4"), _td("context", "x")])
-    assert explicit.observable == "1.2.3.4"                                                  # un observable explícito manda
+    assert explicit.observable == "1.2.3.4" and explicit.context == "x"
+
+
+def test_case_context_never_becomes_an_observable_for_threat_or_social_tools():
+    # Las herramientas de amenazas exigen un observable: el texto de contexto de una PERSONA no debe enviarse a un servidor
+    # externo como si fuera un indicador, ni dejar a Instaloader con un "perfil" como "ingeniero UDLA Ecuador".
+    from osint_app.tools import build_tool_registry
+    from osint_app.utils.compatibility import DataCompatibilityEngine
+    case = [_td("name", "Juan"), _td("context", "ingeniero UDLA"), _td("country", "Ecuador")]
+    registry = build_tool_registry()
+    engine = DataCompatibilityEngine()
+    for name in ("IntelOwl", "OpenCTI", "MISP", "Cortex"):
+        verdict = engine.check(registry[name].requirements, case)
+        assert verdict.status == CompatibilityStatus.RED and verdict.missing_mandatory == ["observable"], name
+    assert QueryParameters.from_target_data(case).observable == ""
+
+
+def test_web_searches_do_use_the_case_context(monkeypatch):
+    from osint_app.tools.web_search import WebSearchTool
+    tool = WebSearchTool()
+    asked = []
+    monkeypatch.setattr(tool, "_search_duckduckgo", lambda q, max_results=20: asked.append(q) or [])
+    monkeypatch.setattr("osint_app.tools.web_search.time.sleep", lambda s: None)
+    qp = QueryParameters.from_target_data([_td("name", "Juan Pérez"), _td("context", "ingeniero UDLA"), _td("country", "Ecuador")])
+    tool.execute(qp)
+    assert '"Juan Pérez" ingeniero UDLA Ecuador' in asked                                     # la herramienta suelta busca igual que el perfilamiento
 
 
 def test_query_parameters_to_dict_has_every_field():

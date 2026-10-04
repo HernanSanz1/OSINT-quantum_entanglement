@@ -8,18 +8,22 @@ SECURITY:
 - subprocess calls with explicit timeouts and never shell=True
 - Output capped at MAX_OUTPUT_BYTES
 """
-import json, shutil, subprocess, logging, shlex
+import importlib.util, re, shutil, subprocess, logging, shlex
 from typing import List
 from pathlib import Path
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
 from ..core.base_tool import OSINTTool
 from ..utils.sanitizer import (
-    sanitize_shell_arg, sanitize_snippet, validate_ssrf,
-    validate_domain, validate_ip, MAX_OUTPUT_BYTES,
+    sanitize_shell_arg, sanitize_snippet, validate_domain, validate_ip, MAX_OUTPUT_BYTES,
 )
 
 logger = logging.getLogger(__name__)
 MAX_RESULTS = 100
+
+# El banner de TheHarvester imprime el correo de su autor: no es un hallazgo (antes salía en CADA ejecución como "Email")
+HARVESTER_BANNER_EMAILS = {"cmartorella@edge-security.com"}
+_EMAIL_LINE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
+_HOST_LINE = re.compile(r"^([A-Za-z0-9.-]+)(?::(\d{1,3}(?:\.\d{1,3}){3}))?$")     # "www.x.com" o "www.x.com:93.184.216.34"
 
 
 class DnspythonTool(OSINTTool):
@@ -119,10 +123,22 @@ class CensysTool(OSINTTool):
             )
         )
         self.requires_api_key = True
+        self._python_pkgs = ["censys"]
+        self._install_cmd = "pip install censys"
+        self.check_available()
+
+    def check_available(self) -> bool:
+        # Sin el paquete la herramienta devolvía [] sin decir nada; así se marca como no instalada
+        try:
+            self.is_available = importlib.util.find_spec("censys") is not None
+        except (ValueError, ImportError):          # un módulo a medias en sys.modules no debe impedir arrancar el programa
+            self.is_available = False
+        return self.is_available
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         if not self.api_key:
             logger.warning("CENSYS: no API key configured")
+            self._report_progress("⚠️ CENSYS: falta la clave de API (python -m osint_app.main --set-key CENSYS).")
             return []
         domain = sanitize_shell_arg(query_params.domain or "")
         if not domain or not validate_domain(domain):
@@ -146,8 +162,14 @@ class CensysTool(OSINTTool):
                 if len(results) >= MAX_RESULTS:
                     break
             return results
+        except ImportError:
+            # `censys.certificates` es la API antigua (v1): las versiones actuales del paquete ya no la incluyen
+            self._report_progress("❌ CENSYS: esta herramienta usa la API antigua de Censys, que el paquete instalado ya no "
+                                  "incluye. Está pendiente migrarla a la API actual (censys.search).")
+            return []
         except Exception as e:
             logger.error(f"CENSYS error: {type(e).__name__}")
+            self._report_progress(f"❌ CENSYS: falló la consulta ({type(e).__name__}).")
             return []
 
 
@@ -238,20 +260,31 @@ class TheHarvesterTool(OSINTTool):
                 )]
                 
             results = []
-            for line in out.splitlines()[:MAX_RESULTS]:
+            seen = set()
+            for line in out.splitlines():
                 line = line.strip()
-                if "@" in line and "." in line:
+                if not line or line in seen or len(results) >= MAX_RESULTS:
+                    continue
+                if _EMAIL_LINE.match(line):
+                    if line.lower() in HARVESTER_BANNER_EMAILS:
+                        continue
+                    seen.add(line)
                     results.append(SearchResult(
                         title=f"Email: {sanitize_snippet(line)}",
                         url="", snippet="Encontrado por TheHarvester",
                         source_tool=self.name, category="Email", relevance_score=80,
                     ))
-                elif "." in line and not line.startswith("[") and validate_domain(line):
+                    continue
+                host = _HOST_LINE.match(line)
+                if host and "." in host.group(1) and validate_domain(host.group(1)):
+                    seen.add(line)
+                    ip = host.group(2)
                     results.append(SearchResult(
-                        title=f"Host: {sanitize_snippet(line)}",
-                        url=f"https://{line}",
-                        snippet="Host detectado por TheHarvester",
+                        title=f"Host: {sanitize_snippet(host.group(1))}",
+                        url=f"https://{host.group(1)}",
+                        snippet="Host detectado por TheHarvester" + (f" · IP {ip}" if ip else ""),
                         source_tool=self.name, category="Subdomain", relevance_score=65,
+                        raw_data={"host": host.group(1), "ip": ip or ""},
                     ))
             return results
         except subprocess.TimeoutExpired:

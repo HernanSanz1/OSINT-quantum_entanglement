@@ -534,3 +534,44 @@ defectos** que encontraron, así que no son pruebas vacías.
 4. Los casos creados por Perfilamiento guardan **contexto, país y ciudad** como datos sueltos, pero al ejecutar una
    herramienta desde el caso esos datos **se perdían** (solo se leía el campo `observable`): WebSearch y UsernameVariants
    buscaban con menos pistas que el propio perfilamiento.
+
+**Corrección posterior a este lote (defecto propio):** el arreglo del punto 4 se hizo primero metiendo el contexto
+en el campo `observable`. Eso habría hecho que herramientas de amenazas (IntelOwl, OpenCTI, MISP, Cortex) pasaran
+a "verde" y **enviaran texto de una persona a servidores externos**, y que Instaloader intentara abrir un "perfil"
+con ese texto. Se reemplazó por un campo propio `context` en `QueryParameters`; `observable` vuelve a ser solo un
+indicador explícito (dominio, IP, correo…). WebSearch y UsernameVariants leen `context`.
+
+### Lote 2 — herramientas sin pruebas (hecho)
+
+Archivos de pruebas nuevos: `test_tools_network.py` (Wayback, Hunter, dnspython, ipwhois, CENSYS, TheHarvester,
+teléfonos con la librería real), `test_tools_social.py` (Sherlock, Holehe, GHunt, Instaloader, snscrape) y
+`test_tools_heavy.py` (Subfinder, Amass, SpiderFoot, Recon-ng, Maigret; el lanzador `_run` se prueba con **procesos
+reales**). Suite: 992 tests. Contra el código anterior, las pruebas de red fallan 26 y las de datos del caso 2;
+las de social y pesadas no llegan ni a importar (usan funciones nuevas).
+
+**Defectos reales hallados y corregidos:**
+1. **Herramientas pesadas perdían toda la salida si pasaba de ~4 KB** (medido: 4000 bytes bien, 4200 perdidos): el
+   lanzador esperaba a que el programa terminara sin leer su salida, el programa se bloqueaba con la tubería llena,
+   se agotaba el tiempo (5 min) y no se devolvía nada. Afectaba a Subfinder, Amass, SpiderFoot, Maigret y Recon-ng.
+   Ahora la salida se lee mientras corre (tope de 2 MB, el resto se descarta sin bloquear).
+2. Si el programa faltaba, se agotaba el tiempo o se cancelaba, esos avisos se mostraban como **resultados falsos**
+   ("Subdominio: ⚠️ Timeout" con la URL `https://⚠️ Timeout`). Ahora se informa en el progreso y no hay resultado.
+3. Subfinder y Amass daban como subdominio cualquier línea de su salida; ahora solo nombres de host válidos y sin repetir.
+4. **Usuarios o correos que empezaban por "-"** se pasaban a Sherlock, Holehe, GHunt, Instaloader y Maigret, que los
+   leían como una opción del programa. Ahora se validan antes (también dominios en las herramientas pesadas).
+5. Holehe daba como "servicio con cuenta" cualquier línea con la palabra "used" (su propia ayuda: `--only-used`).
+6. GHunt daba por "bloqueado" cualquier salida que contuviera "auth" (p. ej. "Google Authenticator").
+7. Instaloader lanzaba el texto libre de contexto como si fuera un perfil de Instagram.
+8. Wayback consultaba por **http en claro** con el objetivo investigado; ahora https. Además un `{"error": …}` se
+   daba como "sin resultados" y un fallo interno no avisaba.
+9. **Hunter enviaba la clave de API dentro de la URL** (acaba en registros y mensajes de error); ahora va en la
+   cabecera `X-API-KEY` y los errores solo registran el tipo. Fallos de clave/límite/permisos se explican; campos
+   `null` ya no lanzan error; nombres de 4 palabras (N1 N2 A1 A2) usan el 3.º como apellido.
+10. TheHarvester daba como hallazgo el **correo del autor del propio banner** en cada ejecución y descartaba el
+    `host:ip`; ahora se omite el banner y la IP se conserva.
+11. **CENSYS está roto desde hace tiempo y no avisaba**: usa la API antigua (`censys.certificates`), que el paquete
+    actual ya no incluye. Ahora se marca como no instalada/ falla con mensaje claro. **Pendiente: migrar a `censys.search`.**
+
+**No verificado (sin el programa instalado):** el formato real de salida de Maigret (`--json` suele escribir un
+archivo, no stdout; si es así, la herramienta siempre devolverá "JSON no válido") y si Recon-ng repite en su salida los
+comandos del guion (podría dar falsos subdominios). Quedan anotados para probar con los programas instalados.
