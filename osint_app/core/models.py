@@ -193,7 +193,9 @@ class QueryParameters:
             ip=best("ip"),
             url=best("url"),
             hash_value=best("hash"),
-            observable=best("observable"),
+            # Los casos creados por Perfilamiento guardan contexto y país sueltos: sin un observable explícito
+            # se usan como contexto de búsqueda (igual que hace SeedData), en vez de perderlos.
+            observable=best("observable") or " ".join(v for v in (best("context"), best("country"), best("location")) if v),
             university=best("university"),
             keywords=all_vals("note"),
             extra_args=extra_args

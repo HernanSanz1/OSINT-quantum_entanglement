@@ -36,7 +36,8 @@ Estado general: la integración continua está en verde (Ubuntu y Windows, Pytho
 | Directorios de LinkedIn como candidatos | **Hecho** (sección 10) | 28 tests; ver la nota sobre la verificación en vivo |
 | M4 seguridad de los datos | **Hecho** (sección 11), con límites | Migración con tu base real (1 caso, 1 dato, 3 reportes, idéntica); DPAPI real en Windows; ventana real con el aviso |
 | M1 restos de la IA y código duplicado | **Hecho** (sección 12) | Inventario completo, rescates con tests, ventana real construida sin el botón de IA |
-| M5 a M8 | **Pendientes** | |
+| M7 pruebas que faltan | **En curso** (sección 13) | Núcleo hecho; faltan herramientas, informes y utilidades |
+| M5, M6, M8 | **Pendientes** | |
 
 Pruebas: de 429 a **538** tests, todos en verde; ruff y bandit limpios.
 
@@ -507,3 +508,29 @@ Tkinter inexistente, base de datos y conexiones) y `SKILL_SENTINEL.md` (el ejemp
 **Hueco que apareció y se cerró:** no existía ninguna pantalla para guardar claves de API (vivía en la pestaña de IA
 eliminada) y el baúl ahora va cifrado. Nuevo: `python -m osint_app.main --set-key GitHub` (pide la clave oculta; nunca como
 argumento, para que no quede en el historial de la consola) y `--keys` (qué claves hay, sin mostrar valores).
+
+
+---
+
+## 13. M7 — pruebas que faltaban (en curso)
+
+Antes no se medía la cobertura: se instaló `pytest-cov` y el punto de partida fue **55,8%** del código de la aplicación.
+Se prioriza por riesgo para los datos: primero el núcleo, luego las herramientas sin pruebas, luego informes y utilidades.
+
+### Lote 1 — núcleo (hecho)
+
+`framework.py`, `db/feedback_db.py`, `case_manager.py`, `utils/compatibility.py` y `core/models.py` pasan a **100%**,
+y `core/base_tool.py` a 98% (eran 21%, 57%, 59%, 25%, 87% y 58%). La cobertura global sube a **58,4%** (828 tests).
+Las pruebas nuevas se ejecutaron contra el código anterior a los arreglos y **fallan exactamente en los cuatro
+defectos** que encontraron, así que no son pruebas vacías.
+
+**Defectos reales hallados y corregidos:**
+1. El mensaje de "falta la clave" mandaba a editar `~/.osint_v2_keys`, que desde M4 va **cifrado**; ahora indica
+   `python -m osint_app.main --set-key NOMBRE`.
+2. Una herramienta que fallaba se guardaba como "0 resultados" **sin decir por qué**, y el progreso decía "✅ finalizado".
+   Ahora el reporte dice `Error: <motivo>` y el mensaje es "❌ falló".
+3. "Añadir entidades al caso" **duplicaba** los datos cada vez que se pulsaba; ahora no repite lo que el caso ya tiene
+   (sin distinguir mayúsculas ni espacios).
+4. Los casos creados por Perfilamiento guardan **contexto, país y ciudad** como datos sueltos, pero al ejecutar una
+   herramienta desde el caso esos datos **se perdían** (solo se leía el campo `observable`): WebSearch y UsernameVariants
+   buscaban con menos pistas que el propio perfilamiento.

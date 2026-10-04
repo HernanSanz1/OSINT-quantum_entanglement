@@ -114,9 +114,9 @@ class OSINTTool(ABC):
                 "icon": "🔑",
                 "message": (
                     f"API key no configurada para '{self.name}'.\n"
-                    f"Agrégala en ~/.osint_v2_keys con el nombre '{self.name}'."
+                    f"Guárdala con el comando de abajo (la pide sin mostrarla)."
                 ),
-                "install_cmd": f'# En ~/.osint_v2_keys:\n# "{self.name}": "tu-api-key-aqui"',
+                "install_cmd": f"python -m osint_app.main --set-key {self.name}",
             }
 
         # 4. All good

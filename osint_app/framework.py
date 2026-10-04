@@ -3,11 +3,9 @@ OSINT Framework v2 — Orchestrator with DataCompatibilityEngine.
 Runs one tool at a time, extracts entities from results, and saves reports.
 """
 import json, time, logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 
-from .core.models import (
-    QueryParameters, SearchResult, TargetData, ToolReport,
-)
+from .core.models import SearchResult, TargetData, ToolReport
 from .tools import build_tool_registry
 from .db.feedback_db import db
 from .utils.compatibility import DataCompatibilityEngine
@@ -115,6 +113,7 @@ class OSINTFramework:
                 progress_cb("⚠️  Sistema bajo carga. Continuando de todos modos…")
 
         start = time.time()
+        error_text = ""
         try:
             tool._progress_cb = progress_cb   # ← allows tool to emit progress
             results: List[SearchResult] = tool.execute(compat.auto_params)
@@ -123,17 +122,21 @@ class OSINTFramework:
             logger.error(f"Tool error [{tool_name}]: {e}")
             results = []
             status = "error"
+            error_text = f"{type(e).__name__}: {e}"[:200]
         finally:
             tool._progress_cb = None           # ← always clean up
 
         elapsed = time.time() - start
 
-        # Build summary
+        # Build summary (si falló, el motivo queda en el reporte en vez de un "0 resultados" mudo)
         cats = {}
         for r in results:
             cats[r.category] = cats.get(r.category, 0) + 1
-        summary = f"{len(results)} resultados. "
-        summary += "  ".join(f"{k}: {v}" for k, v in cats.items())
+        if status == "error":
+            summary = f"Error: {error_text}"
+        else:
+            summary = f"{len(results)} resultados. "
+            summary += "  ".join(f"{k}: {v}" for k, v in cats.items())
 
         # Persist report
         report = ToolReport(
@@ -151,7 +154,10 @@ class OSINTFramework:
             db.save_extracts(report.id, case_id, entities)  # type: ignore
 
         if progress_cb:
-            progress_cb(f"✅ {tool_name} finalizado — {len(results)} resultados en {elapsed:.1f}s")
+            if status == "error":
+                progress_cb(f"❌ {tool_name} falló tras {elapsed:.1f}s — {error_text}")
+            else:
+                progress_cb(f"✅ {tool_name} finalizado — {len(results)} resultados en {elapsed:.1f}s")
 
         return report
 
@@ -163,11 +169,16 @@ class OSINTFramework:
 
     def add_entities_to_case(self, case_id: int, entities: Dict,
                               source: str, selected: List[str] = None):
-        """Add extracted entities as TargetData to the case."""
+        """Add extracted entities as TargetData to the case (sin repetir lo que el caso ya tiene)."""
+        existing = {(d.field_type.lower(), d.value.strip().lower()) for d in db.get_target_data(case_id)}
         for field_type, values in entities.items():
             for val in values:
                 if selected is not None and val not in selected:
                     continue
+                key = (field_type.lower(), val.strip().lower())
+                if key in existing:
+                    continue
+                existing.add(key)
                 td = TargetData(
                     case_id=case_id, field_type=field_type,
                     value=val, source=source, confidence=70,
