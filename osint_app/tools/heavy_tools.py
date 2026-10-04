@@ -53,6 +53,7 @@ def _run(tool, cmd: List[str], timeout: int = 300, stdin_text: str = "") -> tupl
             text=True,
             encoding="utf-8",
             errors="replace",
+            env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
         )
         if stdin_text:
             try:
@@ -471,32 +472,59 @@ class MaigretTool(OSINTTool):
     def check_available(self) -> bool:
         return shutil.which("maigret") is not None
 
+    # Sitios que maigret marca como "Claimed" pero que no son un perfil (la portada del servicio)
+    _NOT_A_PROFILE = ("https://discord.com", "https://discord.com/")
+    MAX_SITES = 300
+
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
+        """Formato verificado con maigret 0.6.6 (2026-10-04).
+
+        `--json simple` escribe un ARCHIVO `report_<usuario>_simple.json` en --folderoutput (no imprime JSON), con
+        {sitio: {"url_user": ..., "status": {"status": "Claimed", "ids": {fullname, location, created_at…}}}}.
+        Antes se pasaba "--json" sin tipo (maigret tomaba "--timeout" como tipo), se leía la pantalla y se buscaba
+        data[usuario][sitio]["status"] == "found": la herramienta SIEMPRE devolvía "JSON no válido".
+        `--dns-resolver threaded`: el resolvedor asíncrono por defecto falló el 100% de las consultas en Windows.
+        """
+        import tempfile
+
         username = _safe_username(query_params)
         if not username:
             return []
-        self._report_progress(f"🔍 Maigret: buscando @{username} en 2000+ sitios…")
-        out, rc = _run(self, ["maigret", username, "--json", "--timeout", "10"], timeout=300)
-        if _tool_failed(self, "Maigret", out, rc):
-            return []
-        try:
-            data = json.loads(out[:MAX_OUTPUT_BYTES])
-            results = []
-            for site, info in list(data.get(username, {}).items())[:MAX_RESULTS]:
-                if info.get("status") == "found":
-                    results.append(SearchResult(
-                        title=f"Maigret: perfil en {site[:40]}",
-                        url=info.get("url", ""),
-                        snippet=sanitize_snippet(f"@{username} encontrado en {site}"),
-                        source_tool=self.name, category="Social Media",
-                        relevance_score=85, raw_data=info,
-                    ))
-            self._report_progress(f"✅ Maigret: {len(results)} perfiles encontrados")
-            return results
-        except (json.JSONDecodeError, KeyError):
-            self._report_progress("⚠️ Maigret: no se pudo parsear la salida JSON")
-            return [SearchResult(
-                title="❌ Error en Maigret (Fallo de ejecución)",
-                url="", snippet=f"Maigret no devolvió un JSON válido. Revisa si está bien instalado. Log:\n{out[-300:]}",
-                source_tool=self.name, category="Error", relevance_score=100,
-            )]
+        self._report_progress(f"🔍 Maigret: buscando @{username} en los {self.MAX_SITES} sitios principales…")
+        with tempfile.TemporaryDirectory(prefix="sentinel_maigret_") as folder:
+            cmd = ["maigret", username, "--json", "simple", "--folderoutput", folder, "--timeout", "15",
+                   "--top-sites", str(self.MAX_SITES), "--dns-resolver", "threaded", "--no-progressbar", "--no-color"]
+            out, rc = _run(self, cmd, timeout=420)
+            if _tool_failed(self, "Maigret", out, rc):
+                return []
+            report = Path(folder) / f"report_{username}_simple.json"
+            try:
+                data = json.loads(report.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                self._report_progress("⚠️ Maigret: no generó su informe JSON")
+                return [SearchResult(
+                    title="❌ Error en Maigret (Fallo de ejecución)",
+                    url="", snippet=f"Maigret no generó un informe JSON válido. Revisa si está bien instalado. Log:\n{out[-300:]}",
+                    source_tool=self.name, category="Error", relevance_score=100,
+                )]
+
+        results = []
+        for site, info in list(data.items())[:MAX_RESULTS]:
+            status = info.get("status") or {}
+            url = info.get("url_user") or status.get("url") or ""
+            if status.get("status") != "Claimed" or not url or url in self._NOT_A_PROFILE:
+                continue
+            ids = {k: v for k, v in (status.get("ids") or {}).items() if isinstance(v, (str, int, float)) and str(v).strip()}
+            details = " · ".join(f"{k}: {v}" for k, v in ids.items() if k in ("fullname", "name", "location", "created_at", "bio"))
+            results.append(SearchResult(
+                title=f"Maigret: perfil en {site[:40]}",
+                url=url,
+                snippet=sanitize_snippet(f"@{username} encontrado en {site}" + (f" — {details}" if details else "")),
+                source_tool=self.name, category="Social Media",
+                # Con datos extraídos del perfil (nombre, ubicación…) la cuenta es más verificable
+                relevance_score=85 if ids else 70,
+                raw_data={"site": site, "url": url, "tags": (info.get("site") or {}).get("tags", [])},
+                extra_data={"username": username, "platform": site, **{f"profile_{k}": v for k, v in ids.items()}},
+            ))
+        self._report_progress(f"✅ Maigret: {len(results)} perfiles encontrados")
+        return results

@@ -140,7 +140,7 @@ class ToolChecker:
             try:
                 proc = subprocess.run(
                     [sys.executable, "-m", "pip", "install", pkg, "--quiet"],
-                    capture_output=True, text=True, timeout=120,
+                    capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace",
                 )
                 outcome[pkg] = proc.returncode == 0
             except subprocess.TimeoutExpired:

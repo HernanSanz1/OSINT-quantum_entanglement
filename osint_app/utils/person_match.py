@@ -27,7 +27,11 @@ def name_match(name: str, text: str) -> Tuple[float, str]:
     """(puntos, tipo) de cuánto aparece `name` en `text`, por palabras completas.
 
     40 'name': están todas las palabras del nombre (en cualquier orden y sin tildes).
-    25 'name_partial': al menos dos. Solo una: 10 si es un apellido, 5 si es el nombre de pila o un segundo nombre.
+    25 'name_partial': el nombre de pila (o el segundo nombre) MÁS al menos un apellido.
+    12 sin tipo: solo apellidos o solo nombres de pila. Una sola palabra: 10 si es un apellido, 5 si es un nombre.
+
+    Antes "dos palabras cualesquiera" ya era 'name_partial': "Carlos Pérez Quezada" puntuaba como
+    "Jefferson Pérez Quezada" por compartir los dos apellidos (homónimos muy frecuentes en Ecuador).
     """
     tokens = name_tokens(name)
     if not tokens:
@@ -37,7 +41,10 @@ def name_match(name: str, text: str) -> Tuple[float, str]:
     if hits == len(tokens) and hits >= 2:
         return 40.0, "name"
     if hits >= 2:
-        return 25.0, "name_partial"
+        given, surnames = _split_given_and_surnames(tokens)
+        if any(t in words for t in given) and any(t in words for t in surnames):
+            return 25.0, "name_partial"
+        return 12.0, ""
     if hits == 1:
         # Coincidir solo en el apellido dice más que coincidir solo en el nombre de pila o en el segundo nombre
         # (en nombres de 4 palabras, los apellidos son las dos últimas). Rescatado de smart_profiler.
@@ -45,6 +52,17 @@ def name_match(name: str, text: str) -> Tuple[float, str]:
         only_hit = next(t for t in tokens if t in words)
         return (10.0 if only_hit in surnames else 5.0), ""
     return 0.0, ""
+
+
+def _split_given_and_surnames(tokens: List[str]) -> Tuple[List[str], List[str]]:
+    """Nombres de pila y apellidos de un nombre ya tokenizado (convención hispana).
+
+    2 palabras: N A · 3: N N A o N A A, ambiguo, así que solo cuenta como nombre de pila la PRIMERA (si no,
+    "Noboa Azín Álvaro" —el padre— pasaba por "Daniel Noboa Azín") · 4 o más: N N A A.
+    """
+    if len(tokens) <= 3:
+        return tokens[:1], tokens[1:]
+    return tokens[:-2], tokens[-2:]
 
 
 def phone_key(phone: str) -> str:

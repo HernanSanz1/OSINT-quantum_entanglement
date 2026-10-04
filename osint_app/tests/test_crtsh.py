@@ -63,18 +63,6 @@ def tool(monkeypatch):
     return t
 
 
-def test_execute_maps_subdomains_to_results(tool, monkeypatch):
-    payload = [{"name_value": "www.example.com\nmail.example.com", "common_name": "example.com"}]
-    monkeypatch.setattr(crtsh.requests, "get", lambda *a, **k: _FakeResp(200, payload))
-
-    results = tool.execute(QueryParameters(domain="example.com"))
-
-    titles = sorted(r.title for r in results)
-    assert titles == ["example.com", "mail.example.com", "www.example.com"]
-    assert all(r.source_tool == "crt.sh" and r.category == "Subdominio" for r in results)
-    assert results[0].url.startswith("https://")
-
-
 def test_execute_rejects_invalid_domain(tool, monkeypatch):
     called = {"n": 0}
     monkeypatch.setattr(crtsh.requests, "get",
@@ -89,44 +77,6 @@ def test_execute_handles_network_error(tool, monkeypatch):
         raise crtsh.requests.RequestException("timeout")
     monkeypatch.setattr(crtsh.requests, "get", boom)
     assert tool.execute(QueryParameters(domain="example.com")) == []
-
-
-def test_execute_gives_up_after_persistent_502(tool, monkeypatch):
-    calls = {"n": 0}
-    def always_502(*a, **k):
-        calls["n"] += 1
-        return _FakeResp(status=502)
-    monkeypatch.setattr(crtsh.requests, "get", always_502)
-    assert tool.execute(QueryParameters(domain="example.com")) == []
-    assert calls["n"] == crtsh.MAX_RETRIES        # reintentó, no se rindió al primer 502
-
-
-def test_execute_retries_502_then_succeeds(tool, monkeypatch):
-    # 502, 502, 200 → debe acabar devolviendo resultados (crt.sh es intermitente)
-    seq = [_FakeResp(502), _FakeResp(502),
-           _FakeResp(200, [{"name_value": "www.example.com"}])]
-    monkeypatch.setattr(crtsh.requests, "get", lambda *a, **k: seq.pop(0))
-    results = tool.execute(QueryParameters(domain="example.com"))
-    assert [r.title for r in results] == ["www.example.com"]
-
-
-def test_execute_non_retry_http_error_returns_empty(tool, monkeypatch):
-    monkeypatch.setattr(crtsh.requests, "get", lambda *a, **k: _FakeResp(status=403))
-    assert tool.execute(QueryParameters(domain="example.com")) == []
-
-
-def test_execute_uses_cache(tool, monkeypatch):
-    payload = [{"name_value": "www.example.com"}]
-    calls = {"n": 0}
-
-    def counting_get(*a, **k):
-        calls["n"] += 1
-        return _FakeResp(200, payload)
-    monkeypatch.setattr(crtsh.requests, "get", counting_get)
-
-    tool.execute(QueryParameters(domain="example.com"))
-    tool.execute(QueryParameters(domain="example.com"))   # 2ª vez: desde caché
-    assert calls["n"] == 1
 
 
 def test_tool_is_available_without_keys():

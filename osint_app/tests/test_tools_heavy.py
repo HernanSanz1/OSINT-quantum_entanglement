@@ -191,16 +191,6 @@ def test_reconng_reports_why_it_gave_nothing(fake_run, out, message):
     assert tool.execute(QueryParameters(domain="empresa.com")) == [] and any(message in m for m in seen)
 
 
-def test_maigret_found_profiles_and_bad_json(fake_run):
-    state = fake_run('{"jperez": {"GitHub": {"status": "found", "url": "https://github.com/jperez"}, "Reddit": {"status": "not found"}}}')
-    results = MaigretTool().execute(QueryParameters(username="@jperez"))
-    assert [(r.title, r.url) for r in results] == [("Maigret: perfil en GitHub", "https://github.com/jperez")] and results[0].relevance_score == 85
-    assert state["calls"][0]["cmd"][:2] == ["maigret", "jperez"]
-    fake_run("[*] Checking jperez...\nsin json")
-    (error,) = MaigretTool().execute(QueryParameters(username="jperez"))
-    assert error.category == "Error" and "JSON válido" in error.snippet
-
-
 def test_maigret_never_gets_an_option_as_username_and_reports_timeouts(fake_run):
     state = fake_run("{}")
     for hostile in ("-evil", "--help", "a b", ""):

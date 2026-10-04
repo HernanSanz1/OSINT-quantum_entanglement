@@ -196,7 +196,8 @@ def test_web_searches_do_use_the_case_context(monkeypatch):
     from osint_app.tools.web_search import WebSearchTool
     tool = WebSearchTool()
     asked = []
-    monkeypatch.setattr(tool, "_search_duckduckgo", lambda q, max_results=20: asked.append(q) or [])
+    from osint_app.utils.search_engine import SearchOutcome
+    monkeypatch.setattr(tool, "_search", lambda q, max_results=20: asked.append(q) or SearchOutcome(attempts=[("x", "vacío")]))
     monkeypatch.setattr("osint_app.tools.web_search.time.sleep", lambda s: None)
     qp = QueryParameters.from_target_data([_td("name", "Juan Pérez"), _td("context", "ingeniero UDLA"), _td("country", "Ecuador")])
     tool.execute(qp)

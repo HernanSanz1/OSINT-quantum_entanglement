@@ -1,6 +1,6 @@
 """ProfilerEngine y su interacción con las herramientas (sin red).
 
-Integración 4.1: context/country llegan a las herramientas vía `observable`,
+Integración 4.1: context/country llegan a las herramientas vía `context` (no `observable`),
 sin que SpiderFoot escanee ese texto libre como objetivo.
 """
 import pytest
@@ -22,16 +22,16 @@ def _engine_with_applicable(monkeypatch, applicable):
 
 # ── SeedData.to_query_params (bug 4) ──────────────────────────────────────────
 
-def test_context_and_country_reach_observable():
+def test_context_and_country_reach_context_not_observable():
     qp = SeedData(name="Juan Perez", context="UDLA Ecuador 2006",
                   country="Ecuador").to_query_params()
-    assert qp.observable == "UDLA Ecuador 2006 Ecuador"
+    assert qp.context == "UDLA Ecuador 2006 Ecuador" and qp.observable == ""      # observable es solo para indicadores
     assert qp.target_name == "Juan Perez"
 
 
 def test_observable_empty_when_no_context():
     qp = SeedData(name="Juan Perez").to_query_params()
-    assert qp.observable == ""
+    assert qp.observable == "" and qp.context == ""
 
 
 def test_other_fields_still_mapped():

@@ -69,11 +69,29 @@ def parse_crtsh(entries: list, domain: str) -> List[str]:
     return found[:MAX_SUBDOMAINS]
 
 
+CERTSPOTTER_URL = "https://api.certspotter.com/v1/issuances"
+HACKERTARGET_URL = "https://api.hackertarget.com/hostsearch/"
+FALLBACK_TIMEOUT = 25
+
+
+def in_scope(name: str, domain: str) -> str:
+    """Nombre limpio si pertenece al dominio (o es el dominio), "" si no."""
+    name = (name or "").strip().lower().lstrip("*.").rstrip(".")
+    return name if name and (name == domain or name.endswith("." + domain)) and validate_domain(name) else ""
+
+
 class CrtShTool(OSINTTool):
+    """Subdominios pasivos de TRES fuentes.
+
+    Verificado en real 2026-10-04: crt.sh caído con HTTP 502 en todo el mundo; CertSpotter dio 59 subdominios de
+    utpl.edu.ec y HackerTarget 50 con su IP. Antes solo había crt.sh: si fallaba, 0 resultados. Cada subdominio
+    indica en qué fuentes aparece (más fuentes = más fiable). El nombre "crt.sh" se mantiene por compatibilidad.
+    """
+
     def __init__(self):
         super().__init__(
             "crt.sh",
-            "Descubre subdominios vía Certificate Transparency (sin clave ni binarios)",
+            "Subdominios pasivos: crt.sh + CertSpotter + HackerTarget (sin clave ni binarios)",
             REQUIREMENTS,
         )
         self._python_pkgs = ["requests"]
@@ -84,6 +102,65 @@ class CrtShTool(OSINTTool):
     def check_available(self) -> bool:
         return True
 
+    # ── fuentes ──────────────────────────────────────────────────────────────
+    def _from_crtsh(self, domain: str):
+        """(subdominios, motivo del fallo o "")."""
+        for attempt in range(MAX_RETRIES):
+            if attempt:
+                time.sleep(random.uniform(2.0, 4.0))
+            try:
+                resp = requests.get(CRTSH_URL, params={"q": f"%.{domain}", "output": "json"},
+                                    headers={"User-Agent": random.choice(USER_AGENTS)}, timeout=REQUEST_TIMEOUT)
+            except requests.RequestException as e:
+                logger.warning(f"crt.sh error de red (intento {attempt + 1}): {type(e).__name__}")
+                continue
+            if resp.status_code in RETRY_STATUS:
+                logger.warning(f"crt.sh HTTP {resp.status_code} (intento {attempt + 1})")
+                continue
+            if resp.status_code != 200:
+                return [], f"HTTP {resp.status_code}"
+            try:
+                return parse_crtsh(resp.json(), domain), ""
+            except ValueError:
+                return [], "respuesta no válida"
+        return [], "no respondió tras varios intentos"
+
+    def _from_certspotter(self, domain: str):
+        try:
+            resp = requests.get(CERTSPOTTER_URL,
+                                params={"domain": domain, "include_subdomains": "true", "expand": "dns_names"},
+                                headers={"User-Agent": "SENTINEL-OSINT/2.0"}, timeout=FALLBACK_TIMEOUT)
+        except requests.RequestException as e:
+            return [], f"sin conexión ({type(e).__name__})"
+        if resp.status_code == 429:
+            return [], "límite gratuito agotado (100 consultas/hora)"
+        if resp.status_code != 200:
+            return [], f"HTTP {resp.status_code}"
+        try:
+            names = [in_scope(n, domain) for item in resp.json() for n in item.get("dns_names", [])]
+        except (ValueError, AttributeError, TypeError):
+            return [], "respuesta no válida"
+        return sorted({n for n in names if n}), ""
+
+    def _from_hackertarget(self, domain: str):
+        """[(subdominio, ip)] de HackerTarget (gratis: 50 consultas al día por IP)."""
+        try:
+            resp = requests.get(HACKERTARGET_URL, params={"q": domain},
+                                headers={"User-Agent": "SENTINEL-OSINT/2.0"}, timeout=FALLBACK_TIMEOUT)
+        except requests.RequestException as e:
+            return [], f"sin conexión ({type(e).__name__})"
+        text = resp.text.strip()
+        low = text.lower()
+        if resp.status_code != 200 or low.startswith(("error", "api count exceeded")):
+            return [], ("límite diario gratuito agotado" if "exceeded" in low else f"HTTP {resp.status_code}: {text[:60]}")
+        pairs = []
+        for line in text.splitlines():
+            host, _, ip = line.partition(",")
+            host = in_scope(host, domain)
+            if host:
+                pairs.append((host, ip.strip()))
+        return pairs, ""
+
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         domain = sanitize_input(query_params.domain) if query_params.domain else ""
         domain = domain.strip().lower().lstrip(".")
@@ -93,60 +170,51 @@ class CrtShTool(OSINTTool):
 
         cached = self._cache.get({"domain": domain})
         if cached is not None:
-            self._report_progress(f"📦 crt.sh: usando caché — {len(cached)} subdominios")
+            self._report_progress(f"📦 Subdominios: usando caché — {len(cached)} subdominios")
             return cached
 
         self._rate.wait_if_needed()
-        self._report_progress(f"🔍 crt.sh: consultando Certificate Transparency de {domain}…")
+        self._report_progress(f"🔍 Subdominios de {domain}: consultando crt.sh, CertSpotter y HackerTarget…")
 
-        # crt.sh devuelve 502/503 de forma intermitente: reintentar con espera.
-        entries = None
-        for attempt in range(MAX_RETRIES):
-            if attempt:
-                time.sleep(random.uniform(2.0, 4.0))
-                self._report_progress(f"↻ crt.sh: reintentando ({attempt + 1}/{MAX_RETRIES})…")
-            try:
-                resp = requests.get(
-                    CRTSH_URL,
-                    params={"q": f"%.{domain}", "output": "json"},
-                    headers={"User-Agent": random.choice(USER_AGENTS)},
-                    timeout=REQUEST_TIMEOUT,
-                )
-            except requests.RequestException as e:
-                logger.warning(f"crt.sh error de red (intento {attempt + 1}): {type(e).__name__}")
-                continue
+        sources: dict = {}
+        ips: dict = {}
+        crt, err1 = self._from_crtsh(domain)
+        cs, err2 = self._from_certspotter(domain)
+        ht, err3 = self._from_hackertarget(domain)
+        status = [("crt.sh", len(crt), err1), ("CertSpotter", len(cs), err2), ("HackerTarget", len(ht), err3)]
+        for name in crt:
+            sources.setdefault(name, []).append("crt.sh")
+        for name in cs:
+            sources.setdefault(name, []).append("CertSpotter")
+        for name, ip in ht:
+            if "HackerTarget" not in sources.setdefault(name, []):
+                sources[name].append("HackerTarget")
+            if ip:
+                ips[name] = ip
 
-            if resp.status_code in RETRY_STATUS:
-                logger.warning(f"crt.sh HTTP {resp.status_code} (intento {attempt + 1})")
-                continue
-            if resp.status_code != 200:
-                self._report_progress(f"⚠️ crt.sh: respuesta HTTP {resp.status_code}.")
-                return []
-            try:
-                entries = resp.json()
-                break
-            except ValueError:
-                self._report_progress("⚠️ crt.sh: respuesta no válida.")
-                return []
-
-        if entries is None:
-            self._report_progress("⚠️ crt.sh: no respondió tras varios intentos. Prueba de nuevo en un momento.")
+        detail = " · ".join(f"{n}: {c}" if not e else f"{n}: falló ({e})" for n, c, e in status)
+        if not sources:
+            if all(e for _, _, e in status):
+                self._report_progress(f"⚠️ Subdominios: ninguna fuente respondió — {detail}")
+            else:
+                self._report_progress(f"✅ Subdominios: ninguno encontrado — {detail}")
             return []
 
-        subdomains = parse_crtsh(entries, domain)
-        results = [
-            SearchResult(
+        names = sorted(sources, key=lambda n: (-len(sources[n]), n))[:MAX_SUBDOMAINS]
+        results = []
+        for sub in names:
+            found_in = sources[sub]
+            ip = ips.get(sub, "")
+            results.append(SearchResult(
                 title=sub,
                 url=f"https://{sub}",
-                snippet=f"Subdominio de {domain} visto en Certificate Transparency",
+                snippet=f"Subdominio de {domain} visto en {', '.join(found_in)}" + (f" · IP {ip}" if ip else ""),
                 source_tool=self.name,
                 category="Subdominio",
-                relevance_score=70,
-                raw_data={"subdomain": sub, "domain": domain},
-            )
-            for sub in subdomains
-        ]
-
-        self._report_progress(f"✅ crt.sh: {len(results)} subdominios encontrados")
-        self._cache.set({"domain": domain}, results)
+                relevance_score=min(90, 60 + 10 * len(found_in)),
+                raw_data={"subdomain": sub, "domain": domain, "sources": found_in, "ip": ip},
+            ))
+        self._report_progress(f"✅ Subdominios: {len(results)} únicos — {detail}")
+        if not any(e for _, _, e in status):
+            self._cache.set({"domain": domain}, results)
         return results

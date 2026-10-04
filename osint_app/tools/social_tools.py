@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 _USERNAME_RE = re.compile(r"^[^\W-][\w.-]{0,63}$")
 _EMAIL_RE = re.compile(r"^[^\s@-][^\s@]*@[^\s@]+\.[^\s@]+$")
 _SHORTCODE_RE = re.compile(r"^[A-Za-z0-9_-]{10,40}$")      # código de una publicación de Instagram
+_HOLEHE_SERVICE = re.compile(r"^\[\+\]\s+([a-z0-9][a-z0-9.-]*\.[a-z]{2,})$", re.IGNORECASE)   # "[+] twitter.com"
 
 
 def _clean_username(value: str) -> str:
@@ -28,10 +29,19 @@ def _clean_email(value: str) -> str:
     return email if _EMAIL_RE.match(email) else ""
 
 
+def child_env() -> dict:
+    """Entorno para programas externos: que los hechos en Python escriban en UTF-8 (en Windows usan cp1252)."""
+    import os
+    return {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+
+
 def _run(cmd: List[str], timeout: int = 300):
+    # encoding explícito: con text=True a secas Windows decodifica en cp1252 y la barra de progreso de Holehe
+    # ("█") hacía caer la lectura (UnicodeDecodeError) y luego la herramienta (stdout None). Verificado en real.
     try:
-        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout)
-        return p.stdout, p.returncode
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout, env=child_env())
+        return p.stdout or "", p.returncode
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         logger.warning(f"Subprocess error ({cmd[0]}): {e}")
         return "", -1
@@ -140,12 +150,12 @@ class HoleheTool(OSINTTool):
         results = []
         for line in out.splitlines():
             line = line.strip()
-            # Solo las líneas "[+] servicio" (antes también cualquier línea con "used": la propia ayuda de Holehe,
-            # "--only-used", se daba como un servicio donde el correo tiene cuenta)
-            if line.startswith("[+]"):
-                service = line[3:].strip()
-                if not service:
-                    continue
+            # Solo "[+] servicio.com" (antes también cualquier línea con "used": la propia ayuda de Holehe).
+            # Verificado con holehe 1.61 real: imprime SIEMPRE la leyenda "[+] Email used, [-] Email not used,
+            # [x] Rate limit", que empieza por "[+]" y se habría dado como servicio en cada búsqueda.
+            match = _HOLEHE_SERVICE.match(line)
+            if match:
+                service = match.group(1)
                 results.append(SearchResult(
                     title=f"Email registrado en: {service}",
                     url="", snippet=f"{email} tiene cuenta en {service}",

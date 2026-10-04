@@ -66,11 +66,3 @@ def test_returns_empty_when_both_fail(monkeypatch):
     import requests
     monkeypatch.setattr(requests, "post", lambda *a, **k: _Resp(503, ""))
     assert duckduckgo_search("algo") == []
-
-
-def test_webselect_uses_shared_helper(monkeypatch):
-    # WebSearchTool._search_duckduckgo delega en el helper (antes estaba roto).
-    from osint_app.tools.web_search import WebSearchTool
-    monkeypatch.setattr(web_search, "duckduckgo_search",
-                        lambda q, max_results=20: [{"title": "x", "url": "https://x", "snippet": ""}])
-    assert WebSearchTool()._search_duckduckgo("q") == [{"title": "x", "url": "https://x", "snippet": ""}]

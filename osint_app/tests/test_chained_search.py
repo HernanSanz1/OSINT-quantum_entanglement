@@ -8,8 +8,9 @@ from osint_app.profiler_engine import (
 )
 
 
-def _sr(url):
-    return SearchResult(title="", url=url, snippet="", source_tool="t", category="x")
+def _sr(url, title="Juan Pérez"):
+    # Por defecto el resultado habla de la persona: solo esos alimentan la búsqueda encadenada
+    return SearchResult(title=title, url=url, snippet="", source_tool="t", category="x")
 
 
 class _FakeTool:
@@ -158,8 +159,20 @@ def test_run_parallel_chain_triggers_second_round(monkeypatch):
     monkeypatch.setattr(eng, "run_second_round",
                         lambda s, discovered, **kw: seen.setdefault("discovered", discovered) or [])
 
-    eng.run_parallel(SeedData(name="Juan"), chain=True)
+    eng.run_parallel(SeedData(name="Juan Pérez"), chain=True)
     assert seen["discovered"] == ["found"]
+
+
+def test_chain_ignores_results_about_other_people(monkeypatch):
+    # Caso real (Kent C. Dodds): github.com/kent y github.com/dodds eran OTRAS personas y se encadenaban
+    tool = _FakeTool(True, results=[_sr("https://github.com/kent", title="GitHub encontrado: kent · Nombre: Kent Beck"),
+                                    _sr("https://github.com/kentcdodds", title="GitHub: Kent C. Dodds")])
+    eng = _engine({"GitHubOSINT": tool})
+    monkeypatch.setattr(eng, "_select_tools_to_run", lambda s, o: ["GitHubOSINT"])
+    seen = {}
+    monkeypatch.setattr(eng, "run_second_round", lambda s, discovered, **kw: seen.setdefault("discovered", discovered) or [])
+    eng.run_parallel(SeedData(name="Kent C. Dodds"), chain=True)
+    assert seen["discovered"] == ["kentcdodds"]
 
 
 def test_run_parallel_without_chain_skips_second_round(monkeypatch):
@@ -189,7 +202,7 @@ def test_chained_flow_end_to_end(monkeypatch):
     })
     monkeypatch.setattr(eng, "_select_tools_to_run", lambda s, o: ["GitHubOSINT"])
 
-    eng.run_parallel(SeedData(name="Juan"), chain=True)
+    eng.run_parallel(SeedData(name="Juan Pérez"), chain=True)
 
     labels = {tr.tool_name for tr in eng.results}
     assert "GitHubOSINT" in labels                    # ronda 1

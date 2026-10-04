@@ -28,9 +28,8 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 
-from .tools import build_tool_registry, ALL_TOOLS
+from .tools import build_tool_registry
 from .core.models import QueryParameters, SearchResult
-from .correlation_engine import CorrelationEngine
 from .utils import homonyms
 from .utils.person_match import name_match, normalize_text, normalize_url, phone_in_text, username_in_text
 from .utils.entity_filters import FREEMAIL_DOMAINS, ROLE_ACCOUNTS, is_valid_email
@@ -93,11 +92,11 @@ class SeedData:
     def to_query_params(self) -> QueryParameters:
         """Convierte a QueryParameters para las herramientas.
 
-        context y country se pasan en `observable`: WebSearch y
-        UsernameVariants lo usan como contexto extra de búsqueda y para
-        extraer el año. (Antes se perdían por el camino.)
+        Contexto, país y ciudad van en `context` (texto libre para buscadores y para extraer el año).
+        Antes iban en `observable`, que es para indicadores concretos (dominio, IP, correo): las herramientas
+        de amenazas e Instaloader lo tomaban como objetivo.
         """
-        observable = " ".join(p for p in (self.context, self.country, self.city) if p).strip()
+        context = " ".join(p for p in (self.context, self.country, self.city) if p).strip()
         return QueryParameters(
             target_name=self.name,
             email=self.email or "",
@@ -105,7 +104,7 @@ class SeedData:
             username=self.username or "",
             company=self.company or "",
             phone=self.phone or "",
-            observable=observable,
+            context=context,
             location=self.city or "",
             university=self.university or "",
         )
@@ -159,6 +158,7 @@ class ProfilerEngine:
         'GitHubOSINT': {'required': ['name', 'username'], 'priority': 1},
         'WebSearch': {'required': ['name', 'email', 'username'], 'priority': 1},
         'UsernameVariants': {'required': ['name'], 'priority': 1},
+        'Wikidata': {'required': ['name'], 'priority': 1},       # personas públicas: datos y cuentas oficiales
 
         # Media prioridad
         'Sherlock': {'required': ['username', 'name'], 'priority': 2},
@@ -310,7 +310,10 @@ class ProfilerEngine:
         self.run_extra_identifiers(seed, max_workers=max_workers, timeout_per_tool=timeout_per_tool, only_tools=only_tools)
 
         if chain:
-            round1_hits = [sr for tr in results for sr in tr.results]
+            # Solo se encadenan usuarios de resultados que SÍ parecen la persona (nombre o correo coinciden).
+            # Antes se tomaban de cualquier URL: las variantes que UsernameVariants marcaba como "NO coincide,
+            # probablemente es otra persona" (github.com/kent, github.com/dodds) lanzaban 198 resultados ajenos.
+            round1_hits = [sr for tr in results for sr in tr.results if self._is_about_target(sr, seed)]
             discovered = extract_usernames_from_results(round1_hits)
             self.run_second_round(
                 seed, discovered, max_workers=max_workers,
@@ -318,6 +321,13 @@ class ProfilerEngine:
             )
 
         return self.results
+
+    CHAIN_MIN_CONFIDENCE = 40
+
+    def _is_about_target(self, result: SearchResult, seed: SeedData) -> bool:
+        """True si el resultado coincide con la persona por nombre (completo o nombre+apellido) o por correo."""
+        confidence, matched = self._calculate_confidence(result, seed)
+        return confidence >= self.CHAIN_MIN_CONFIDENCE and bool({"name", "alias", "email"} & set(matched))
 
     def _gather(self, executor, future_to_name: Dict, total_timeout: float) -> List[ToolResult]:
         """Recoge los resultados de las tareas lanzadas, sin perder ninguno si el tiempo se agota.
@@ -547,9 +557,10 @@ class ProfilerEngine:
             score += 35
             matched.append('email')
 
-        # Username
+        # Username: el mismo usuario que dio el analista en otra plataforma ya es un candidato a revisar (30).
+        # Antes valía 25, por debajo del mínimo: Sherlock encontraba 40 perfiles de "kentcdodds" y se descartaban todos.
         if any(username_in_text(u, text) for u in seed.all_usernames()):
-            score += 25
+            score += 30
             matched.append('username')
 
         # Pais/contexto

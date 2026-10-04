@@ -16,6 +16,7 @@ from .file_metadata import FileMetadataTool
 from .link_shield import LinkShieldTool
 from .tech_detect import TechDetectTool
 from .web_search import WebSearchTool, GitHubOSINTTool, UsernameVariantsTool
+from .wikidata import WikidataTool
 
 from .heavy_tools import (
     SubfinderTool, AmassTool, SpiderFootTool,
@@ -28,6 +29,7 @@ from .threat_intel import (
 ALL_TOOLS = [
     # ── Web search (always available) ──────────────────────────────────────
     WebSearchTool,
+    WikidataTool,
     GitHubOSINTTool,
     UsernameVariantsTool,
     # ── Light tools (no binary required) ───────────────────────────────────

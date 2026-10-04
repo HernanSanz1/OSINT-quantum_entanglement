@@ -36,9 +36,9 @@ def test_seed_collects_primary_and_extras_without_repeating():
 def test_query_params_carry_city_university_and_company():
     qp = SeedData(name="Juan", context="ingeniero", country="Ecuador", city="Loja", university="UTPL", company="Banco X").to_query_params()
     assert qp.location == "Loja" and qp.university == "UTPL" and qp.company == "Banco X"
-    assert qp.observable == "ingeniero Ecuador Loja"                     # la ciudad también es contexto de búsqueda
+    assert qp.context == "ingeniero Ecuador Loja"                     # la ciudad también es contexto de búsqueda
     plain = SeedData(name="Juan", context="ingeniero", country="Ecuador").to_query_params()
-    assert plain.observable == "ingeniero Ecuador" and plain.location == "" and plain.university == ""
+    assert plain.context == "ingeniero Ecuador" and plain.location == "" and plain.university == ""
 
 
 # ── puntuación ───────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ def test_extra_email_username_phone_match():
     seed = SeedData(name="Zzz Qqq", email="a@x.com", extra_emails=["otro@gmail.com"], username="user1",
                     extra_usernames=["charly"], phone="0987654321", extra_phones=["+593 98 111 2222"])
     assert score(seed, "escribe a otro@gmail.com") == (35.0, ["email"])
-    assert score(seed, "perfil de charly en github") == (25.0, ["username"])
+    assert score(seed, "perfil de charly en github") == (30.0, ["username"])     # ya es candidato (mínimo 30)
     assert score(seed, "tel 098-111-2222") == (30.0, ["phone"])
     assert score(seed, "nada que ver")[0] == 0.0
 

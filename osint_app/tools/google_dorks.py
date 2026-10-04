@@ -1,13 +1,13 @@
 """
 Google Dorks tool v2 — DuckDuckGo search with ToolRequirements and caching.
 """
-import time, random, logging
+import random, logging
 from typing import List, Dict
 import requests
-from bs4 import BeautifulSoup
 
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
 from ..core.base_tool import OSINTTool
+from ..utils.person_match import name_match
 from ..utils.rate_limiter import RateLimiter
 from ..utils.cache import CacheManager
 from ..utils.sanitizer import sanitize_input
@@ -83,7 +83,7 @@ EC_REGISTRY_SITES = ["sri.gob.ec", "supercias.gob.ec", "funcionjudicial.gob.ec"]
 
 class GoogleDorksTool(OSINTTool):
     def __init__(self):
-        super().__init__("Google Dorks", "Búsqueda avanzada DuckDuckGo con 25+ operadores", REQUIREMENTS)
+        super().__init__("Google Dorks", "Búsqueda avanzada con operadores (varios buscadores con respaldo)", REQUIREMENTS)
         self._rate = RateLimiter(max_requests=8, time_window=60)
         self._cache = CacheManager(max_size=100, ttl=1800)
         self._python_pkgs = ["requests", "bs4"]
@@ -103,7 +103,7 @@ class GoogleDorksTool(OSINTTool):
             self._report_progress("⚠️ Google Dorks: No se pudieron generar consultas. Revisa que el caso tenga Nombre, Email o Dominio.")
             return []
             
-        self._report_progress(f"🔍 Google Dorks: {total} consultas asignadas por presupuesto a enviar a DuckDuckGo…")
+        self._report_progress(f"🔍 Google Dorks: {total} consultas a enviar a los buscadores…")
 
         raw_hits = []
         for i, q_obj in enumerate(queries_objs, 1):
@@ -114,6 +114,12 @@ class GoogleDorksTool(OSINTTool):
             q_text = q_obj["query"]
             self._report_progress(f"[{i}/{total}] ✨ Score {q_obj['score']} | {q_text[:70]}…")
             hits = self._search(q_text, max_results=5)
+            outcome = getattr(self, "_last_outcome", None)
+            if outcome is not None and outcome.all_blocked:
+                # Todos los buscadores bloquean: seguir solo alarga la espera y empeora el bloqueo
+                self._report_progress(f"⚠️ Google Dorks: {outcome.explain()}")
+                self._report_progress(f"⏹️ Se detienen las {total - i} consultas restantes.")
+                break
             
             # Canonicalize URLs to avoid deduplication issues 
             from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
@@ -125,9 +131,12 @@ class GoogleDorksTool(OSINTTool):
                 
                 # Reconstruct and normalize trailing slash
                 raw_path = parsed.path if parsed.path else "/"
+                # Solo el subdominio móvil inicial ("m.facebook.com"); antes se borraba "m." en cualquier parte
+                # del dominio y "forum.x.com" quedaba como "forux.com" (URL rota)
+                netloc = parsed.netloc[2:] if parsed.netloc.lower().startswith("m.") else parsed.netloc
                 clean_url = urlunparse((
                     parsed.scheme,
-                    parsed.netloc.replace("m.", ""), # collapse mobile subdash
+                    netloc,
                     raw_path,
                     parsed.params,
                     urlencode(clean_qs),
@@ -176,12 +185,11 @@ class GoogleDorksTool(OSINTTool):
         if query_params.target_name:
             full_name = strip_accents(query_params.target_name.lower())
             level_b_checks.append(full_name)
-            
-        context_keywords = [c.lower() for c in [query_params.domain, query_params.company] if c]
-            
-        # Level C constraints (Partial matches)
-        level_c_checks = []
-        if full_name: level_c_checks.extend(full_name.split())
+
+        # Contexto que corrobora la identidad: dominio, empresa, universidad, ciudad y palabras del contexto del caso
+        context_keywords = [strip_accents(c.lower()) for c in
+                            [query_params.domain, query_params.company, query_params.university, query_params.location] if c]
+        context_keywords += [strip_accents(w.lower()) for w in (query_params.context or "").split() if len(w) > 3]
         
         valid_hits = []
         if not level_a_checks and not level_b_checks:
@@ -203,7 +211,7 @@ class GoogleDorksTool(OSINTTool):
                         r = requests.get(url, timeout=3.5, headers={"User-Agent": random.choice(USER_AGENTS)})
                         if r.status_code == 200:
                             text_to_check = strip_accents(r.text.lower())
-                    except:
+                    except Exception:
                         # Fallback to snippet on block
                         text_to_check = (hit.get("snippet", "") + " " + hit.get("title", "")).lower()
                 
@@ -213,16 +221,19 @@ class GoogleDorksTool(OSINTTool):
                 if any(a in text_to_check for a in level_a_checks):
                     hit["confidence"] = "CONFIRMADO (A)"
                     return hit
-                    
-                if full_name and full_name in text_to_check and context_keywords:
-                    if any(c in text_to_check for c in context_keywords):
-                        hit["confidence"] = "PROBABLE (B)"
-                        return hit
-                        
-                if any(c in text_to_check for c in level_c_checks):
+
+                # Nombre por palabras completas y sin tildes (person_match). Antes bastaba con UNA palabra del
+                # nombre ("pérez") para dar el resultado como posible: en pruebas reales 4 de 5 eran otras personas.
+                points, _ = name_match(query_params.target_name or "", text_to_check)
+                hit["name_points"] = points
+                if points >= 40 and context_keywords and any(c in text_to_check for c in context_keywords):
+                    hit["confidence"] = "PROBABLE (B)"
+                    return hit
+
+                if points >= 25:
                     hit["confidence"] = "POSIBLE (C)"
                     return hit
-                    
+
                 return None
                 
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
@@ -285,11 +296,12 @@ class GoogleDorksTool(OSINTTool):
             parts = [pt for pt in t_name.split() if len(pt) > 1 and pt.lower() not in ("test", "user")]
             if len(parts) >= 2:
                 name_perms.append(f'"{t_name}"') # Full Name
+            # Convención hispana: N1 N2 A1 A2. Nunca "solo apellidos" ("Pérez Quezada" atrae a todos los homónimos)
             if len(parts) == 4:
-                name_perms.extend([f'"{parts[0]} {parts[2]}"', f'"{parts[1]} {parts[3]}"', f'"{parts[2]} {parts[0]}"'])
+                name_perms.extend([f'"{parts[0]} {parts[2]}"', f'"{parts[1]} {parts[2]}"', f'"{parts[0]} {parts[1]} {parts[2]}"'])
             elif len(parts) == 3:
-                name_perms.extend([f'"{parts[0]} {parts[1]}"', f'"{parts[0]} {parts[2]}"', f'"{parts[1]} {parts[2]}"'])
-        name_perms = list(set([n for n in name_perms if n]))
+                name_perms.extend([f'"{parts[0]} {parts[1]}"', f'"{parts[0]} {parts[2]}"'])
+        name_perms = list(dict.fromkeys(n for n in name_perms if n))      # sin repetir y en orden (antes set: orden al azar)
 
         # Phone Permutations
         phone_perms = []
@@ -420,17 +432,12 @@ class GoogleDorksTool(OSINTTool):
         return sorted_queries[:budget]
 
     def _search(self, query: str, max_results: int = 10) -> List[Dict]:
-        from .web_search import duckduckgo_search
+        """Consulta la búsqueda multimotor (Brave/Yandex/Yahoo/Bing/DuckDuckGo); el ritmo lo controla esa capa."""
+        from ..utils.search_engine import web_search
 
         self._rate.wait_if_needed()
-
-        # Jitter anti-WAF: punto medio entre velocidad y no ser bloqueado.
-        # (Antes 3.5-12.5 s = lentísimo con 25 consultas; 1-3 s = demasiado
-        # agresivo y DuckDuckGo bloqueaba por ráfaga.)
-        time.sleep(random.uniform(2.0, 5.0))
-
-        # Helper compartido: POST a html.duckduckgo y respaldo a lite si va vacío.
-        return duckduckgo_search(query, max_results=max_results)
+        self._last_outcome = web_search(query, max_results=max_results)
+        return self._last_outcome.hits
 
     def _categorize(self, q: str) -> str:
         ql = q.lower()
@@ -442,7 +449,9 @@ class GoogleDorksTool(OSINTTool):
     def _score(self, p: QueryParameters, h: Dict) -> int:
         text = (h.get("title","") + " " + h.get("snippet","") + " " + h.get("url","")).lower()
         score = 0
-        if p.target_name.lower() in text: score += 15
+        # Antes: el nombre completo literal y con tildes; "Jefferson Pérez" no puntuaba para "Jefferson Pérez Quezada"
+        if p.target_name:
+            score += {40: 20, 25: 12}.get(int(max(h.get("name_points", 0), name_match(p.target_name, text)[0])), 0)
         if p.email and p.email.lower() in text: score += 25
         if p.domain and p.domain.lower() in text: score += 10
         if p.username and p.username.lower() in text: score += 10

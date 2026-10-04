@@ -3,6 +3,7 @@ Web Search Tool - Búsqueda web para OSINT
 Usa DuckDuckGo para evitar captchas de Google.
 """
 import json
+import re
 import time
 import logging
 import os
@@ -32,76 +33,21 @@ _DDG_USER_AGENTS = [
 
 def _ddg_unwrap(href: str) -> str:
     """Deshace la redirección de DuckDuckGo (//duckduckgo.com/l/?uddg=...)."""
-    if not href:
-        return ""
-    if "uddg=" in href:
-        try:
-            return urllib.parse.unquote(href.split("uddg=")[1].split("&")[0])
-        except Exception:
-            return href
-    if href.startswith("//"):
-        return "https:" + href
-    return href
+    from ..utils.search_engine import ddg_unwrap
+    return ddg_unwrap(href)
 
 
 def duckduckgo_search(query: str, max_results: int = 10) -> List[Dict[str, str]]:
-    """Busca en DuckDuckGo y devuelve [{title, url, snippet}].
+    """Solo DuckDuckGo (html y respaldo lite) → [{title, url, snippet}]; [] si no hay resultados o hay captcha.
 
-    Usa POST a html.duckduckgo.com (más fiable que GET) y, si falla o va vacío
-    (bloqueo temporal, 429), cae a lite.duckduckgo.com, que tiene otro formato.
+    Las herramientas usan `utils.search_engine.web_search`, que prueba varios buscadores y explica los bloqueos.
     """
-    import random
-    import requests
-    from bs4 import BeautifulSoup
-
-    headers = {"User-Agent": random.choice(_DDG_USER_AGENTS),
-               "Referer": "https://duckduckgo.com/"}
-
-    # 1) html.duckduckgo.com
+    from ..utils.search_engine import EngineBlocked, _search_duckduckgo
     try:
-        resp = requests.post("https://html.duckduckgo.com/html/", data={"q": query},
-                             headers=headers, timeout=20)
-        if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, "html.parser")
-            hits = []
-            for r in soup.select(".result"):
-                a = r.select_one(".result__a")
-                if not a:
-                    continue
-                s = r.select_one(".result__snippet")
-                hits.append({
-                    "title": a.get_text(strip=True),
-                    "url": _ddg_unwrap(a.get("href", "")),
-                    "snippet": s.get_text(strip=True) if s else "",
-                })
-                if len(hits) >= max_results:
-                    break
-            if hits:
-                return hits
-    except requests.RequestException as e:
-        logger.warning(f"DuckDuckGo (html) error: {type(e).__name__}")
-
-    # 2) Respaldo: lite.duckduckgo.com (otro formato)
-    try:
-        resp = requests.post("https://lite.duckduckgo.com/lite/", data={"q": query},
-                             headers=headers, timeout=20)
-        if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, "html.parser")
-            links = soup.select("a.result-link")
-            snippets = soup.select(".result-snippet")
-            hits = []
-            for i, a in enumerate(links[:max_results]):
-                snip = snippets[i].get_text(strip=True) if i < len(snippets) else ""
-                hits.append({
-                    "title": a.get_text(strip=True),
-                    "url": _ddg_unwrap(a.get("href", "")),
-                    "snippet": snip,
-                })
-            return hits
-    except requests.RequestException as e:
-        logger.warning(f"DuckDuckGo (lite) error: {type(e).__name__}")
-
-    return []
+        return _search_duckduckgo(query, max_results)
+    except EngineBlocked as e:
+        logger.warning(f"DuckDuckGo: {e}")
+        return []
 
 
 def github_unavailable_hint(status: int) -> str:
@@ -152,7 +98,7 @@ def classify_url(url: str):
 
 
 class WebSearchTool(OSINTTool):
-    """Búsqueda web usando DuckDuckGo HTML."""
+    """Búsqueda web con varios buscadores y respaldo (utils/search_engine)."""
 
     def __init__(self):
         super().__init__(
@@ -171,9 +117,14 @@ class WebSearchTool(OSINTTool):
     def check_available(self) -> bool:
         return True
 
+    def _search(self, query: str, max_results: int = 20):
+        """Búsqueda multimotor: devuelve el resultado completo (aciertos, motor usado e intentos)."""
+        from ..utils.search_engine import web_search
+        return web_search(query, max_results=max_results)
+
     def _search_duckduckgo(self, query: str, max_results: int = 20) -> List[Dict[str, str]]:
-        """Busca en DuckDuckGo (helper compartido: POST + respaldo a lite)."""
-        return duckduckgo_search(query, max_results=max_results)
+        """Compatibilidad: solo los aciertos de la búsqueda multimotor."""
+        return self._search(query, max_results).hits
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         results = []
@@ -203,10 +154,20 @@ class WebSearchTool(OSINTTool):
             if name:
                 queries.append(f'"{name}" site:{domain}')
 
-        # Execute searches with delay
+        # El ritmo entre consultas lo controla la capa de búsqueda (search_engine)
         seen_urls = set()
+        engines_used = set()
         for query in queries[:6]:  # Limit to avoid rate limiting
-            search_results = self._search_duckduckgo(query, max_results=10)
+            if self._is_cancelled:
+                break
+            outcome = self._search(query, max_results=10)
+            if outcome.all_blocked:
+                # Antes: 0 resultados en silencio tras ~200 s de esperas inútiles
+                self._report_progress(f"⚠️ WebSearch: {outcome.explain()}")
+                break
+            if outcome.engine:
+                engines_used.add(outcome.engine)
+            search_results = outcome.hits
 
             for r in search_results:
                 if r['url'] not in seen_urls:
@@ -221,10 +182,11 @@ class WebSearchTool(OSINTTool):
                         source_tool=self.name,
                         category=category,
                         relevance_score=relevance,
+                        extra_data={"query": query},
                     ))
 
-            time.sleep(1)  # Rate limiting
-
+        if results:
+            self._report_progress(f"✅ WebSearch: {len(results)} resultados (buscadores: {', '.join(sorted(engines_used))})")
         return results
 
 
@@ -337,8 +299,12 @@ class GitHubOSINTTool(OSINTTool):
             }
         ))
 
+        results.extend(self._social_accounts(username, user))
+
         # Get repositories
         repos = self._api_get(f"/users/{username}/repos?per_page=30&sort=updated")
+        if repos and isinstance(repos, list):
+            results.extend(self._commit_emails(username, user, repos))
         if repos and isinstance(repos, list):
             languages = {}
             topics = set()
@@ -413,6 +379,58 @@ class GitHubOSINTTool(OSINTTool):
                 ))
 
         return results
+
+    # Pivotes que el perfil no muestra pero la API pública sí (verificado en real 2026-10-04: kentcdodds → X,
+    # YouTube y Bluesky + 2 correos; gaearon → dan.abramov@gmail.com). Antes no se consultaban.
+    COMMIT_REPOS = 3
+    _NOREPLY = ("noreply.github.com", "noreply@github.com", "users.noreply.github.com")
+
+    def _social_accounts(self, username: str, user: Dict[str, Any]) -> List[SearchResult]:
+        accounts = self._api_get(f"/users/{username}/social_accounts")
+        out = []
+        for acc in accounts if isinstance(accounts, list) else []:
+            url = acc.get("url") or ""
+            if not url.startswith(("http://", "https://")):
+                continue
+            provider = (acc.get("provider") or "web").capitalize()
+            out.append(SearchResult(
+                title=f"{provider} vinculado al GitHub de {username}",
+                url=url,
+                snippet=f"El propio usuario de GitHub '{username}' ({user.get('name') or 'sin nombre'}) enlaza esta "
+                        f"cuenta {provider} en su perfil.",
+                source_tool=self.name, category="Social Media", relevance_score=90,
+                extra_data={"name": user.get("name"), "platform": provider, "linked_from": f"github:{username}"},
+            ))
+        return out
+
+    def _commit_emails(self, username: str, user: Dict[str, Any], repos: List[Dict[str, Any]]) -> List[SearchResult]:
+        """Correos con los que el usuario firma sus commits públicos (dato clásico de OSINT en GitHub)."""
+        emails: Dict[str, Dict[str, Any]] = {}
+        own = [r for r in repos if not r.get("fork") and r.get("name")][:self.COMMIT_REPOS]
+        for repo in own:
+            commits = self._api_get(f"/repos/{username}/{urllib.parse.quote(repo['name'])}/commits?author={username}&per_page=30")
+            for c in commits if isinstance(commits, list) else []:
+                author = (c.get("commit") or {}).get("author") or {}
+                email = (author.get("email") or "").strip().lower()
+                if not email or "@" not in email or any(email.endswith(n) for n in self._NOREPLY):
+                    continue
+                entry = emails.setdefault(email, {"names": set(), "repos": set(), "count": 0})
+                entry["names"].add(author.get("name") or "")
+                entry["repos"].add(repo["name"])
+                entry["count"] += 1
+        out = []
+        for email, info in emails.items():
+            names = ", ".join(sorted(n for n in info["names"] if n))
+            out.append(SearchResult(
+                title=f"Correo en commits de {username}: {email}",
+                url=f"https://github.com/{username}",
+                snippet=f"{email} firma {info['count']} commit(s) públicos de {username} en "
+                        f"{', '.join(sorted(info['repos']))}. Autor: {names or 'sin nombre'}.",
+                source_tool=self.name, category="Email", relevance_score=85,
+                extra_data={"email": email, "name": names.split(", ")[0] if names else user.get("name"),
+                            "source": "commits públicos de GitHub"},
+            ))
+        return out
 
 
 class _OrderedSet(dict):
@@ -495,9 +513,27 @@ class UsernameVariantsTool(OSINTTool):
         if len(parts) == 0:
             return []
 
+        # Convención hispana N1 N2 A1 A2: el apellido de uso es el PATERNO (3.ª palabra de 4). Antes se tomaba la
+        # última: "María José Vásquez Mora" daba "mariamora" (y en GitHub aparecía otra MARIA MORA).
+        # Con 3 palabras no se sabe si es N N A o N A A: se generan ambas lecturas, intercaladas al principio.
         first = parts[0]
-        last = parts[-1] if len(parts) >= 2 else ""
-        middle = parts[1] if len(parts) >= 3 else ""
+        mother = ""
+        alt_last = ""
+        if len(parts) >= 4:
+            middle, last, mother = parts[1], parts[-2], parts[-1]
+        elif len(parts) == 3:
+            middle, last, alt_last = parts[1], parts[2], parts[1]
+        else:
+            middle, last = "", (parts[-1] if len(parts) >= 2 else "")
+
+        if alt_last:
+            for a, b in ((first, last), (first, alt_last)):
+                variants.update([f"{a}{b}", f"{a}.{b}", f"{a}_{b}"])
+            variants.update([f"{first[0]}{last}", f"{first[0]}{alt_last}"])
+        if mother:
+            # jperezm / juan.perez.m: muy usados en correos y usuarios corporativos de Ecuador
+            variants.update([f"{first}{last}", f"{first}.{last}", f"{first[0]}{last}{mother[0]}",
+                             f"{first}{last}{mother[0]}", f"{first}.{last}.{mother[0]}", f"{first[0]}{last}{mother}"])
 
         # ═══════════════════════════════════════════════════════════════════════
         # COMBINACIONES BÁSICAS
@@ -602,7 +638,8 @@ class UsernameVariantsTool(OSINTTool):
         # Extraer palabras clave del contexto
         if 'udla' in ctx:
             context_words.extend(['udla', 'udlaec', 'udelasamericas'])
-        if 'ecuador' in ctx or 'ec' in ctx:
+        ctx_words = set(re.findall(r"[a-z0-9]+", ctx))
+        if 'ecuador' in ctx or 'ec' in ctx_words:      # antes `'ec' in ctx`: cualquier "tecnología" activaba EC
             context_words.extend(['ec', 'ecu', 'ecuador', '593'])
         if 'quito' in ctx:
             context_words.extend(['quito', 'qto', 'uio'])

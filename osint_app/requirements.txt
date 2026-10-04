@@ -5,6 +5,11 @@
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 
+# Búsqueda web de respaldo (Yahoo y modo "auto" de varios motores) cuando DuckDuckGo
+# devuelve captcha. Licencia MIT. Sin ella la búsqueda funciona solo con DuckDuckGo
+# (y Brave/SearXNG si se configuran). Ver docs/AUDITORIA_REAL.md
+ddgs>=9.0.0
+
 # ── Network & DNS ─────────────────────────────────────────────────────────────
 dnspython>=2.4.0
 ipwhois>=1.2.0
@@ -40,9 +45,10 @@ bandit>=1.7.0
 # subfinder    → go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 # amass        → go install -v github.com/owasp-amass/amass/v4/...@master
 # theHarvester → pip install theHarvester  (separate env recommended)
-# sherlock     → pip install sherlock-project
-# holehe       → pip install holehe
-# maigret      → pip install maigret
+# sherlock     → pip install sherlock-project   (MIT; verificado 0.16.2)
+# holehe       → pip install holehe             (GPL-3.0: se ejecuta como programa aparte, no se copia código; verificado 1.61)
+# maigret      → pip install maigret            (MIT; verificado 0.6.6)
+#   Instalados en el mismo entorno virtual, SENTINEL los encuentra aunque no se active el entorno.
 # ghunt        → https://github.com/mxrch/GHunt
 # recon-ng     → pip install recon-ng
 # sn0int       → https://github.com/kpcyrd/sn0int

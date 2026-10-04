@@ -250,8 +250,10 @@ class TheHarvesterTool(OSINTTool):
             p = subprocess.run(
                 cmd_args,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=300,
+                encoding="utf-8", errors="replace",
+                env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
             )
-            out = p.stdout[:MAX_OUTPUT_BYTES]
+            out = (p.stdout or "")[:MAX_OUTPUT_BYTES]
             
             if "Traceback" in out or "ModuleNotFoundError" in out:
                 return [SearchResult(
