@@ -191,7 +191,24 @@ Fallos encontrados y corregidos:
 Pendiente de mejora: las publicaciones de la propia cuenta (varios tuits de la misma persona) aparecen como
 candidatos separados; convendría agruparlas bajo su perfil en la vista para no técnicos.
 
-## 7. Cómo se verificó
+## 7. Informes legibles para no técnicos
+
+- **Ficha de la persona** (botón "Generar Ficha"): resumen en lenguaje claro, ficha pública, cuentas agrupadas por
+  plataforma con confianza en palabras (Alta, Media, Baja) y sus publicaciones debajo, datos de contacto con su
+  fuente, menciones en medios, posibles homónimos separados y aviso de confidencialidad (LOPDP). No carga nada de
+  internet al abrirse y se imprime a PDF desde el navegador. Probada con perfilamientos reales de Moisés Caicedo y
+  Luisito Comunica.
+- La ficha anterior dejaba **siempre vacías** sus secciones de datos (leía un campo que no existe) y cargaba imágenes
+  de internet al abrirse, avisando a terceros.
+- **Pestaña Reportes:** vista legible por defecto (cada resultado con título, tipo, confianza, enlace y texto); el
+  JSON queda en "Ver datos técnicos".
+- Corregido al revisar las fichas reales: enlaces rotos de canales de YouTube (se pasaban a minúsculas), un medio
+  de otro país marcado como "otra persona" aunque el texto hablaba del objetivo, y un resumen que contaba como
+  "probables" cuentas de confianza media.
+- Interfaz en español ("Nuevo caso", "Abrir", "Eliminar", "Editar", "Caso activo") y sin el falso
+  "All Services Operational" fijo de la barra de estado.
+
+## 8. Cómo se verificó
 
 - Herramientas ejecutadas contra objetivos reales: Daniel Noboa, Rafael Correa, Guillermo Lasso, Luisa González,
   María Paula Romo, Andrés Arauz, Gabriela Sommerfeld, Jefferson Pérez, Linus Torvalds, Satya Nadella, Kent C. Dodds,

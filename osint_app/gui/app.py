@@ -90,7 +90,7 @@ class OSINTGUI(QMainWindow):
         topbar.add(logo_lbl, x=0, y=5)   # ← posición en el topbar
 
         # ── Active Case Badge ────────────────────────────────────────────
-        self.case_badge = QLabel("ACTIVE CASE: NONE")
+        self.case_badge = QLabel("CASO ACTIVO: NINGUNO")
         self.case_badge.setObjectName("lblActiveCase")
         self.case_badge.setAlignment(Qt.AlignCenter)
         self.case_badge.setFixedSize(240, 40)   # ← tamaño del badge
@@ -159,7 +159,7 @@ class OSINTGUI(QMainWindow):
             width=160,    # ← ancho del panel sidebar
         )
 
-        btn_new = QPushButton("+\nNew Case")
+        btn_new = QPushButton("+\nNuevo caso")
         btn_new.setObjectName("sideNewCase")
         btn_new.setProperty("class", "SidebarButton")
         btn_new.clicked.connect(self._action_new_case)
@@ -168,7 +168,7 @@ class OSINTGUI(QMainWindow):
             w=140, h=100,  # ← tamaño del botón
         )
 
-        btn_open = QPushButton("📂\nOpen")
+        btn_open = QPushButton("📂\nAbrir")
         btn_open.setObjectName("sideOpen")
         btn_open.setProperty("class", "SidebarButton")
         btn_open.clicked.connect(self._action_open)
@@ -177,7 +177,7 @@ class OSINTGUI(QMainWindow):
             w=140, h=100,
         )
 
-        btn_del = QPushButton("🗑\nDelete")
+        btn_del = QPushButton("🗑\nEliminar")
         btn_del.setObjectName("sideDelete")
         btn_del.setProperty("class", "SidebarButton")
         btn_del.clicked.connect(self._action_delete)
@@ -186,7 +186,7 @@ class OSINTGUI(QMainWindow):
             w=140, h=100,
         )
 
-        btn_edit = QPushButton("✏️\nEdit")
+        btn_edit = QPushButton("✏️\nEditar")
         btn_edit.setObjectName("sideEdit")
         btn_edit.setProperty("class", "SidebarButton")
         btn_edit.clicked.connect(self._action_edit)
@@ -259,7 +259,7 @@ class OSINTGUI(QMainWindow):
 
     def _build_statusbar(self):
         status_bar = QHBoxLayout()
-        self.status_lbl = QLabel("🟢 Connected | System Status: All Services Operational")
+        self.status_lbl = QLabel("🟢 Listo")   # antes "All Services Operational" fijo, sin comprobar nada
         self.status_lbl.setStyleSheet("color: #00ff66;")
         status_bar.addWidget(self.status_lbl)
         self.root_layout.addLayout(status_bar)
@@ -335,7 +335,7 @@ class OSINTGUI(QMainWindow):
             else:
                 if current_idx not in (0, 1, 3):
                     self._switch_tab(0)
-                self.toast.show("Selecciona un caso, dato o reporte y presiona Delete", kind="warning")
+                self.toast.show("Selecciona un caso, dato o reporte y presiona Eliminar", kind="warning")
 
     def _action_edit(self):
         current_idx = self.stack.currentIndex()
@@ -369,7 +369,7 @@ class OSINTGUI(QMainWindow):
             else:
                 if current_idx not in (0, 1, 3):
                     self._switch_tab(0)
-                self.toast.show("Selecciona un caso, dato o reporte y presiona Edit", kind="warning")
+                self.toast.show("Selecciona un caso, dato o reporte y presiona Editar", kind="warning")
 
     def _action_toggle_tor(self):
         self._use_tor_proxy = not getattr(self, "_use_tor_proxy", False)

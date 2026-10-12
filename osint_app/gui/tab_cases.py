@@ -76,7 +76,7 @@ class CasesTab(QWidget):
         
         self.app.active_case_id = case_id
         self.app.active_case_name = name
-        self.app.case_badge.setText(f"ACTIVE CASE: #{case_id} — {name.upper()}")
+        self.app.case_badge.setText(f"CASO ACTIVO: #{case_id} — {name.upper()}")
         self.app.set_status(f"✔  Caso abierto: {name}", "success")
         self.app.toast.show(f"Caso {name} establecido como activo", kind="success")
         self.refresh()
@@ -100,7 +100,7 @@ class CasesTab(QWidget):
                 if self.app.active_case_id == case_id:
                     self.app.active_case_id = None
                     self.app.active_case_name = ""
-                    self.app.case_badge.setText("ACTIVE CASE: NONE")
+                    self.app.case_badge.setText("CASO ACTIVO: NINGUNO")
                 self.app._update_all_tabs()
                 modal.accept()
             except Exception as e:
@@ -132,7 +132,7 @@ class CasesTab(QWidget):
             self.app.toast.show(f"Caso creado: {name}", kind="success")
             self.app.active_case_id = new_id
             self.app.active_case_name = name
-            self.app.case_badge.setText(f"ACTIVE CASE: #{new_id} — {name.upper()}")
+            self.app.case_badge.setText(f"CASO ACTIVO: #{new_id} — {name.upper()}")
             self.app._update_all_tabs()
             modal.accept()
 
@@ -171,7 +171,7 @@ class CasesTab(QWidget):
             # Si es el caso activo, actualizar el badge
             if self.app.active_case_id == case_id:
                 self.app.active_case_name = name
-                self.app.case_badge.setText(f"ACTIVE CASE: #{case_id} — {name.upper()}")
+                self.app.case_badge.setText(f"CASO ACTIVO: #{case_id} — {name.upper()}")
                 
             self.refresh()
             modal.accept()

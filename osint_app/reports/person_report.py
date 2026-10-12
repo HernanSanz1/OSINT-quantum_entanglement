@@ -1,0 +1,277 @@
+"""
+Ficha de persona legible para usuarios no técnicos (HTML autocontenido, imprimible a PDF desde el navegador).
+
+Sustituye a la "ficha de inteligencia" anterior, que (verificado 2026-10-12):
+- dejaba SIEMPRE vacías las secciones de usuarios, correos, ubicaciones y empresas (leía un campo `raw_data` que
+  los candidatos no tienen; los datos están en `extra`);
+- cargaba imágenes de internet al abrirse (Gravatar o la foto del objetivo), avisando a terceros de que alguien
+  abría el informe;
+- era una tabla de URLs con porcentajes, difícil de entender sin conocimientos técnicos.
+
+Aquí nada se carga de internet, todo el texto de terceros se escapa y solo se enlazan direcciones http(s).
+
+Uso:
+    report = build_person_report(seed, candidates, confirmed_urls, rejected_urls)
+    html = render_person_html(report)
+"""
+import html
+import re
+from collections import OrderedDict
+from datetime import datetime
+from typing import Dict, Iterable, List, Optional
+from urllib.parse import urlsplit
+
+from ..utils.identity import is_content_url, parse_profile_url
+
+PLATFORM_NAMES = {
+    "x": "X (Twitter)", "instagram": "Instagram", "facebook": "Facebook", "linkedin": "LinkedIn", "tiktok": "TikTok",
+    "youtube": "YouTube", "github": "GitHub", "telegram": "Telegram", "reddit": "Reddit", "medium": "Medium",
+}
+# Categorías que no son datos de la persona
+_SKIP_CATEGORIES = {"Aviso", "Error", "Config Error", "Alerta", "Sin resultado", "Username Generation"}
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_PHONE_RE = re.compile(r"\+\d[\d\s().-]{7,}\d")
+MAX_MENTIONS = 15
+
+
+def confidence_word(score: float) -> str:
+    return "Alta" if score >= 70 else "Media" if score >= 40 else "Baja"
+
+
+def _host(url: str) -> str:
+    try:
+        host = (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def _status(url: str, confirmed: set, rejected: set) -> str:
+    return "confirmada" if url in confirmed else "descartada" if url in rejected else "por revisar"
+
+
+def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: Iterable[str] = (),
+                        rejected_urls: Iterable[str] = (), case_id: Optional[int] = None) -> Dict:
+    """Organiza los candidatos del perfilamiento en secciones con sentido para una persona no técnica.
+
+    `seed`: nombre, contexto, país… · `candidates`: como los emite el perfilador (source, url, title, snippet,
+    confidence, category, matched, warning, extra).
+    """
+    confirmed, rejected = set(confirmed_urls), set(rejected_urls)
+    accounts: "OrderedDict[str, Dict]" = OrderedDict()   # clave plataforma:usuario
+    other_profiles: List[Dict] = []
+    mentions: List[Dict] = []
+    homonyms: List[Dict] = []
+    contacts: "OrderedDict[str, Dict]" = OrderedDict()
+    public_card: Optional[Dict] = None
+    sources = set()
+
+    for c in sorted(candidates, key=lambda x: -float(x.get("confidence") or 0)):
+        url = c.get("url") or ""
+        category = str(c.get("category") or "")
+        if category.split(" /")[0] in _SKIP_CATEGORIES or url in rejected:
+            continue
+        sources.add(str(c.get("source") or "").split(":")[0])
+        score = float(c.get("confidence") or 0)
+        extra = c.get("extra") if isinstance(c.get("extra"), dict) else {}
+        item = {"url": url, "title": c.get("title") or url, "snippet": c.get("snippet") or "", "score": score,
+                "level": confidence_word(score), "status": _status(url, confirmed, rejected),
+                "source": str(c.get("source") or "").split(":")[0], "warning": c.get("warning") or ""}
+
+        text = f"{item['title']} {item['snippet']}"
+        for email in _EMAIL_RE.findall(text):
+            contacts.setdefault(email.lower(), {"kind": "Correo", "value": email, "source": item["source"], "url": url})
+        for phone in _PHONE_RE.findall(text):
+            contacts.setdefault(re.sub(r"\D", "", phone), {"kind": "Teléfono", "value": phone.strip(), "source": item["source"], "url": url})
+        if extra.get("email"):
+            contacts.setdefault(str(extra["email"]).lower(), {"kind": "Correo", "value": extra["email"], "source": item["source"], "url": url})
+
+        if category.startswith("Persona pública"):
+            if not extra.get("discarded") and not extra.get("ambiguous") and public_card is None:
+                public_card = {**item, "facts": item["snippet"]}
+            elif extra.get("discarded") or extra.get("ambiguous"):
+                homonyms.append(item)
+            continue
+        if item["warning"]:
+            homonyms.append(item)
+            continue
+
+        parsed = parse_profile_url(url) if url else None
+        if parsed and not is_content_url(url):
+            platform, handle, canonical = parsed
+            key = f"{platform}:{handle}"
+            # Enlace con la URL ORIGINAL: el analizador pasa el usuario a minúsculas y los canales de YouTube
+            # (UCECJDeK0…) distinguen mayúsculas: con la canónica el enlace quedaba roto (visto en real)
+            label = handle if "/" not in handle else "canal " + url.rstrip("/").rsplit("/", 1)[-1]
+            acc = accounts.setdefault(key, {"platform": PLATFORM_NAMES.get(platform, platform.capitalize()),
+                                            "handle": label, "url": url, "score": score, "posts": [],
+                                            "status": item["status"], "sources": set(), "name": extra.get("name") or ""})
+            acc["score"] = max(acc["score"], score)
+            acc["sources"].add(item["source"])
+            if item["status"] == "confirmada":
+                acc["status"] = "confirmada"
+            continue
+        if parsed and is_content_url(url):
+            key = f"{parsed[0]}:{parsed[1]}"
+            if key in accounts:                          # publicación de una cuenta ya listada: se agrupa debajo
+                accounts[key]["posts"].append(item)
+                continue
+        if c.get("source", "").split(":")[0] in ("Sherlock", "Maigret") and url:
+            other_profiles.append({**item, "platform": _host(url)})
+            continue
+        if url:
+            mentions.append(item)
+
+    # Publicaciones que llegaron antes que su cuenta: se recolocan
+    for m in list(mentions):
+        parsed = parse_profile_url(m["url"])
+        if parsed and is_content_url(m["url"]) and f"{parsed[0]}:{parsed[1]}" in accounts:
+            accounts[f"{parsed[0]}:{parsed[1]}"]["posts"].append(m)
+            mentions.remove(m)
+
+    account_list = sorted(accounts.values(), key=lambda a: (a["status"] != "confirmada", -a["score"]))
+    for acc in account_list:
+        acc["level"] = confidence_word(acc["score"])
+        acc["sources"] = sorted(s for s in acc["sources"] if s)
+    likely = [a for a in account_list if a["score"] >= 70 or a["status"] == "confirmada"]
+    possible = [a for a in account_list if a not in likely and a["score"] >= 40]
+    return {
+        "seed": seed, "case_id": case_id, "generated": datetime.now().astimezone(),
+        "public_card": public_card, "accounts": account_list, "likely_accounts": likely, "possible_accounts": possible,
+        "other_profiles": other_profiles, "contacts": list(contacts.values()),
+        "mentions": mentions[:MAX_MENTIONS], "mentions_total": len(mentions), "homonyms": homonyms,
+        "sources": sorted(s for s in sources if s), "confirmed_count": len(confirmed), "rejected_count": len(rejected),
+    }
+
+
+# ── HTML ─────────────────────────────────────────────────────────────────────
+
+def _e(value) -> str:
+    return html.escape(str(value if value is not None else ""), quote=True)
+
+
+def _link(url: str, text: str) -> str:
+    url = str(url or "")
+    if url.lower().startswith(("http://", "https://")):
+        return f'<a href="{_e(url)}" target="_blank" rel="noopener noreferrer">{_e(text)}</a>'
+    return _e(text)
+
+
+def _badge(level: str) -> str:
+    return f'<span class="badge {level.lower()}">{_e(level)}</span>'
+
+
+def _summary_sentence(r: Dict) -> str:
+    likely = r["likely_accounts"]
+    platforms = sorted({a["platform"] for a in likely})
+    parts = []
+    if r["public_card"]:
+        parts.append("tiene una <b>ficha pública</b> en Wikidata")
+    if likely:
+        parts.append(f"se encontraron <b>{len(likely)} cuenta(s) probablemente suyas</b> en "
+                     f"{len(platforms)} plataforma(s) ({_e(', '.join(platforms))})")
+    if r.get("possible_accounts"):
+        parts.append(f"{len(r['possible_accounts'])} cuenta(s) más que <b>podrían</b> ser suyas y conviene revisar "
+                     f"(pueden ser de fans u homónimos)")
+    if r["contacts"]:
+        parts.append(f"<b>{len(r['contacts'])} dato(s) de contacto</b> públicos")
+    if r["mentions_total"]:
+        parts.append(f"<b>{r['mentions_total']} mención(es)</b> en webs y medios")
+    if r["homonyms"]:
+        parts.append(f"<b>{len(r['homonyms'])} resultado(s) que podrían ser otra persona</b> (separados al final)")
+    if not parts:
+        return "No se encontró información pública suficiente sobre esta persona con los datos dados."
+    return "Sobre esta persona " + "; ".join(parts) + "."
+
+
+def render_person_html(r: Dict) -> str:
+    seed = r["seed"]
+    name = seed.get("name") or "Sin nombre"
+    when = r["generated"].strftime("%Y-%m-%d %H:%M (UTC%z)")
+    seed_rows = "".join(f"<tr><th>{_e(label)}</th><td>{_e(seed.get(key))}</td></tr>"
+                        for key, label in (("name", "Nombre"), ("context", "Contexto"), ("country", "País"),
+                                           ("city", "Ciudad"), ("username", "Usuario"), ("email", "Correo"),
+                                           ("phone", "Teléfono"), ("domain", "Dominio")) if seed.get(key))
+
+    card = ""
+    if r["public_card"]:
+        pc = r["public_card"]
+        facts = "".join(f"<li>{_e(f.strip())}</li>" for f in pc["facts"].split(" · ") if f.strip())
+        card = (f'<section><h2>Ficha pública</h2><p class="hint">Datos estructurados de Wikidata, base abierta '
+                f'mantenida por la comunidad. {_link(pc["url"], "Ver la ficha original")}</p><ul>{facts}</ul></section>')
+
+    acc_rows = ""
+    for a in r["accounts"]:
+        posts = ""
+        if a["posts"]:
+            posts = "<details><summary>{} publicación(es) de esta cuenta</summary><ul>{}</ul></details>".format(
+                len(a["posts"]), "".join(f"<li>{_link(p['url'], p['title'][:110])}</li>" for p in a["posts"][:10]))
+        status = "✔ Confirmada por el analista" if a["status"] == "confirmada" else "Por revisar"
+        acc_rows += (f"<tr><td>{_e(a['platform'])}</td><td>{_link(a['url'], a['handle'] if a['handle'].startswith('canal ') else '@' + a['handle'])}"
+                     f"{('<br><small>' + _e(a['name']) + '</small>') if a['name'] else ''}{posts}</td>"
+                     f"<td>{_badge(a['level'])}</td><td>{_e(status)}</td><td>{_e(', '.join(a['sources']))}</td></tr>")
+    accounts = (f'<section><h2>Cuentas en redes sociales</h2><p class="hint">Confianza <b>Alta</b>: varias pistas '
+                f'coinciden (nombre, usuario, país…). <b>Media</b>: algunas. <b>Baja</b>: solo una; revísala antes '
+                f'de darla por buena.</p><table><tr><th>Plataforma</th><th>Cuenta</th><th>Confianza</th>'
+                f'<th>Estado</th><th>Encontrada por</th></tr>{acc_rows}</table></section>') if acc_rows else ""
+
+    others = ""
+    if r["other_profiles"]:
+        items = "".join(f"<li>{_link(p['url'], p['platform'])} {_badge(p['level'])}</li>" for p in r["other_profiles"][:40])
+        others = (f'<section><h2>Mismo usuario en otros sitios</h2><p class="hint">Sitios donde existe una cuenta con '
+                  f'el mismo nombre de usuario. Puede ser la misma persona o alguien que eligió el mismo nombre: '
+                  f'compruébalo abriendo el enlace.</p><ul class="cols">{items}</ul></section>')
+
+    contacts = ""
+    if r["contacts"]:
+        rows = "".join(f"<tr><td>{_e(c['kind'])}</td><td>{_e(c['value'])}</td><td>{_link(c['url'], c['source'])}</td></tr>"
+                       for c in r["contacts"])
+        contacts = (f'<section><h2>Datos de contacto públicos</h2><p class="hint">Aparecen publicados en la fuente '
+                    f'indicada. Úsalos solo con una finalidad legítima.</p><table><tr><th>Tipo</th><th>Dato</th>'
+                    f'<th>Dónde aparece</th></tr>{rows}</table></section>')
+
+    mentions = ""
+    if r["mentions"]:
+        items = "".join(f"<li>{_link(m['url'], m['title'][:120])} {_badge(m['level'])}<br><small>{_e(m['snippet'][:220])}"
+                        f"</small></li>" for m in r["mentions"])
+        more = f"<p class='hint'>Se muestran {len(r['mentions'])} de {r['mentions_total']}.</p>" if r["mentions_total"] > len(r["mentions"]) else ""
+        mentions = f"<section><h2>Menciones en webs y medios</h2><ul>{items}</ul>{more}</section>"
+
+    homonyms = ""
+    if r["homonyms"]:
+        items = "".join(f"<li>{_link(h['url'], h['title'][:110])}<br><small>{_e(h['warning'] or h['snippet'][:160])}</small></li>"
+                        for h in r["homonyms"][:20])
+        homonyms = (f'<section class="muted"><h2>Posiblemente otra persona</h2><p class="hint">Resultados con el '
+                    f'mismo nombre pero con señales de ser otra persona (otro país, otra profesión…). No se usan en '
+                    f'el resumen.</p><ul>{items}</ul></section>')
+
+    return f"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ficha de {_e(name)}</title>
+<style>
+  body {{ font-family: "Segoe UI", Arial, sans-serif; color: #1f2933; background: #f5f7fa; margin: 0; padding: 24px; line-height: 1.45; }}
+  main {{ max-width: 980px; margin: 0 auto; background: #fff; padding: 28px 34px; border-radius: 8px; box-shadow: 0 1px 4px #0002; }}
+  h1 {{ margin: 0 0 4px; font-size: 26px; }} h2 {{ font-size: 18px; margin: 28px 0 8px; border-bottom: 2px solid #e4e7eb; padding-bottom: 4px; }}
+  .meta {{ color: #616e7c; font-size: 13px; }} .hint {{ color: #616e7c; font-size: 13px; margin: 4px 0 10px; }}
+  .notice {{ background: #fff8e1; border-left: 4px solid #f0b429; padding: 10px 14px; font-size: 13px; margin: 14px 0; }}
+  .summary {{ background: #e3f8ff; border-left: 4px solid #2186eb; padding: 12px 16px; font-size: 15px; }}
+  table {{ border-collapse: collapse; width: 100%; font-size: 14px; }} th, td {{ text-align: left; padding: 7px 8px; border-bottom: 1px solid #e4e7eb; vertical-align: top; }}
+  th {{ background: #f5f7fa; }} a {{ color: #0b69a3; }} small {{ color: #616e7c; }}
+  .badge {{ display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }}
+  .alta {{ background: #e3f9e5; color: #207227; }} .media {{ background: #fff3c4; color: #8d6a00; }} .baja {{ background: #ffe3e3; color: #a61b1b; }}
+  ul.cols {{ columns: 2; }} .muted {{ opacity: .85; }} details {{ margin-top: 4px; font-size: 13px; }}
+  @media print {{ body {{ background: #fff; padding: 0; }} main {{ box-shadow: none; }} details {{ display: block; }} }}
+</style></head>
+<body><main>
+<h1>Ficha de {_e(name)}</h1>
+<div class="meta">Generada el {_e(when)}{(' · Caso #' + _e(r['case_id'])) if r.get('case_id') else ''} · SENTINEL</div>
+<div class="notice"><b>Documento confidencial.</b> Contiene datos personales recogidos de fuentes públicas. Trátalo
+según la Ley Orgánica de Protección de Datos Personales (LOPDP) y solo con una finalidad legítima. La información
+pública puede estar desactualizada o ser de otra persona con el mismo nombre: verifícala antes de actuar.</div>
+<section><h2>Resumen</h2><p class="summary">{_summary_sentence(r)}</p></section>
+<section><h2>Datos de partida</h2><table>{seed_rows}</table></section>
+{card}{accounts}{contacts}{mentions}{others}{homonyms}
+<section><h2>Cómo se obtuvo</h2><p class="hint">Búsqueda automática en fuentes públicas con: {_e(', '.join(r['sources']) or '—')}.
+Candidatos confirmados por el analista: {r['confirmed_count']} · descartados: {r['rejected_count']}. Este informe no
+carga nada de internet al abrirse.</p></section>
+</main></body></html>"""

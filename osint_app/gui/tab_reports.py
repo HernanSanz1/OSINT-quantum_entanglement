@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from ..db.feedback_db import db
+from ..reports.readable import readable_results
 
 class ReportsTab(QWidget):
     def __init__(self, app):
@@ -25,7 +26,7 @@ class ReportsTab(QWidget):
         
         self.tree = QTreeWidget()
         self.tree.setColumnCount(4)
-        self.tree.setHeaderLabels(["Case ID", "Report ID", "Tool", "Date"])
+        self.tree.setHeaderLabels(["Caso", "Nº", "Herramienta", "Fecha"])
         self.tree.itemSelectionChanged.connect(self._on_select)
         left_layout.addWidget(self.tree)
         splitter.addWidget(left_panel)
@@ -36,15 +37,21 @@ class ReportsTab(QWidget):
         right_layout.setContentsMargins(0,0,0,0)
         
         top_btn_lay = QHBoxLayout()
-        self.lbl_rep = QLabel("Report Viewer")
+        self.lbl_rep = QLabel("Selecciona un reporte")
         self.lbl_rep.setStyleSheet("font-weight: bold; color: #00d4ff;")
         top_btn_lay.addWidget(self.lbl_rep)
+        top_btn_lay.addStretch()
+        # Vista legible por defecto; el JSON técnico queda a un clic (antes solo se veía el JSON crudo)
+        self.btn_raw = QPushButton("Ver datos técnicos (JSON)")
+        self.btn_raw.setCheckable(True)
+        self.btn_raw.toggled.connect(lambda _checked: self._on_select())
+        top_btn_lay.addWidget(self.btn_raw)
         
         right_layout.addLayout(top_btn_lay)
         
         self.viewer = QPlainTextEdit()
         self.viewer.setReadOnly(True)
-        self.viewer.setStyleSheet("background-color: #0c111d; color: #E0E6ED; font-family: monospace;")
+        self.viewer.setStyleSheet("background-color: #0c111d; color: #E0E6ED; font-family: 'Segoe UI', sans-serif; font-size: 13px;")
         right_layout.addWidget(self.viewer)
         
         splitter.addWidget(right_panel)
@@ -76,19 +83,21 @@ class ReportsTab(QWidget):
         items = self.tree.selectedItems()
         if not items:
             self._current_report_id = None
-            self.lbl_rep.setText("Report Viewer")
+            self.lbl_rep.setText("Selecciona un reporte")
             self.viewer.clear()
             return
             
         item = items[0]
         self._current_report_id = item.data(0, Qt.UserRole)
-        self.lbl_rep.setText(f"Report ID #{item.text(1)}: {item.text(2)}")
-        try:
-            raw = item.data(1, Qt.UserRole)
-            parsed = json.loads(raw)
-            self.viewer.setPlainText(json.dumps(parsed, indent=2))
-        except:
-            self.viewer.setPlainText(str(item.data(1, Qt.UserRole)))
+        self.lbl_rep.setText(f"Reporte #{item.text(1)}: {item.text(2)}")
+        raw = item.data(1, Qt.UserRole)
+        if self.btn_raw.isChecked():
+            try:
+                self.viewer.setPlainText(json.dumps(json.loads(raw), indent=2, ensure_ascii=False))
+            except (TypeError, ValueError):
+                self.viewer.setPlainText(str(raw))
+        else:
+            self.viewer.setPlainText(readable_results(item.text(2), raw))
 
     def on_open(self):
         self.refresh()

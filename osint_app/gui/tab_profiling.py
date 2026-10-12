@@ -12,6 +12,7 @@ Flujo:
 Las herramientas disponibles se muestran en la GUI y se ejecutan en paralelo.
 """
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
@@ -622,7 +623,7 @@ class ProfilingTab(QWidget):
         name = f"Perfil: {self.input_name.text().strip()}"
         self.app.active_case_id = case_id
         self.app.active_case_name = name
-        self.app.case_badge.setText(f"ACTIVE CASE: #{case_id} — {name.upper()}")
+        self.app.case_badge.setText(f"CASO ACTIVO: #{case_id} — {name.upper()}")
         self._log(f"💾 Resultados guardados en el caso #{case_id}. Míralos en la pestaña Reportes.")
         for page_name, widget in self.app.pages:
             if page_name in ("Casos", "Datos", "Reportes") and hasattr(widget, "refresh"):
@@ -872,417 +873,31 @@ Snippet:
         self.app.toast.show(f"Perfil exportado a {output_file.name}", kind="success")
 
     def _on_generate_dossier(self):
-        """Generar ficha de inteligencia estilo militar."""
+        """Genera la ficha legible de la persona (reports/person_report) y la abre en el navegador.
+
+        Sustituye a la "ficha de inteligencia" anterior, cuyas secciones de datos salían siempre vacías y que
+        cargaba imágenes de internet al abrirse (ver el módulo).
+        """
         if not self.candidates_data:
             self.app.toast.show("Ejecuta un perfilamiento primero", kind="error")
             return
+        from ..reports.person_report import build_person_report, render_person_html
 
-        # Recopilar datos confirmados
-        confirmed = [c for c in self.candidates_data if c['url'] in self.confirmed_urls]
-
-        if not confirmed:
-            # Si no hay confirmados, usar los de mayor confianza
-            confirmed = [c for c in self.candidates_data if c['confidence'] >= 50][:5]
-
-        if not confirmed:
-            self.app.toast.show("Confirma algunos candidatos o espera resultados con confianza alta", kind="error")
-            return
-
-        self._log("Generando ficha de inteligencia...")
-
-        # Buscar avatar/foto
-        avatar_url = None
-        for c in confirmed:
-            raw = c.get('raw_data', {}) if isinstance(c.get('raw_data'), dict) else {}
-            if raw.get('avatar_url'):
-                avatar_url = raw['avatar_url']
-                break
-
-        # Generar HTML de la ficha
-        html = self._generate_intel_dossier_html(confirmed, avatar_url)
-
-        # Guardar archivo
+        seed = self._seed_from_inputs()
+        seed_dict = {"name": seed.name, "context": seed.context, "country": seed.country, "city": seed.city,
+                     "username": seed.username, "email": seed.email, "phone": seed.phone, "domain": seed.domain}
+        report = build_person_report(seed_dict, self.candidates_data, self.confirmed_urls, self.rejected_urls,
+                                     case_id=getattr(self.app, "active_case_id", None))
         output_dir = Path.home() / "Downloads"
-        name = self.input_name.text().replace(" ", "_")[:20] or "objetivo"
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        output_file = output_dir / f"FICHA_INTEL_{name}_{timestamp}.html"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        name = re.sub(r"[^\w-]+", "_", seed.name)[:30].strip("_") or "persona"
+        output_file = output_dir / f"Ficha_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        output_file.write_text(render_person_html(report), encoding="utf-8")
 
-        output_file.write_text(html, encoding="utf-8")
-
-        # Abrir en navegador
         import webbrowser
-        webbrowser.open(f"file://{output_file}")
-
+        webbrowser.open(output_file.as_uri())
         self._log(f"Ficha generada: {output_file}")
-        self.app.toast.show("Ficha de inteligencia generada", kind="success")
-
-    def _generate_intel_dossier_html(self, confirmed: List[Dict], avatar_url: str = None) -> str:
-        """Genera HTML de ficha de inteligencia estilo militar."""
-        import html as html_lib
-
-        name = self.input_name.text() or "DESCONOCIDO"
-        context = self.input_context.text() or "-"
-        country = self.input_country.currentText() or "-"
-        username = self.input_username.text() or "-"
-        email = self.input_email.text() or "-"
-        phone = self.input_phone.text() or "-"
-        domain = self.input_domain.text() or "-"
-
-        # Extraer datos adicionales de candidatos confirmados
-        usernames_found = set()
-        emails_found = set()
-        locations_found = set()
-        companies_found = set()
-        urls_found = []
-
-        for c in confirmed:
-            urls_found.append({
-                'source': c.get('source', 'N/A'),
-                'url': c.get('url', ''),
-                'title': c.get('title', '')[:80],
-                'confidence': c.get('confidence', 0)
-            })
-
-            raw = c.get('raw_data', {}) if isinstance(c.get('raw_data'), dict) else {}
-            if raw.get('username'):
-                usernames_found.add(raw['username'])
-            if raw.get('email'):
-                emails_found.add(raw['email'])
-            if raw.get('location'):
-                locations_found.add(raw['location'])
-            if raw.get('company'):
-                companies_found.add(raw['company'])
-
-        # Avatar placeholder si no hay
-        if not avatar_url:
-            avatar_url = "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y&s=200"
-
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC-5")
-        case_id = f"CASE-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-
-        # Generar filas de URLs
-        urls_html = ""
-        for i, u in enumerate(urls_found[:15], 1):
-            conf_color = "#00ff66" if u['confidence'] >= 70 else "#ffaa00" if u['confidence'] >= 40 else "#ff4444"
-            urls_html += f"""
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #333;">{i}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #333;">{html_lib.escape(u['source'])}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #333;">
-                    <a href="{html_lib.escape(u['url']) if str(u['url']).lower().startswith(('http://', 'https://')) else '#'}" target="_blank" rel="noopener noreferrer" style="color: #00d4ff;">{html_lib.escape(u['title'][:60])}</a>
-                </td>
-                <td style="padding: 8px; border-bottom: 1px solid #333; color: {conf_color}; font-weight: bold;">{u['confidence']:.0f}%</td>
-            </tr>
-            """
-
-        html = f"""<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FICHA DE INTELIGENCIA - {html_lib.escape(name)}</title>
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            font-family: 'Segoe UI', 'Arial', sans-serif;
-            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #0a0a0a 100%);
-            color: #E0E6ED;
-            min-height: 100vh;
-            padding: 20px;
-        }}
-        .container {{
-            max-width: 900px;
-            margin: 0 auto;
-            background: linear-gradient(180deg, #0d1521 0%, #0a1628 100%);
-            border: 2px solid #00d4ff;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
-        }}
-        .header {{
-            background: linear-gradient(90deg, #001a33 0%, #003366 50%, #001a33 100%);
-            padding: 20px;
-            display: flex;
-            align-items: center;
-            border-bottom: 3px solid #00d4ff;
-        }}
-        .header-left {{
-            flex: 1;
-        }}
-        .classification {{
-            background: #dc2626;
-            color: white;
-            padding: 5px 15px;
-            font-size: 12px;
-            font-weight: bold;
-            letter-spacing: 2px;
-            border-radius: 3px;
-            display: inline-block;
-            margin-bottom: 10px;
-        }}
-        .header h1 {{
-            color: #00d4ff;
-            font-size: 24px;
-            letter-spacing: 3px;
-            text-transform: uppercase;
-        }}
-        .header .case-id {{
-            color: #8A9AA9;
-            font-size: 12px;
-            margin-top: 5px;
-        }}
-        .header-logo {{
-            width: 80px;
-            height: 80px;
-            background: #0a1628;
-            border: 2px solid #00d4ff;
-            border-radius: 5px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 32px;
-        }}
-        .subject-section {{
-            display: flex;
-            padding: 25px;
-            border-bottom: 1px solid #1e3a5f;
-            gap: 25px;
-        }}
-        .photo-container {{
-            width: 180px;
-            flex-shrink: 0;
-        }}
-        .photo {{
-            width: 180px;
-            height: 200px;
-            background: #1a1a2e;
-            border: 3px solid #00d4ff;
-            border-radius: 5px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-        }}
-        .photo img {{
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }}
-        .photo-label {{
-            text-align: center;
-            margin-top: 8px;
-            font-size: 11px;
-            color: #8A9AA9;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }}
-        .subject-info {{
-            flex: 1;
-        }}
-        .info-grid {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-        }}
-        .info-item {{
-            background: #0a1628;
-            border: 1px solid #1e3a5f;
-            border-radius: 4px;
-            padding: 12px;
-        }}
-        .info-item.full {{
-            grid-column: span 2;
-        }}
-        .info-label {{
-            color: #00d4ff;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 5px;
-        }}
-        .info-value {{
-            color: #E0E6ED;
-            font-size: 14px;
-            font-weight: 500;
-        }}
-        .section {{
-            padding: 20px 25px;
-            border-bottom: 1px solid #1e3a5f;
-        }}
-        .section-title {{
-            color: #00d4ff;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            margin-bottom: 15px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #1e3a5f;
-        }}
-        .data-table {{
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-        }}
-        .data-table th {{
-            background: #001a33;
-            color: #00d4ff;
-            padding: 10px;
-            text-align: left;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 11px;
-            letter-spacing: 1px;
-        }}
-        .data-table td {{
-            padding: 8px 10px;
-            border-bottom: 1px solid #1e3a5f;
-        }}
-        .tag {{
-            display: inline-block;
-            background: #1e3a5f;
-            color: #00d4ff;
-            padding: 4px 10px;
-            border-radius: 3px;
-            font-size: 11px;
-            margin: 2px;
-        }}
-        .footer {{
-            background: #001a33;
-            padding: 15px 25px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 11px;
-            color: #8A9AA9;
-        }}
-        .footer .stamp {{
-            color: #dc2626;
-            font-weight: bold;
-            letter-spacing: 1px;
-        }}
-        .confidence-bar {{
-            height: 6px;
-            background: #1e3a5f;
-            border-radius: 3px;
-            overflow: hidden;
-            margin-top: 5px;
-        }}
-        .confidence-fill {{
-            height: 100%;
-            background: linear-gradient(90deg, #00d4ff, #00ff66);
-            border-radius: 3px;
-        }}
-        @media print {{
-            body {{ background: white; color: black; }}
-            .container {{ border: 2px solid #333; box-shadow: none; }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="header-left">
-                <div class="classification">CONFIDENCIAL - OSINT</div>
-                <h1>FICHA DE INTELIGENCIA</h1>
-                <div class="case-id">{case_id} | {timestamp}</div>
-            </div>
-            <div class="header-logo">🔍</div>
-        </div>
-
-        <div class="subject-section">
-            <div class="photo-container">
-                <div class="photo">
-                    <img src="{html_lib.escape(avatar_url)}" alt="Foto del objetivo" onerror="this.src='https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y&s=200'">
-                </div>
-                <div class="photo-label">Foto del Objetivo</div>
-            </div>
-            <div class="subject-info">
-                <div class="info-grid">
-                    <div class="info-item full">
-                        <div class="info-label">Nombre Completo</div>
-                        <div class="info-value" style="font-size: 18px; color: #00d4ff;">{html_lib.escape(name)}</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">Pais / Nacionalidad</div>
-                        <div class="info-value">{html_lib.escape(country)}</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">Username Principal</div>
-                        <div class="info-value">{html_lib.escape(username)}</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">Email</div>
-                        <div class="info-value">{html_lib.escape(email)}</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">Telefono</div>
-                        <div class="info-value">{html_lib.escape(phone)}</div>
-                    </div>
-                    <div class="info-item full">
-                        <div class="info-label">Contexto / Afiliacion</div>
-                        <div class="info-value">{html_lib.escape(context)}</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">Identidades Digitales Confirmadas</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                {''.join(f'<span class="tag">@{html_lib.escape(u)}</span>' for u in usernames_found) or '<span style="color: #8A9AA9;">Sin usernames adicionales</span>'}
-            </div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">Emails Asociados</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                {''.join(f'<span class="tag">{html_lib.escape(e)}</span>' for e in emails_found) or '<span style="color: #8A9AA9;">Sin emails adicionales</span>'}
-            </div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">Ubicaciones Detectadas</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                {''.join(f'<span class="tag">📍 {html_lib.escape(l)}</span>' for l in locations_found) or '<span style="color: #8A9AA9;">Sin ubicaciones detectadas</span>'}
-            </div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">Organizaciones / Empresas</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                {''.join(f'<span class="tag">🏢 {html_lib.escape(c)}</span>' for c in companies_found) or '<span style="color: #8A9AA9;">Sin empresas detectadas</span>'}
-            </div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">Fuentes de Inteligencia ({len(urls_found)} registros)</div>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th style="width: 40px;">#</th>
-                        <th style="width: 120px;">Fuente</th>
-                        <th>Descripcion</th>
-                        <th style="width: 80px;">Confianza</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {urls_html}
-                </tbody>
-            </table>
-        </div>
-
-        <div class="footer">
-            <div>
-                <strong>SENTINEL OSINT Platform</strong> | Generado automaticamente
-            </div>
-            <div class="stamp">
-                DOCUMENTO DE INTELIGENCIA
-            </div>
-        </div>
-    </div>
-</body>
-</html>"""
-        return html
+        self.app.toast.show("Ficha generada y abierta en el navegador", kind="success")
 
     def refresh(self):
         """Refrescar tab."""

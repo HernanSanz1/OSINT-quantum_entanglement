@@ -201,7 +201,10 @@ def homonym_signals(text: str, url: str, seed_country: str, seed_context: str = 
         if ctx_cities and own and not (own & ctx_cities):
             signals.append(Signal("other_city", f"posible homónimo (señal débil): menciona {sorted(own)[0]}; el contexto del objetivo dice {sorted(ctx_cities)[0]}", OTHER_CITY_PENALTY))
 
-    signals.extend(_url_signals(url, target))
+    # El dominio de otro país (transfermarkt.es) es una señal débil: si el texto ya liga el resultado al objetivo
+    # (menciona su país o ciudad), no se aplica. Prueba real: Moisés Caicedo en Transfermarkt salía como "otra persona"
+    if not tied_to_target:
+        signals.extend(_url_signals(url, target))
     return signals
 
 
