@@ -508,6 +508,9 @@ class MaigretTool(OSINTTool):
                     source_tool=self.name, category="Error", relevance_score=100,
                 )]
 
+        if "too many errors" in out.lower():
+            # Fallo de red/DNS de maigret: "0 perfiles" no significaría que no existan (visto en real 2026-10-12)
+            self._report_progress("⚠️ Maigret: muchos sitios fallaron por red o DNS; el resultado puede estar incompleto.")
         results = []
         for site, info in list(data.items())[:MAX_RESULTS]:
             status = info.get("status") or {}

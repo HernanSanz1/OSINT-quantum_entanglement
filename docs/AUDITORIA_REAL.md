@@ -161,7 +161,37 @@ Caso real de Jefferson Pérez: **55 entidades con ruido → 20 relevantes**.
   `wsl --install --no-distribution` y reiniciar, instalar Docker Desktop con `winget install -e --id Docker.DockerDesktop`.
   Docker Desktop exige licencia de pago en organizaciones de más de 250 empleados o 10 millones de USD de facturación.
 
-## 6. Cómo se verificó
+## 6. Perfiles variados (octubre 2026)
+
+Perfilamientos reales de personas con menos presencia o identidades más difíciles: Jorge Ulloa (cineasta de
+Enchufe TV), Luisito Comunica (conocido por su alias), midudev (conocido por su usuario), Andersson Boscán
+(periodista) y Moisés Caicedo (futbolista).
+
+| Persona | Resultado final |
+|---|---|
+| Andersson Boscán | Ficha de Wikidata, LinkedIn, X, Instagram, Facebook, YouTube y Bluesky |
+| Moisés Caicedo | Ficha de Wikidata, Instagram oficial, Wikipedia, Transfermarkt y ficha del Chelsea |
+| midudev | GitHub, YouTube, Twitch, Instagram, X y LinkedIn |
+| Luisito Comunica | Ficha de Wikidata y sus cuentas oficiales, incluidas las secundarias |
+| Jorge Ulloa | Sin homónimos; su Instagram aparece, pero no se encadena si solo sale en una plataforma |
+
+Fallos encontrados y corregidos:
+
+- La segunda ronda perseguía usuarios equivocados: una radio que publicó un vídeo sobre la persona, el LinkedIn de
+  otro Jorge Ulloa, un colombiano llamado Jorge Mario Ulloa y repositorios de otras personas sobre midudev. Ahora solo
+  se encadenan usuarios vistos en al menos dos plataformas o dados por una fuente estructurada (Wikidata o las redes
+  que enlaza el propio GitHub), nunca desde publicaciones, repositorios ni LinkedIn.
+- Una publicación de otra cuenta que solo menciona a la persona puntuaba como su perfil (hasta 95). Ahora vale como
+  mención.
+- Los avisos de las herramientas se perdían dentro del perfilador; ahora aparecen en su registro.
+- GitHub se consultaba con usuarios imposibles (con guion bajo) y el "no encontrado" salía como candidato.
+- Maigret devolvió 0 en una ejecución por un fallo pasajero que no se pudo reproducir; ahora avisa cuando muchos
+  sitios fallan por red.
+
+Pendiente de mejora: las publicaciones de la propia cuenta (varios tuits de la misma persona) aparecen como
+candidatos separados; convendría agruparlas bajo su perfil en la vista para no técnicos.
+
+## 7. Cómo se verificó
 
 - Herramientas ejecutadas contra objetivos reales: Daniel Noboa, Rafael Correa, Guillermo Lasso, Luisa González,
   María Paula Romo, Andrés Arauz, Gabriela Sommerfeld, Jefferson Pérez, Linus Torvalds, Satya Nadella, Kent C. Dodds,

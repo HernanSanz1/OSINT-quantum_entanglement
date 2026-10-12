@@ -10,7 +10,7 @@ from osint_app.profiler_engine import (
 
 def _sr(url, title="Juan Pérez"):
     # Por defecto el resultado habla de la persona: solo esos alimentan la búsqueda encadenada
-    return SearchResult(title=title, url=url, snippet="", source_tool="t", category="x")
+    return SearchResult(title=title, url=url, snippet="", source_tool="GitHubOSINT", category="x")   # fuente estructurada
 
 
 class _FakeTool:
@@ -50,8 +50,9 @@ def test_extract_github_linkedin_twitter():
         _sr("https://twitter.com/jperez"),
         _sr("https://x.com/otro_user"),
     ]
+    # LinkedIn ya no se encadena: sus identificadores no son usuarios reutilizables (prueba real con Jorge Ulloa)
     assert extract_usernames_from_results(results) == [
-        "octocat", "juan-perez", "jperez", "otro_user",
+        "octocat", "jperez", "otro_user",
     ]
 
 

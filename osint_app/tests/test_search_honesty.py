@@ -76,7 +76,7 @@ def _run(tool_cls, **params):
 def test_github_user_not_found_is_404(github):
     github({})
     res = _run(GitHubOSINTTool, username="nadie")
-    assert len(res) == 1 and res[0].title == "Usuario no encontrado: nadie" and res[0].category == "GitHub"
+    assert len(res) == 1 and res[0].title == "Usuario no encontrado: nadie" and res[0].category == "Sin resultado"   # no es candidato
 
 
 @pytest.mark.parametrize("error,fragment", [

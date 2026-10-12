@@ -50,6 +50,31 @@ def _segments(path: str):
     return [unquote(s) for s in path.split("/") if s]
 
 
+# Segmentos que convierten una URL de perfil en una PUBLICACIÓN de esa cuenta (x.com/radio/status/1…)
+_CONTENT_SEGMENTS = {"status", "statuses", "video", "videos", "photo", "photos", "posts", "post", "p", "reel", "reels",
+                     "story", "stories", "watch", "shorts", "live", "comments", "permalink.php", "media", "tv", "events"}
+
+
+def is_content_url(url: str) -> bool:
+    """True si la URL es una publicación (tuit, vídeo, post), no la página del perfil.
+
+    El autor de una publicación que menciona a la persona suele ser OTRA cuenta (en la prueba real con Jorge Ulloa:
+    el vídeo de "radiocentro.ec"), así que no sirve para encadenar ni cuenta como su perfil.
+    """
+    try:
+        parts = urlsplit(url if re.match(r"^[a-z][a-z0-9+.-]*://", url or "", re.I) else "https://" + (url or ""))
+    except ValueError:
+        return False
+    host = (parts.hostname or "").lower()
+    if host.endswith("youtube.com") and parts.path.rstrip("/") == "/watch":
+        return True
+    # github.com/<dueño>/<repositorio>: un repositorio (de quien sea) no es la página de un perfil. Prueba real:
+    # "github.com/francogenre/midudev" (repo de otra persona sobre midudev) encadenaba a "francogenre"
+    if host in ("github.com", "www.github.com") and len(_segments(parts.path)) >= 2:
+        return True
+    return any(seg.lower() in _CONTENT_SEGMENTS for seg in _segments(parts.path) if not seg.startswith("@"))
+
+
 def parse_profile_url(url: str) -> Optional[Tuple[str, str, str]]:
     """(plataforma, usuario en minúsculas, URL canónica) de un enlace a un perfil, o None.
 

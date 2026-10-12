@@ -235,6 +235,12 @@ class GitHubOSINTTool(OSINTTool):
 
         if not username:
             return results
+        # Nombres de GitHub: letras, números y guiones (máx. 39). Uno con "_" o "." (moises_caicedo55, de
+        # Instagram) no puede existir en GitHub: antes se consultaba y el "no encontrado" salía como candidato
+        username = username.strip().lstrip("@")
+        if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})", username):
+            self._report_progress(f"ℹ️ GitHubOSINT: '{username}' no es un nombre de usuario válido en GitHub; se omite.")
+            return results
 
         # Get user profile
         user, status = self._api_request(f"/users/{username}")
@@ -253,7 +259,7 @@ class GitHubOSINTTool(OSINTTool):
                 url=f"https://github.com/{username}",
                 snippet="El perfil no existe o no es accesible públicamente.",
                 source_tool=self.name,
-                category="GitHub",
+                category="Sin resultado",           # no es un dato de la persona: no debe salir como candidato
                 relevance_score=50,
             )]
 

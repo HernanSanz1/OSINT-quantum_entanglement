@@ -33,7 +33,7 @@ from .core.models import QueryParameters, SearchResult
 from .utils import homonyms
 from .utils.person_match import name_match, normalize_text, normalize_url, phone_in_text, username_in_text
 from .utils.entity_filters import FREEMAIL_DOMAINS, ROLE_ACCOUNTS, is_valid_email
-from .utils.identity import name_from_profile_title, parse_profile_url, profile_key
+from .utils.identity import is_content_url, name_from_profile_title, parse_profile_url, profile_key
 from .utils.directories import is_directory_result
 
 logger = logging.getLogger(__name__)
@@ -136,7 +136,7 @@ class Candidate:
     extra_data: Dict[str, Any] = field(default_factory=dict)   # datos estructurados del resultado (GitHub: empresa, ubicación…)
 
 
-NON_CANDIDATE_CATEGORIES = {"Aviso", "Error", "Config Error", "Alerta"}
+NON_CANDIDATE_CATEGORIES = {"Aviso", "Error", "Config Error", "Alerta", "Sin resultado"}
 
 
 class ProfilerEngine:
@@ -186,10 +186,20 @@ class ProfilerEngine:
     def __init__(self, progress_callback: Callable[[str], None] = None):
         self.tools = build_tool_registry()
         self.progress_callback = progress_callback or (lambda x: None)
+        # Los avisos de cada herramienta ("los buscadores bloquearon", "se agotó el tiempo"…) se perdían: ahora
+        # llegan al registro del perfilamiento (solo avisos y errores, no cada paso)
+        for tool_name, tool in self.tools.items():
+            tool._progress_cb = self._tool_message_forwarder(tool_name)
         self.results: List[ToolResult] = []
         self.candidates: List[Candidate] = []
         self.confirmed: List[Candidate] = []
         self.rejected: List[Candidate] = []
+
+    def _tool_message_forwarder(self, tool_name: str):
+        def forward(message: str):
+            if any(mark in str(message) for mark in ("⚠️", "❌", "🛑")):
+                self._log(f"    {message}")
+        return forward
 
     def _log(self, msg: str):
         """Log y callback de progreso."""
@@ -330,7 +340,7 @@ class ProfilerEngine:
             # Antes se tomaban de cualquier URL: las variantes que UsernameVariants marcaba como "NO coincide,
             # probablemente es otra persona" (github.com/kent, github.com/dodds) lanzaban 198 resultados ajenos.
             round1_hits = [sr for tr in results for sr in tr.results if self._is_about_target(sr, seed)]
-            discovered = extract_usernames_from_results(round1_hits)
+            discovered = corroborated_usernames(round1_hits)
             self.run_second_round(
                 seed, discovered, max_workers=max_workers,
                 timeout_per_tool=timeout_per_tool, only_tools=only_tools,
@@ -587,12 +597,19 @@ class ProfilerEngine:
 
         # Username: el mismo usuario que dio el analista en otra plataforma ya es un candidato a revisar (30).
         # Antes valía 25, por debajo del mínimo: Sherlock encontraba 40 perfiles de "kentcdodds" y se descartaban todos.
-        if any(username_in_text(u, text) for u in seed.all_usernames()):
-            score += 30
-            matched.append('username')
-        elif any(username_in_text(u, text) for u in getattr(self, "chained_usernames", [])):
-            score += 30
-            matched.append('username_chained')
+        # Una PUBLICACIÓN de otra cuenta que solo menciona el usuario (un tuit que nombra a @jorgeulloaaa) es una
+        # mención, no su perfil: vale 10 (en la prueba real puntuaba 80-95 como si fuera su cuenta).
+        usernames = [(u, 'username') for u in seed.all_usernames()] +                     [(u, 'username_chained') for u in getattr(self, "chained_usernames", [])]
+        hit = next((label for u, label in usernames if username_in_text(u, text)), None)
+        if hit:
+            parsed = parse_profile_url(result.url or "")
+            author = parsed[1].lower() if parsed else ""
+            if is_content_url(result.url or "") and author and author not in {u.lower().lstrip("@") for u, _ in usernames}:
+                score += 10
+                matched.append('mention')
+            else:
+                score += 30
+                matched.append(hit)
 
         # Pais/contexto
         if seed.country and seed.country.lower() in text:
@@ -845,11 +862,43 @@ def extract_usernames_from_results(results) -> List[str]:
         if not parsed:
             continue
         platform, handle, _canonical = parsed
-        if "/" in handle:
+        # Publicaciones (x.com/radio/status/…, tiktok.com/@radio/video/…): su autor suele ser OTRA cuenta que
+        # menciona a la persona. LinkedIn: sus identificadores ("jorge-ulloa-chávez-7bab3a3b") no son usuarios
+        # reutilizables en otras redes. Prueba real con Jorge Ulloa: se encadenaban una radio y otro Jorge Ulloa.
+        if "/" in handle or platform not in _USERNAME_PLATFORMS or is_content_url(url):
             continue
-        if platform in _USERNAME_PLATFORMS or (platform == "linkedin" and not re.search(r"\d{5,}", handle)):
-            _add(handle)
+        _add(handle)
     return found
+
+
+# Fuentes ESTRUCTURADAS: la cuenta la vincula la propia persona (redes enlazadas en su GitHub) o una base con
+# referencias (Wikidata). Un usuario que venga de ellas no necesita aparecer en más plataformas.
+TRUSTED_LINK_SOURCES = {"Wikidata", "GitHubOSINT"}
+
+
+def corroborated_usernames(results) -> List[str]:
+    """Usuarios para la segunda ronda: los vistos en >= 2 plataformas distintas o dados por una fuente estructurada.
+
+    Prueba real con Jorge Ulloa: el suyo ("jorgeulloaaa") salía en Instagram, Facebook y X; los de homónimos
+    ("jorgemarioulloa", un colombiano; "jorgeulloa", otra persona en GitHub) aparecían UNA sola vez y arrastraban
+    ~90 perfiles ajenos. Se ordenan por número de plataformas.
+    """
+    platforms: Dict[str, set] = {}
+    trusted: set = set()
+    order: List[str] = []
+    for r in results:
+        url = getattr(r, "url", "") if not isinstance(r, dict) else r.get("url", "")
+        source = getattr(r, "source_tool", "") if not isinstance(r, dict) else r.get("source_tool", "")
+        for handle in extract_usernames_from_results([{"url": url}]):
+            key = handle.lower()
+            if key not in platforms:
+                platforms[key] = set()
+                order.append(handle)
+            platforms[key].add(parse_profile_url(url)[0])
+            if str(source).split(":")[0] in TRUSTED_LINK_SOURCES:
+                trusted.add(key)
+    chosen = [h for h in order if len(platforms[h.lower()]) >= 2 or h.lower() in trusted]
+    return sorted(chosen, key=lambda h: -len(platforms[h.lower()]))
 
 
 # Plataformas donde el usuario del perfil se puede usar como username en otras búsquedas
