@@ -1,11 +1,10 @@
-import sys
 import os
 import psutil
 import pyqtgraph as pg
 from collections import deque
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QLabel, QPushButton, QStackedWidget, QFrame, QProgressBar, QSizePolicy
+    QLabel, QPushButton, QStackedWidget, QFrame, QProgressBar
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap  # noqa: F401 – kept for potential use in other widgets
@@ -305,7 +304,7 @@ class OSINTGUI(QMainWindow):
             else:
                 # Ir al tab de Casos para que el usuario seleccione un caso
                 self._switch_tab(0)
-                self.toast.show("Selecciona un caso de la tabla y presiona Open nuevamente", kind="warning")
+                self.toast.show("Selecciona un caso de la tabla y presiona Abrir nuevamente", kind="warning")
 
     def _action_delete(self):
         current_idx = self.stack.currentIndex()
