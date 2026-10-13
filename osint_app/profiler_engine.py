@@ -210,8 +210,9 @@ class ProfilerEngine:
         def forward(message: str):
             if any(mark in str(message) for mark in ("⚠️", "❌", "🛑")):
                 self._log(f"    {message}")
-                if "⚠️" in str(message):
-                    # Se guardan para la ficha: una búsqueda bloqueada no debe parecer "no hay nada"
+                if "⚠️" in str(message) and "incomplet" in str(message).lower():
+                    # Se guardan para la ficha: una búsqueda bloqueada no debe parecer "no hay nada". Solo los de
+                    # resultado incompleto (no, p. ej., "Wikidata: 2 personas con ese nombre")
                     self.warnings[tool_name] = str(message).replace("⚠️", "").strip()
         return forward
 
