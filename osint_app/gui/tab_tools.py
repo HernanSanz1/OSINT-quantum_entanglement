@@ -7,13 +7,12 @@ Botón "Verificar Tool":
   - Muestra el comando de instalación si aplica
   - Si el tool ESTÁ listo Y hay caso abierto → ejecuta la tool
 """
-import threading
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
     QPlainTextEdit, QPushButton, QLabel, QProgressBar, QSplitter, QFrame,
     QLineEdit
 )
-from PySide6.QtCore import Qt, QTimer, QObject, Signal, QThread, QProcess, QProcessEnvironment
+from PySide6.QtCore import Qt, Signal, QThread, QProcess, QProcessEnvironment
 from ..core.models import SearchResult
 from PySide6.QtGui import QColor, QTextCursor
 from .components import SentinelModal
@@ -382,17 +381,20 @@ class ToolsTab(QWidget):
     # ── Populate list ─────────────────────────────────────────────────────────
 
     def refresh(self):
+        """Lista con el estado de cada herramienta en palabras (el mismo que en Perfilamiento).
+
+        Antes solo ✅/❌ según `is_available`: Hunter.io sin clave e Instaloader sin sesión salían como listas, y
+        las CTI sin programar como "no instaladas".
+        """
+        from ..utils.tool_status import tool_status
         self.list_tools.clear()
-        for name, tool in self.app.framework.tools.items():
-            if hasattr(tool, "check_available"):
-                tool.check_available()
-            item = QListWidgetItem()
-            if tool.is_available:
-                item.setText(f"✅  {name}")
-                item.setForeground(QColor("#00ff66"))
-            else:
-                item.setText(f"❌  {name}")
-                item.setForeground(QColor("#ff3333"))
+        statuses = {name: tool_status(tool) for name, tool in self.app.framework.tools.items()}
+        order = {"ready": 0, "needs_key": 1, "not_installed": 2, "pending": 3, "deprecated": 4}
+        for name in sorted(statuses, key=lambda n: (order[statuses[n].code], n.lower())):
+            st = statuses[name]
+            item = QListWidgetItem(f"{st.icon}  {name}" + ("" if st.usable else f"  —  {st.label}"))
+            item.setForeground(QColor(st.color))
+            item.setToolTip(st.reason + (f"\n\nCómo activarla:\n{st.fix}" if st.fix else ""))
             item.setData(Qt.UserRole, name)   # store clean name
             self.list_tools.addItem(item)
 

@@ -326,13 +326,20 @@ class ProfilingTab(QWidget):
         left_layout.addWidget(self.more_box)
 
         # Tools Selection - compacto
-        lbl_tools = QLabel("HERRAMIENTAS")
-        lbl_tools.setStyleSheet("color: #00d4ff; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin-top: 10px;")
-        left_layout.addWidget(lbl_tools)
+        self.lbl_tools = QLabel("HERRAMIENTAS")
+        self.lbl_tools.setStyleSheet("color: #00d4ff; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin-top: 10px;")
+        left_layout.addWidget(self.lbl_tools)
+        lbl_tools_help = QLabel("☑ = se usará en la búsqueda. En gris: no disponible (pasa el ratón por encima para ver por qué y cómo activarla).")
+        lbl_tools_help.setWordWrap(True)
+        lbl_tools_help.setStyleSheet("color: #8A9AA9; font-size: 11px;")
+        left_layout.addWidget(lbl_tools_help)
 
+        # Casillas de verificación (antes: selección múltiple sin casillas, y "nada seleccionado" significaba
+        # "todas" sin que se viera en ninguna parte)
         self.tools_list = QListWidget()
-        self.tools_list.setSelectionMode(QAbstractItemView.MultiSelection)
-        self.tools_list.setFixedHeight(120)
+        self.tools_list.setSelectionMode(QAbstractItemView.NoSelection)
+        self.tools_list.itemClicked.connect(self._toggle_tool_item)
+        self.tools_list.setFixedHeight(230)
         self.tools_list.setStyleSheet("""
             QListWidget {
                 background-color: #0a1628;
@@ -494,31 +501,54 @@ class ProfilingTab(QWidget):
         layout.addWidget(self.lbl_status)
 
     def _populate_tools(self):
-        """Poblar lista de herramientas disponibles."""
-        for tool_name, tool in sorted(self.tools_registry.items()):
-            item = QListWidgetItem(f"{tool_name}")
-            if tool.is_available:
-                item.setForeground(QColor("#00ff66"))
-                item.setToolTip(f"{tool.description}\nEstado: Disponible")
-            else:
-                item.setForeground(QColor("#dc2626"))
-                item.setToolTip(f"{tool.description}\nEstado: No disponible")
-            self.tools_list.addItem(item)
+        """Casillas con las herramientas que usa el perfilamiento de personas y su estado en palabras."""
+        from ..profiler_engine import ProfilerEngine
+        from ..utils.tool_status import tool_status
 
-        # Seleccionar las disponibles por defecto
-        self._select_all_tools()
+        self.tools_list.clear()
+        names = [n for n in ProfilerEngine.TOOL_PRIORITY if n in self.tools_registry]
+        statuses = {n: tool_status(self.tools_registry[n]) for n in names}
+        for name in sorted(names, key=lambda n: (not statuses[n].usable, n.lower())):
+            st = statuses[name]
+            item = QListWidgetItem(name if st.usable else f"{name}   {st.icon} {st.label}")
+            item.setData(Qt.UserRole, name)
+            tip = f"{self.tools_registry[name].description}\n\nEstado: {st.icon} {st.label}\n{st.reason}"
+            if st.fix:
+                tip += f"\n\nCómo activarla:\n{st.fix}"
+            item.setToolTip(tip)
+            if st.usable:
+                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked)
+                item.setForeground(QColor("#E0E6ED"))
+            else:
+                item.setFlags(Qt.ItemIsEnabled)            # sin casilla: no se puede marcar
+                item.setForeground(QColor("#6b7785"))
+            self.tools_list.addItem(item)
+        ready = sum(1 for st in statuses.values() if st.usable)
+        self.lbl_tools.setText(f"HERRAMIENTAS ({ready} de {len(names)} listas)")
+
+    def _toggle_tool_item(self, item):
+        """Un clic en el nombre también marca o desmarca (no solo en la casilla)."""
+        if item.flags() & Qt.ItemIsUserCheckable:
+            item.setCheckState(Qt.Unchecked if item.checkState() == Qt.Checked else Qt.Checked)
+
+    def _checked_tools(self) -> List[str]:
+        return [self.tools_list.item(i).data(Qt.UserRole) for i in range(self.tools_list.count())
+                if self.tools_list.item(i).checkState() == Qt.Checked]
 
     def _select_all_tools(self):
-        """Seleccionar todas las herramientas disponibles."""
+        """Marcar todas las herramientas disponibles."""
         for i in range(self.tools_list.count()):
             item = self.tools_list.item(i)
-            tool_name = item.text()
-            if tool_name in self.tools_registry and self.tools_registry[tool_name].is_available:
-                item.setSelected(True)
+            if item.flags() & Qt.ItemIsUserCheckable:
+                item.setCheckState(Qt.Checked)
 
     def _select_no_tools(self):
-        """Deseleccionar todas."""
-        self.tools_list.clearSelection()
+        """Desmarcar todas."""
+        for i in range(self.tools_list.count()):
+            item = self.tools_list.item(i)
+            if item.flags() & Qt.ItemIsUserCheckable:
+                item.setCheckState(Qt.Unchecked)
 
     def _log(self, msg):
         """Agregar mensaje al log"""
@@ -596,6 +626,10 @@ class ProfilingTab(QWidget):
         if not name:
             self.app.toast.show("Ingresa un nombre para buscar", kind="error")
             return
+        selected = self._checked_tools()
+        if not selected:
+            self.app.toast.show("Marca al menos una herramienta para buscar", kind="error")
+            return
 
         self._set_busy(True)
         self._log(f"Iniciando perfilamiento: {name}")
@@ -604,10 +638,7 @@ class ProfilingTab(QWidget):
         # Limpiar candidatos anteriores
         self.candidates_table.setRowCount(0)
         self.candidates_data = []
-
-        # Obtener herramientas seleccionadas
-        selected = [item.text() for item in self.tools_list.selectedItems()]
-        self._log(f"Herramientas seleccionadas: {len(selected)}")
+        self._log(f"Herramientas marcadas: {len(selected)} ({', '.join(selected)})")
 
         # Iniciar thread
         self.profiler_thread = ProfilerThread(seed, selected)

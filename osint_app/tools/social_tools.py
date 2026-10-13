@@ -300,6 +300,22 @@ class InstagramTool(OSINTTool):
         self.is_available = importlib.util.find_spec("instaloader") is not None     # se usa su API de Python
         return self.is_available
 
+    def diagnose_status(self) -> dict:
+        """Instalada no basta: Instagram rechaza las consultas anónimas (HTTP 429), hace falta una sesión."""
+        base = super().diagnose_status()
+        if base.get("status") != "ready":
+            return base
+        from ..utils.secret_vault import vault
+        if not ((self.api_key or "").strip() or (vault.get("Instagram") or "").strip()):
+            return {
+                "status": "needs_key", "icon": "🔑",
+                "message": ("Instaloader está instalado, pero Instagram no permite consultas anónimas. Hace falta "
+                            "una sesión de una cuenta secundaria."),
+                "install_cmd": ("instaloader --login TU_USUARIO      (o --load-cookies firefox)\n"
+                                "python -m osint_app.main --set-key Instagram"),
+            }
+        return base
+
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         """Metadatos públicos del perfil (o de una publicación) con la API de Instaloader, sin descargar fotos.
 
