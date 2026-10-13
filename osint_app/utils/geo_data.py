@@ -27,6 +27,13 @@ LATAM_COUNTRIES: Dict[str, str] = {
 COUNTRY_ALIASES: Dict[str, str] = {
     "espana": "es", "spain": "es", "estados unidos": "us", "united states": "us", "usa": "us",
     "brasil": "br", "brazil": "br",
+    # Gentilicios: "el ciclista ecuatoriano gana el Giro" liga el texto a Ecuador aunque no diga "Ecuador"
+    "ecuatoriano": "ec", "ecuatoriana": "ec", "ecuadorian": "ec", "colombiano": "co", "colombiana": "co",
+    "colombian": "co", "peruano": "pe", "peruana": "pe", "peruvian": "pe", "mexicano": "mx", "mexicana": "mx",
+    "mexican": "mx", "chileno": "cl", "chilena": "cl", "chilean": "cl", "argentino": "ar", "argentinian": "ar",
+    "boliviano": "bo", "boliviana": "bo", "bolivian": "bo", "venezolano": "ve", "venezolana": "ve",
+    "venezuelan": "ve", "uruguayo": "uy", "uruguaya": "uy", "uruguayan": "uy", "paraguayo": "py",
+    "paraguaya": "py", "paraguayan": "py",
 }
 
 LATAM_CITIES: Dict[str, Set[str]] = {

@@ -31,6 +31,9 @@ from typing import Callable, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 COOLDOWN_SECONDS = 600          # motor bloqueado: no se vuelve a intentar en 10 min
+# SearXNG reparte entre sus propios buscadores y se recupera antes: 10 min sin él dejaba perfiles enteros sin
+# búsqueda web (prueba real 2026-10-13)
+ENGINE_COOLDOWN = {"searxng": 120}
 MIN_INTERVAL = {"brave": 1.1, "duckduckgo": 4.0}
 DEFAULT_MIN_INTERVAL = 2.0
 REQUEST_TIMEOUT = 12
@@ -59,6 +62,11 @@ class SearchOutcome:
         """True si NINGÚN motor pudo consultarse (no es lo mismo que "no hay resultados")."""
         return not self.hits and bool(self.attempts) and all(s != "vacío" and s != "ok" for _, s in self.attempts)
 
+    @property
+    def incomplete(self) -> bool:
+        """Sin resultados y con algún motor que no se pudo consultar: el "0" puede ser falso."""
+        return not self.hits and any(s not in ("vacío", "ok") for _, s in self.attempts)
+
     def explain(self) -> str:
         """Frase para el usuario sobre qué pasó con la búsqueda."""
         if self.hits:
@@ -83,9 +91,10 @@ def _in_cooldown(engine: str) -> bool:
 
 
 def _cool_down(engine: str, reason: str) -> None:
+    seconds = ENGINE_COOLDOWN.get(engine, COOLDOWN_SECONDS)
     with _lock:
-        _cooldown_until[engine] = time.time() + COOLDOWN_SECONDS
-    logger.warning(f"Búsqueda: {engine} apartado {COOLDOWN_SECONDS // 60} min ({reason})")
+        _cooldown_until[engine] = time.time() + seconds
+    logger.warning(f"Búsqueda: {engine} apartado {seconds // 60} min ({reason})")
 
 
 def _wait_turn(engine: str) -> None:
@@ -171,8 +180,15 @@ def _search_searxng(query: str, max_results: int) -> List[Dict[str, str]]:
         raise EngineBlocked("la instancia no permite el formato JSON (actívalo en settings.yml)")
     if resp.status_code != 200:
         raise EngineBlocked(f"HTTP {resp.status_code}")
+    data = resp.json()
+    results = data.get("results") or []
+    # SearXNG responde 200 con 0 resultados cuando SUS buscadores están suspendidos ("demasiadas peticiones").
+    # Visto en real (2026-10-13): eso se contaba como "no hay nada" y la ficha salía sin menciones y sin aviso.
+    if not results and data.get("unresponsive_engines"):
+        names = ", ".join(str(e[0]) for e in data["unresponsive_engines"][:4])
+        raise EngineBlocked(f"sus buscadores internos no respondieron ({names})")
     return [{"title": i.get("title", ""), "url": i.get("url", ""), "snippet": i.get("content", "")}
-            for i in (resp.json().get("results") or [])[:max_results]]
+            for i in results[:max_results]]
 
 
 def _search_ddgs(backend: str, query: str, max_results: int) -> List[Dict[str, str]]:
@@ -290,6 +306,34 @@ def _engines() -> List[Tuple[str, Callable[[str, int], List[Dict[str, str]]]]]:
 
 # ── API pública ──────────────────────────────────────────────────────────────
 
+class SearchTracker:
+    """Cuenta las consultas de una herramienta que no se pudieron hacer, para avisar al final.
+
+    Un "0 resultados" solo es fiable si todos los buscadores respondieron. Las herramientas de búsqueda lo
+    usan para decir al usuario que el resultado está incompleto en vez de darlo por bueno.
+    """
+
+    def __init__(self):
+        self.total = 0
+        self.failed = 0
+        self.last_detail = ""
+
+    def record(self, outcome: SearchOutcome) -> None:
+        self.total += 1
+        if outcome.incomplete:
+            self.failed += 1
+            self.last_detail = ", ".join(f"{e} ({s})" for e, s in outcome.attempts if s not in ("vacío", "ok"))
+
+    def warning(self, tool: str, skipped: int = 0) -> str:
+        """Aviso para el usuario, o "" si todas las consultas se hicieron."""
+        failed = self.failed + skipped
+        if not failed:
+            return ""
+        total = self.total + skipped
+        return (f"⚠️ {tool}: búsqueda web INCOMPLETA — {failed} de {total} consultas no se pudieron hacer porque "
+                f"los buscadores bloquearon o no respondieron ({self.last_detail}). Los resultados pueden faltar: "
+                f"repite la búsqueda en unos 10 minutos.")
+
 def web_search(query: str, max_results: int = 10, engines: Optional[List[str]] = None) -> SearchOutcome:
     """Busca `query` probando motores en orden hasta que uno dé resultados.
 
@@ -320,3 +364,25 @@ def web_search(query: str, max_results: int = 10, engines: Optional[List[str]] =
             return outcome
         outcome.attempts.append((name, "vacío"))
     return outcome
+
+
+def searxng_problem() -> str:
+    """Aviso si el usuario configuró su SearXNG (Docker) y no responde; "" si responde o no lo usa.
+
+    Prueba de usuario real (2026-10-13): con Docker cerrado no había ningún aviso y la búsqueda caía en los
+    buscadores públicos, que bloquean antes.
+    """
+    url = _searxng_url()
+    if not url:
+        return ""
+    import requests
+    try:
+        requests.get(f"{url}/healthz", timeout=(2, 4))
+        return ""
+    except requests.ConnectionError:
+        state = "no responde"                 # conexión rechazada: el contenedor o Docker están apagados
+    except requests.RequestException:
+        # Acepta la conexión pero no contesta: visto en real con Docker Desktop caído ("unable to start")
+        state = "no contesta a tiempo"
+    return (f"⚠️ Tu buscador propio (SearXNG en Docker) {state}: abre Docker Desktop y espera a que diga "
+            "'Engine running' (si da error, reinícialo). Mientras tanto se usan buscadores públicos, que bloquean antes.")

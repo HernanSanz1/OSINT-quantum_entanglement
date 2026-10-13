@@ -41,7 +41,8 @@ def _run(cmd: List[str], timeout: int = 300):
     # ("█") hacía caer la lectura (UnicodeDecodeError) y luego la herramienta (stdout None). Verificado en real.
     try:
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                           errors="replace", timeout=timeout, env=child_env())
+                           errors="replace", timeout=timeout, env=child_env(),
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))  # sin ventana de consola en Windows
         return p.stdout or "", p.returncode
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         logger.warning(f"Subprocess error ({cmd[0]}): {e}")

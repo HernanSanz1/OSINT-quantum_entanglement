@@ -580,19 +580,30 @@ class CrossCaseCorrelator:
         if case_id not in self.case_engines:
             self.case_engines[case_id] = CorrelationEngine(case_id)
 
-    def find_cross_correlations(self) -> List[Dict]:
-        """Busca entidades compartidas entre casos"""
+    # Datos que comparten muchísimas personas: que dos casos digan "Ecuador" o "futbolista" no los relaciona.
+    # Prueba de usuario real (2026-10-13): "country: Ecuador" unía a Jefferson Pérez con casos de otras personas.
+    NON_IDENTIFYING_TYPES = {"country", "context", "location", "city", "note", "university"}
+
+    def find_cross_correlations(self, focus_case: Optional[int] = None) -> List[Dict]:
+        """Busca entidades que identifican a alguien (correo, usuario, teléfono, dominio…) compartidas entre casos.
+
+        Con `focus_case`, solo las que comparte ese caso con otros (el caso activo).
+        """
         # Índice invertido: fingerprint -> [(case_id, entity), ...]
         index = defaultdict(list)
 
         for case_id, engine in self.case_engines.items():
             for fp, entity in engine.entities.items():
+                if entity.entity_type.lower() in self.NON_IDENTIFYING_TYPES:
+                    continue
                 index[fp].append((case_id, entity))
 
         # Buscar fingerprints que aparecen en múltiples casos
         shared = []
         for fp, occurrences in index.items():
-            if len(occurrences) > 1:
+            if focus_case is not None and focus_case not in {case_id for case_id, _ in occurrences}:
+                continue
+            if len({case_id for case_id, _ in occurrences}) > 1:
                 shared.append({
                     "fingerprint": fp,
                     "entity_type": occurrences[0][1].entity_type,

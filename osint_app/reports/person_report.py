@@ -32,6 +32,18 @@ _SKIP_CATEGORIES = {"Aviso", "Error", "Config Error", "Alerta", "Sin resultado",
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _PHONE_RE = re.compile(r"\+\d[\d\s().-]{7,}\d")
 MAX_MENTIONS = 15
+# Sitios que no se listan en la ficha aunque exista el mismo usuario: una coincidencia de nombre de usuario en un sitio
+# para adultos, de citas o de pagos no prueba nada y atribuirla a alguien puede dañarle (visto en real 2026-10-13:
+# "chaturbate.com" en la ficha de un creador de contenido solo porque coincidía el usuario).
+_SENSITIVE_TAGS = {"porn", "dating", "gambling", "finance", "fintech", "crypto", "trading", "medicine"}
+_SENSITIVE_HOSTS = ("chaturbate", "onlyfans", "pornhub", "xvideos", "xhamster", "fansly", "stripchat", "cam4",
+                    "bongacams", "myfreecams", "livejasmin", "manyvids", "fetlife", "adultfriendfinder", "tinder",
+                    "badoo", "okcupid", "plentyoffish", "paypal", "venmo", "cash.app", "binance", "coinbase")
+
+
+def is_sensitive_site(url: str, extra: Optional[Dict] = None) -> bool:
+    tags = {str(t).lower() for t in ((extra or {}).get("tags") or [])}
+    return bool(tags & _SENSITIVE_TAGS) or any(h in _host(url) for h in _SENSITIVE_HOSTS)
 
 
 def confidence_word(score: float) -> str:
@@ -51,11 +63,13 @@ def _status(url: str, confirmed: set, rejected: set) -> str:
 
 
 def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: Iterable[str] = (),
-                        rejected_urls: Iterable[str] = (), case_id: Optional[int] = None) -> Dict:
+                        rejected_urls: Iterable[str] = (), case_id: Optional[int] = None,
+                        warnings: Optional[Dict[str, str]] = None) -> Dict:
     """Organiza los candidatos del perfilamiento en secciones con sentido para una persona no técnica.
 
     `seed`: nombre, contexto, país… · `candidates`: como los emite el perfilador (source, url, title, snippet,
-    confidence, category, matched, warning, extra).
+    confidence, category, matched, warning, extra) · `warnings`: avisos de las herramientas (búsqueda bloqueada…),
+    que la ficha muestra arriba para que un "no se encontró" no se tome por definitivo.
     """
     confirmed, rejected = set(confirmed_urls), set(rejected_urls)
     accounts: "OrderedDict[str, Dict]" = OrderedDict()   # clave plataforma:usuario
@@ -65,6 +79,8 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
     contacts: "OrderedDict[str, Dict]" = OrderedDict()
     public_card: Optional[Dict] = None
     sources = set()
+    hidden_sensitive = 0
+    seen_other_hosts = set()
 
     for c in sorted(candidates, key=lambda x: -float(x.get("confidence") or 0)):
         url = c.get("url") or ""
@@ -117,7 +133,15 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
                 accounts[key]["posts"].append(item)
                 continue
         if c.get("source", "").split(":")[0] in ("Sherlock", "Maigret") and url:
-            other_profiles.append({**item, "platform": _host(url)})
+            if item["status"] != "confirmada" and is_sensitive_site(url, extra):
+                hidden_sensitive += 1
+                continue
+            host = _host(url)
+            if host in seen_other_hosts:                 # op.gg ×6 (una por región): basta una
+                continue
+            seen_other_hosts.add(host)
+            other_profiles.append({**item, "platform": host,
+                                   "has_profile_data": any(k.startswith("profile_") for k in extra)})
             continue
         if url:
             mentions.append(item)
@@ -130,6 +154,19 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
             mentions.remove(m)
 
     account_list = sorted(accounts.values(), key=lambda a: (a["status"] != "confirmada", -a["score"]))
+    # En una plataforma donde ya hay una cuenta claramente suya, las demás de confianza media o baja suelen ser
+    # homónimos (midudev: su LinkedIn @midudev y cuatro "Miguel Ángel Durán" ajenos salían como "sus cuentas")
+    best_by_platform: Dict[str, Dict] = {}
+    for acc in account_list:
+        if acc["score"] >= 70 or acc["status"] == "confirmada":
+            best_by_platform.setdefault(acc["platform"], acc)
+    for acc in list(account_list):
+        best = best_by_platform.get(acc["platform"])
+        if best is not None and acc is not best and acc["score"] < 70 and acc["status"] != "confirmada":
+            account_list.remove(acc)
+            homonyms.append({"url": acc["url"], "title": f"{acc['platform']} @{acc['handle']}", "snippet": "",
+                             "warning": f"Probablemente otra persona: la cuenta de {acc['platform']} más probable "
+                                        f"es @{best['handle']}."})
     for acc in account_list:
         acc["level"] = confidence_word(acc["score"])
         acc["sources"] = sorted(s for s in acc["sources"] if s)
@@ -141,6 +178,7 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
         "other_profiles": other_profiles, "contacts": list(contacts.values()),
         "mentions": mentions[:MAX_MENTIONS], "mentions_total": len(mentions), "homonyms": homonyms,
         "sources": sorted(s for s in sources if s), "confirmed_count": len(confirmed), "rejected_count": len(rejected),
+        "hidden_sensitive": hidden_sensitive, "warnings": dict(warnings or {}),
     }
 
 
@@ -179,9 +217,10 @@ def _summary_sentence(r: Dict) -> str:
         parts.append(f"<b>{r['mentions_total']} mención(es)</b> en webs y medios")
     if r["homonyms"]:
         parts.append(f"<b>{len(r['homonyms'])} resultado(s) que podrían ser otra persona</b> (separados al final)")
+    incomplete = " <b>Atención: la búsqueda quedó incompleta</b> (ver el aviso de arriba)." if r.get("warnings") else ""
     if not parts:
-        return "No se encontró información pública suficiente sobre esta persona con los datos dados."
-    return "Sobre esta persona " + "; ".join(parts) + "."
+        return "No se encontró información pública suficiente sobre esta persona con los datos dados." + incomplete
+    return "Sobre esta persona " + "; ".join(parts) + "." + incomplete
 
 
 def render_person_html(r: Dict) -> str:
@@ -216,11 +255,17 @@ def render_person_html(r: Dict) -> str:
                 f'<th>Estado</th><th>Encontrada por</th></tr>{acc_rows}</table></section>') if acc_rows else ""
 
     others = ""
-    if r["other_profiles"]:
-        items = "".join(f"<li>{_link(p['url'], p['platform'])} {_badge(p['level'])}</li>" for p in r["other_profiles"][:40])
-        others = (f'<section><h2>Mismo usuario en otros sitios</h2><p class="hint">Sitios donde existe una cuenta con '
-                  f'el mismo nombre de usuario. Puede ser la misma persona o alguien que eligió el mismo nombre: '
-                  f'compruébalo abriendo el enlace.</p><ul class="cols">{items}</ul></section>')
+    if r["other_profiles"] or r.get("hidden_sensitive"):
+        items = "".join(f"<li>{_link(p['url'], p['platform'])}"
+                        f"{' <small>(con datos del perfil)</small>' if p.get('has_profile_data') else ''}</li>"
+                        for p in r["other_profiles"][:40])
+        hidden = (f"<p class='hint'>No se listan {r['hidden_sensitive']} sitio(s) sensibles (adultos, citas, pagos o "
+                  f"similares): una coincidencia de nombre de usuario ahí no prueba nada. Si los necesitas, están en "
+                  f"SENTINEL.</p>") if r.get("hidden_sensitive") else ""
+        others = (f'<section><h2>Mismo nombre de usuario en otros sitios (SIN VERIFICAR)</h2><p class="hint">Sitios '
+                  f'donde existe una cuenta con el mismo nombre de usuario. <b>No significa que sea esta persona</b>: '
+                  f'cualquiera puede elegir ese nombre. Ábrelo y compruébalo antes de usarlo.</p>'
+                  f'<ul class="cols">{items}</ul>{hidden}</section>')
 
     contacts = ""
     if r["contacts"]:
@@ -245,6 +290,13 @@ def render_person_html(r: Dict) -> str:
                     f'mismo nombre pero con señales de ser otra persona (otro país, otra profesión…). No se usan en '
                     f'el resumen.</p><ul>{items}</ul></section>')
 
+    incomplete = ""
+    if r.get("warnings"):
+        items = "".join(f"<li><b>{_e(tool)}</b>: {_e(msg)}</li>" for tool, msg in r["warnings"].items())
+        incomplete = (f'<div class="warn"><b>⚠ Búsqueda incompleta.</b> Algunas herramientas no pudieron consultar '
+                      f'todas sus fuentes, así que pueden faltar resultados (sobre todo menciones en medios). Repite '
+                      f'el perfilamiento más tarde antes de concluir que no hay información.<ul>{items}</ul></div>')
+
     return f"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ficha de {_e(name)}</title>
@@ -254,6 +306,7 @@ def render_person_html(r: Dict) -> str:
   h1 {{ margin: 0 0 4px; font-size: 26px; }} h2 {{ font-size: 18px; margin: 28px 0 8px; border-bottom: 2px solid #e4e7eb; padding-bottom: 4px; }}
   .meta {{ color: #616e7c; font-size: 13px; }} .hint {{ color: #616e7c; font-size: 13px; margin: 4px 0 10px; }}
   .notice {{ background: #fff8e1; border-left: 4px solid #f0b429; padding: 10px 14px; font-size: 13px; margin: 14px 0; }}
+  .warn {{ background: #ffe3e3; border-left: 4px solid #d64545; padding: 10px 14px; font-size: 13px; margin: 14px 0; }}
   .summary {{ background: #e3f8ff; border-left: 4px solid #2186eb; padding: 12px 16px; font-size: 15px; }}
   table {{ border-collapse: collapse; width: 100%; font-size: 14px; }} th, td {{ text-align: left; padding: 7px 8px; border-bottom: 1px solid #e4e7eb; vertical-align: top; }}
   th {{ background: #f5f7fa; }} a {{ color: #0b69a3; }} small {{ color: #616e7c; }}
@@ -268,7 +321,7 @@ def render_person_html(r: Dict) -> str:
 <div class="notice"><b>Documento confidencial.</b> Contiene datos personales recogidos de fuentes públicas. Trátalo
 según la Ley Orgánica de Protección de Datos Personales (LOPDP) y solo con una finalidad legítima. La información
 pública puede estar desactualizada o ser de otra persona con el mismo nombre: verifícala antes de actuar.</div>
-<section><h2>Resumen</h2><p class="summary">{_summary_sentence(r)}</p></section>
+{incomplete}<section><h2>Resumen</h2><p class="summary">{_summary_sentence(r)}</p></section>
 <section><h2>Datos de partida</h2><table>{seed_rows}</table></section>
 {card}{accounts}{contacts}{mentions}{others}{homonyms}
 <section><h2>Cómo se obtuvo</h2><p class="hint">Búsqueda automática en fuentes públicas con: {_e(', '.join(r['sources']) or '—')}.

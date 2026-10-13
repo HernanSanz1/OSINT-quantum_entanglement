@@ -26,6 +26,7 @@ import re
 import concurrent.futures
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Callable, Tuple
+from urllib.parse import urlsplit
 from dataclasses import dataclass, field
 
 from .tools import build_tool_registry
@@ -136,7 +137,16 @@ class Candidate:
     extra_data: Dict[str, Any] = field(default_factory=dict)   # datos estructurados del resultado (GitHub: empresa, ubicación…)
 
 
-NON_CANDIDATE_CATEGORIES = {"Aviso", "Error", "Config Error", "Alerta", "Sin resultado"}
+def _host_of(url: str) -> str:
+    try:
+        host = (urlsplit(url or "").hostname or "").lower()
+    except ValueError:
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+# "Username Generation": la lista de variantes que se generan para probar no es un hallazgo (salía en el top 10)
+NON_CANDIDATE_CATEGORIES = {"Aviso", "Error", "Config Error", "Alerta", "Sin resultado", "Username Generation"}
 
 
 class ProfilerEngine:
@@ -191,6 +201,7 @@ class ProfilerEngine:
         for tool_name, tool in self.tools.items():
             tool._progress_cb = self._tool_message_forwarder(tool_name)
         self.results: List[ToolResult] = []
+        self.warnings: Dict[str, str] = {}
         self.candidates: List[Candidate] = []
         self.confirmed: List[Candidate] = []
         self.rejected: List[Candidate] = []
@@ -199,6 +210,9 @@ class ProfilerEngine:
         def forward(message: str):
             if any(mark in str(message) for mark in ("⚠️", "❌", "🛑")):
                 self._log(f"    {message}")
+                if "⚠️" in str(message):
+                    # Se guardan para la ficha: una búsqueda bloqueada no debe parecer "no hay nada"
+                    self.warnings[tool_name] = str(message).replace("⚠️", "").strip()
         return forward
 
     def _log(self, msg: str):
@@ -293,6 +307,16 @@ class ProfilerEngine:
             return []
 
         self._log(f"Herramientas a ejecutar: {', '.join(tools_to_run)}")
+        if {"WebSearch", "Google Dorks"} & set(tools_to_run):
+            # En segundo plano: comprobar Docker no debe retrasar las búsquedas
+            import threading
+            from .utils.search_engine import searxng_problem
+
+            def _check_searxng():
+                problem = searxng_problem()
+                if problem:
+                    self._log(problem)
+            threading.Thread(target=_check_searxng, daemon=True).start()
         self._log(f"Ejecutando {len(tools_to_run)} herramientas en paralelo...")
 
         query_params = seed.to_query_params()
@@ -308,7 +332,10 @@ class ProfilerEngine:
                 tool_results = tool.execute(query_params)
 
                 duration = (datetime.now() - start).total_seconds()
-                self._log(f"  [{tool_name}] Completado: {len(tool_results)} resultados en {duration:.1f}s")
+                if tool_name in self.warnings:
+                    self._log(f"  ⚠️ [{tool_name}] Terminado con avisos: {len(tool_results)} resultados en {duration:.1f}s (incompleto)")
+                else:
+                    self._log(f"  [{tool_name}] Completado: {len(tool_results)} resultados en {duration:.1f}s")
 
                 return ToolResult(
                     tool_name=tool_name,
@@ -501,6 +528,51 @@ class ProfilerEngine:
         self._log(f"➕ Datos adicionales de la semilla: {len(tasks)} búsquedas")
         return self._run_labelled_tasks(tasks, max_workers, timeout_per_tool)
 
+    def _own_sites(self, seed: SeedData):
+        """Webs del propio objetivo: la oficial que da Wikidata y los dominios con su nombre (jeffersonperez.com).
+
+        Devuelve (hosts oficiales, claves de nombre, cuentas oficiales). La clave es nombre + primer apellido sin
+        espacios, y solo si es larga (≥ 10 letras), para no confundir dominios cortos o genéricos. Las cuentas
+        oficiales son (plataforma, usuario) que da Wikidata: su X sigue siendo suyo aunque diga que vive en
+        Canadá (Andersson Boscán, prueba real 2026-10-13).
+        """
+        hosts = set()
+        profiles = set()
+        for tr in self.results:
+            for sr in tr.results:
+                extra = sr.extra_data if isinstance(sr.extra_data, dict) else {}
+                if extra.get("official_site") and sr.url:
+                    hosts.add(_host_of(sr.url))
+                if sr.source_tool == "Wikidata" and sr.url and not extra.get("ambiguous") and not extra.get("discarded"):
+                    parsed = parse_profile_url(sr.url)
+                    if parsed:
+                        profiles.add(parsed[:2])
+        keys = set()
+        for full in [seed.name] + list(seed.aliases or []):
+            words = re.findall(r"[a-z0-9]+", normalize_text(full or ""))
+            if len(words) >= 2:
+                key = words[0] + words[1] if len(words) < 4 else words[0] + words[-2]
+                if len(key) >= 10:
+                    keys.add(key)
+        return hosts - {""}, keys, profiles
+
+    def _public_card_places(self) -> str:
+        """Nacionalidad y lugar de nacimiento de la ficha de Wikidata del objetivo (si se identificó sin dudas).
+
+        Sirven para no tomar por homónimo un resultado que menciona esos países: Noboa nació en Miami, Boscán es
+        venezolano. Las fichas ambiguas o descartadas (otra persona) no cuentan.
+        """
+        places = []
+        for tr in self.results:
+            for sr in tr.results:
+                extra = sr.extra_data if isinstance(sr.extra_data, dict) else {}
+                if not (sr.category or "").startswith("Persona pública") or extra.get("ambiguous") or extra.get("discarded"):
+                    continue
+                raw = sr.raw_data if isinstance(sr.raw_data, dict) else {}
+                for key in ("Nacionalidad", "Lugar de nacimiento"):
+                    places.extend(str(v) for v in (raw.get(key) or []))
+        return " · ".join(places)
+
     def extract_candidates(self, seed: SeedData, min_confidence: float = 30.0) -> List[Candidate]:
         """
         Extrae candidatos de los resultados de las herramientas.
@@ -510,6 +582,8 @@ class ProfilerEngine:
 
         all_candidates = []
         self.skipped_listings: Dict[str, int] = {}
+        known_places = self._public_card_places()
+        own_hosts, name_keys, own_profiles = self._own_sites(seed)
 
         for tool_result in self.results:
             if tool_result.status != 'ok':
@@ -532,7 +606,12 @@ class ProfilerEngine:
                 if confidence >= min_confidence:
                     # Señales de homónimo (enfoque A): avisan y penalizan según su fuerza, nunca descartan.
                     text = f"{sr.title} {sr.snippet} {sr.url}"
-                    signals = homonyms.homonym_signals(text, sr.url, seed.country, f"{seed.context} {seed.city}")
+                    host = _host_of(sr.url)
+                    own_site = bool(host) and (host in own_hosts or any(k in host.replace("-", "") for k in name_keys))
+                    profile = parse_profile_url(sr.url) if sr.url else None
+                    own_site = own_site or (profile is not None and profile[:2] in own_profiles)
+                    signals = homonyms.homonym_signals(text, sr.url, seed.country, f"{seed.context} {seed.city}",
+                                                       known_places=known_places, own_site=own_site)
                     warning = homonyms.warning_text(signals)
                     if signals:
                         confidence = max(0.0, confidence - homonyms.total_penalty(signals))
@@ -611,8 +690,9 @@ class ProfilerEngine:
                 score += 30
                 matched.append(hit)
 
-        # Pais/contexto
-        if seed.country and seed.country.lower() in text:
+        # Pais/contexto. Por país reconocido (también el gentilicio: "ecuatoriano"); antes era texto literal y con
+        # País = "Otro" la palabra "otro" de cualquier frase sumaba puntos
+        if seed.country and homonyms.mentions_country(text, seed.country):
             score += 10
             matched.append('country')
 
@@ -799,6 +879,7 @@ class ProfilerEngine:
             'confirmed': len(self.confirmed),
             'rejected': len(self.rejected),
             'pending': len([c for c in self.candidates if c.user_verdict == 'pending']),
+            'warnings': dict(self.warnings),
         }
 
     def export_report(self) -> Dict[str, Any]:

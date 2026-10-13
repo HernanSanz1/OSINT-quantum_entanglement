@@ -44,6 +44,7 @@ def _run_cti_script(cti_path: Path, script: str, args: list, timeout: int) -> su
         encoding="utf-8",
         errors="replace",
         cwd=str(cti_path),
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         env=env,
         timeout=timeout,
     )
@@ -185,7 +186,7 @@ class CTITab(QWidget):
         # ── Header ─────────────────────────────────────────────────────────────
         header = QHBoxLayout()
 
-        lbl_title = QLabel("🛡  THREAT INTELLIGENCE")
+        lbl_title = QLabel("🛡  INTELIGENCIA DE AMENAZAS (CTI)")
         lbl_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #00d4ff;")
         header.addWidget(lbl_title)
 
@@ -206,16 +207,20 @@ class CTITab(QWidget):
         # ── Actions Bar ────────────────────────────────────────────────────────
         actions = QHBoxLayout()
 
-        self.btn_harvest = QPushButton("📡  Recolectar Feeds")
+        self.btn_harvest = QPushButton("📡  Comprobar fuentes")
+        self.btn_harvest.setToolTip("Consulta las fuentes de noticias y vulnerabilidades y cuenta lo disponible "
+                                    "(modo prueba: todavía no guarda lo nuevo)")
         self.btn_harvest.setObjectName("btnPrimary")
         self.btn_harvest.clicked.connect(self._on_harvest)
         actions.addWidget(self.btn_harvest)
 
         self.btn_dossier = QPushButton("📋  Generar Dossier")
+        self.btn_dossier.setToolTip("Resume las amenazas de la semana, priorizadas para el cliente elegido")
         self.btn_dossier.clicked.connect(self._on_dossier)
         actions.addWidget(self.btn_dossier)
 
-        self.btn_render = QPushButton("🎨  Render HTML")
+        self.btn_render = QPushButton("🎨  Ver boletín")
+        self.btn_render.setToolTip("Crea el boletín del último dossier y lo abre en el navegador")
         self.btn_render.clicked.connect(self._on_render)
         actions.addWidget(self.btn_render)
 
@@ -223,11 +228,15 @@ class CTITab(QWidget):
 
         self.btn_validate = QPushButton("✅  Validar")
         self.btn_validate.clicked.connect(self._on_validate)
+        self.btn_validate.setEnabled(False)          # sin programar: antes solo decía "en desarrollo" al pulsarlo
+        self.btn_validate.setToolTip("En desarrollo")
         actions.addWidget(self.btn_validate)
 
         self.btn_send = QPushButton("📧  Enviar")
         self.btn_send.setObjectName("btnSuccess")
         self.btn_send.clicked.connect(self._on_send)
+        self.btn_send.setEnabled(False)
+        self.btn_send.setToolTip("En desarrollo: enviará el boletín por correo")
         actions.addWidget(self.btn_send)
 
         layout.addLayout(actions)
@@ -248,15 +257,16 @@ class CTITab(QWidget):
         table_layout = QVBoxLayout(table_frame)
         table_layout.setContentsMargins(8, 8, 8, 8)
 
-        lbl_items = QLabel("📰  Items CTI Recientes")
-        lbl_items.setStyleSheet("font-weight: bold; color: #00d4ff;")
-        table_layout.addWidget(lbl_items)
+        self.lbl_items = QLabel("📰  Noticias y vulnerabilidades guardadas")
+        self.lbl_items.setStyleSheet("font-weight: bold; color: #00d4ff;")
+        table_layout.addWidget(self.lbl_items)
 
         self.table = QTableWidget()
         self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Fuente", "Titulo", "CVEs", "Fecha", "Tags"])
+        self.table.setHorizontalHeaderLabels(["Fuente", "Título", "CVE", "Fecha", "Producto"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         table_layout.addWidget(self.table)
 
@@ -268,7 +278,7 @@ class CTITab(QWidget):
         log_layout = QVBoxLayout(log_frame)
         log_layout.setContentsMargins(8, 8, 8, 8)
 
-        lbl_log = QLabel("📋  Log de Operaciones")
+        lbl_log = QLabel("📋  Registro")
         lbl_log.setStyleSheet("font-weight: bold; color: #00d4ff;")
         log_layout.addWidget(lbl_log)
 
@@ -302,13 +312,7 @@ class CTITab(QWidget):
             self.btn_dossier.setEnabled(False)
             self.btn_render.setEnabled(False)
         else:
-            self.log_area.appendPlainText(
-                f"✅  Modulo CTI encontrado: {CTI_BASE}\n"
-                f"   Archivos disponibles:\n"
-            )
-            for f in CTI_BASE.glob("*.py"):
-                self.log_area.appendPlainText(f"   - {f.name}")
-            self.log_area.appendPlainText("")
+            self.log_area.appendPlainText("✅  Módulo CTI listo.\n")
 
     def _log(self, msg):
         """Agregar mensaje al log"""
@@ -338,7 +342,7 @@ class CTITab(QWidget):
     def _on_harvest(self):
         """Ejecutar harvest.py"""
         self._set_busy(True)
-        self._log("Iniciando recoleccion de feeds...")
+        self._log("Consultando las fuentes de inteligencia de amenazas...")
 
         self.harvest_thread = HarvestThread(CTI_BASE)
         self.harvest_thread.progress.connect(self._log)
@@ -348,8 +352,13 @@ class CTITab(QWidget):
 
     def _on_harvest_done(self, result):
         self._set_busy(False)
-        self._log("✅ Recoleccion completada")
-        self.app.toast.show("Feeds CTI recolectados", kind="success")
+        try:
+            data = json.loads(result.get("output", "") or "{}")
+            self._log(f"✅ {data.get('fuentes', '?')} fuentes consultadas: {data.get('items', '?')} noticias y "
+                      f"vulnerabilidades disponibles. Modo prueba: aún no se guardan; la tabla muestra las ya guardadas.")
+        except (ValueError, AttributeError):
+            self._log("✅ Fuentes comprobadas")
+        self.app.toast.show("Fuentes CTI comprobadas", kind="success")
         self._load_items()
 
     def _on_dossier(self):
@@ -366,8 +375,22 @@ class CTITab(QWidget):
 
     def _on_dossier_done(self, output):
         self._set_busy(False)
-        self._log("✅ Dossier generado")
-        self._log(output)
+        # Antes se volcaba el JSON tal cual en el registro
+        try:
+            data = json.loads(output or "{}")
+            self._log(f"✅ Dossier de la semana {data.get('semana', '?')} generado.")
+            totals = data.get("totales") or {}
+            if isinstance(totals, dict) and totals:
+                self._log("   Totales: " + " · ".join(f"{k.replace('_', ' ')}: {v}" for k, v in totals.items()))
+            sections = data.get("secciones") or {}
+            if sections:
+                self._log("   Secciones: " + " · ".join(f"{k.replace('_', ' ')}: {v}" for k, v in sections.items()))
+            if data.get("brechas"):
+                self._log(f"   Datos que faltan: {data['brechas']}")
+            self._log("   Pulsa «Ver boletín» para verlo en el navegador.")
+        except ValueError:
+            self._log("✅ Dossier generado")
+            self._log(output)
         self.app.toast.show("Dossier CTI generado", kind="success")
 
     def _on_render(self):
@@ -414,11 +437,42 @@ class CTITab(QWidget):
         self._log(f"❌ Error: {error_msg}")
         self.app.toast.show(f"Error CTI: {error_msg[:50]}...", kind="error")
 
+    MAX_ROWS = 300
+
     def _load_items(self):
-        """Cargar items CTI en la tabla"""
-        # Por ahora placeholder - luego cargar de items.jsonl
+        """Muestra las noticias y vulnerabilidades guardadas por el módulo CTI (las más recientes primero).
+
+        Antes la tabla quedaba siempre vacía con el aviso "Carga de items en desarrollo".
+        """
         self.table.setRowCount(0)
-        self._log("Carga de items en desarrollo...")
+        items_file = CTI_BASE / "store" / "items.jsonl"
+        if not items_file.exists():
+            self.lbl_items.setText("📰  Noticias y vulnerabilidades guardadas: ninguna todavía")
+            return
+        items = []
+        with items_file.open(encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    items.append(json.loads(line))
+                except ValueError:
+                    continue
+        items.sort(key=lambda it: str(it.get("fecha") or ""), reverse=True)
+        shown = items[:self.MAX_ROWS]
+        self.table.setRowCount(len(shown))
+        for row, it in enumerate(shown):
+            product = " ".join(str(it.get(k) or "") for k in ("vendor", "product")).strip()
+            values = (it.get("fuente", ""), it.get("titulo", ""), ", ".join((it.get("cves") or [])[:3]),
+                      str(it.get("fecha") or "")[:10], product)
+            for col, val in enumerate(values):
+                cell = QTableWidgetItem(str(val))
+                if col == 1:
+                    cell.setToolTip(str(it.get("resumen") or "")[:500])
+                if it.get("kev") or it.get("exploited"):
+                    cell.setForeground(QColor("#ff6b6b"))     # explotada activamente
+                self.table.setItem(row, col, cell)
+        latest = str(shown[0].get("fecha") or "")[:10] if shown else "—"
+        self.lbl_items.setText(f"📰  Noticias y vulnerabilidades guardadas: {len(items)} (se muestran las "
+                               f"{len(shown)} más recientes; la última es del {latest}; en rojo, explotadas activamente)")
 
     def refresh(self):
         """Refrescar tab (llamado por la app principal)"""

@@ -42,10 +42,11 @@ class ProfilerThread(QThread):
     finished_ok = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, seed: SeedData, selected_tools: List[str] = None):
+    def __init__(self, seed: SeedData, selected_tools: List[str] = None, case_id: int = None):
         super().__init__()
         self.seed = seed
         self.selected_tools = selected_tools
+        self.case_id = case_id          # Refinar: se guarda en el MISMO caso (antes creaba uno duplicado)
         self.engine = None
 
     def run(self):
@@ -87,7 +88,7 @@ class ProfilerThread(QThread):
 
             # Guardar los resultados en un caso para que no se pierdan
             try:
-                case_id = self.engine.save_to_case(self.seed)
+                case_id = self.engine.save_to_case(self.seed, case_id=self.case_id)
                 self.case_saved.emit(case_id)
             except Exception as e:
                 self.progress.emit(f"⚠️ No se pudieron guardar los resultados en un caso: {e}")
@@ -111,6 +112,8 @@ class ProfilingTab(QWidget):
         self.candidates_data = []
         self.confirmed_urls = set()
         self.rejected_urls = set()
+        self.search_warnings = {}       # avisos de herramientas (búsqueda bloqueada…), para la ficha
+        self._profile_case_id = None    # caso donde se guardó este perfil
         self.profiler_thread = None
 
         # Cargar herramientas disponibles
@@ -198,7 +201,7 @@ class ProfilingTab(QWidget):
         lbl_name.setStyleSheet(label_style)
         left_layout.addWidget(lbl_name)
         self.input_name = QLineEdit()
-        self.input_name.setPlaceholderText("Juan Carlos Riofrio Perez")
+        self.input_name.setPlaceholderText("Ej.: Nombre Segundo-nombre Apellido Apellido")
         self.input_name.setStyleSheet(input_style)
         self.input_name.setFixedHeight(40)
         left_layout.addWidget(self.input_name)
@@ -208,7 +211,7 @@ class ProfilingTab(QWidget):
         lbl_context.setStyleSheet(label_style)
         left_layout.addWidget(lbl_context)
         self.input_context = QLineEdit()
-        self.input_context.setPlaceholderText("UDLA Ecuador, ingeniero, nacido 2000")
+        self.input_context.setPlaceholderText("Ej.: profesión, medio, club o universidad")
         self.input_context.setStyleSheet(input_style)
         self.input_context.setFixedHeight(40)
         left_layout.addWidget(self.input_context)
@@ -223,7 +226,8 @@ class ProfilingTab(QWidget):
         lbl_country.setStyleSheet(label_style)
         col1.addWidget(lbl_country)
         self.input_country = QComboBox()
-        self.input_country.addItems(["Ecuador", "Colombia", "Peru", "Mexico", "USA", "Otro"])
+        self.input_country.addItems(["Ecuador", "Colombia", "Perú", "México", "Chile", "Argentina", "Venezuela", "Bolivia",
+                                     "Uruguay", "Paraguay", "España", "Estados Unidos", "Otro"])
         self.input_country.setStyleSheet("""
             QComboBox {
                 padding: 10px 12px;
@@ -274,7 +278,7 @@ class ProfilingTab(QWidget):
         lbl_phone.setStyleSheet(label_style)
         col4.addWidget(lbl_phone)
         self.input_phone = QLineEdit()
-        self.input_phone.setPlaceholderText("+593999999999")
+        self.input_phone.setPlaceholderText("Ej.: +593 9X XXX XXXX")
         self.input_phone.setStyleSheet(input_style)
         self.input_phone.setFixedHeight(40)
         col4.addWidget(self.input_phone)
@@ -304,13 +308,13 @@ class ProfilingTab(QWidget):
         more_layout.setContentsMargins(0, 0, 0, 0)
         more_layout.setSpacing(2)
         more_fields = (
-            ("input_company", "Empresa donde trabaja", "Banco Pichincha"),
-            ("input_university", "Universidad", "UTPL"),
-            ("input_city", "Ciudad", "Loja"),
-            ("input_aliases", "Alias, apodos o variantes del nombre (separados por coma)", "Carlos Andrade León, Charly Andrade"),
-            ("input_more_emails", "Otros correos (separados por coma)", "otro@gmail.com, trabajo@empresa.com"),
-            ("input_more_usernames", "Otros usernames (separados por coma)", "@charly, candrade"),
-            ("input_more_phones", "Otros teléfonos (separados por coma)", "+593988888888"),
+            ("input_company", "Empresa donde trabaja", "Ej.: nombre de la empresa"),
+            ("input_university", "Universidad", "Ej.: nombre de la universidad"),
+            ("input_city", "Ciudad", "Ej.: Quito"),
+            ("input_aliases", "Alias, apodos o variantes del nombre (separados por coma)", "Ej.: nombre artístico, apodo"),
+            ("input_more_emails", "Otros correos (separados por coma)", "Ej.: otro@ejemplo.com, trabajo@ejemplo.com"),
+            ("input_more_usernames", "Otros usernames (separados por coma)", "Ej.: @usuario1, usuario2"),
+            ("input_more_phones", "Otros teléfonos (separados por coma)", "Ej.: +593 9X XXX XXXX"),
         )
         for attr, label, placeholder in more_fields:
             lbl = QLabel(label)
@@ -385,7 +389,7 @@ class ProfilingTab(QWidget):
             }
         """)
         self.btn_search.setFixedHeight(45)
-        self.btn_search.clicked.connect(self._on_search)
+        self.btn_search.clicked.connect(lambda: self._on_search())   # clicked pasa un bool que no es un caso
         left_layout.addWidget(self.btn_search)
 
         # Progress
@@ -455,10 +459,12 @@ class ProfilingTab(QWidget):
         ])
         self.candidates_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.candidates_table.setSelectionBehavior(QTableWidget.SelectRows)
+        # Doble clic abre el enlace: sin esto, también ponía la celda en modo edición
+        self.candidates_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.candidates_table.setAlternatingRowColors(True)
         self.candidates_table.itemSelectionChanged.connect(self._on_candidate_selected)
         self.candidates_table.itemDoubleClicked.connect(self._on_open_url)
-        right_layout.addWidget(self.candidates_table)
+        right_layout.addWidget(self.candidates_table, 1)   # la tabla se queda con el espacio libre
 
         # Candidate Details
         details_group = QGroupBox("📋 Detalles del Candidato")
@@ -487,7 +493,7 @@ class ProfilingTab(QWidget):
             "background-color: #0c111d; color: #8A9AA9; "
             "font-family: monospace; font-size: 10px;"
         )
-        self.log_area.setMaximumHeight(100)
+        self.log_area.setMaximumHeight(140)
         log_layout.addWidget(self.log_area)
 
         right_layout.addWidget(log_group)
@@ -573,7 +579,13 @@ class ProfilingTab(QWidget):
 
     def _on_new_profile(self):
         """Limpiar todo para un nuevo perfil"""
+        self._clear_profile()
+        self._log("Nuevo perfil iniciado")
+        self.app.toast.show("Nuevo perfil iniciado", kind="info")
+
+    def _clear_profile(self):
         self.input_name.clear()
+        self.input_country.setCurrentIndex(0)
         self.input_context.clear()
         self.input_username.clear()
         self.input_email.clear()
@@ -591,9 +603,8 @@ class ProfilingTab(QWidget):
         self.candidates_data = []
         self.confirmed_urls = set()
         self.rejected_urls = set()
-
-        self._log("Nuevo perfil iniciado")
-        self.app.toast.show("Nuevo perfil iniciado", kind="info")
+        self.search_warnings = {}
+        self._profile_case_id = None
 
     def _toggle_more(self, shown: bool):
         self.more_box.setVisible(shown)
@@ -618,8 +629,8 @@ class ProfilingTab(QWidget):
             extra_phones=parse_list(self.input_more_phones.text()),
         )
 
-    def _on_search(self):
-        """Iniciar perfilamiento con los datos semilla"""
+    def _on_search(self, case_id: int = None):
+        """Iniciar perfilamiento con los datos semilla (`case_id`: guardar en ese caso en vez de crear otro)."""
         seed = self._seed_from_inputs()
         name, context, country = seed.name, seed.context, seed.country
 
@@ -635,13 +646,16 @@ class ProfilingTab(QWidget):
         self._log(f"Iniciando perfilamiento: {name}")
         self._log(f"Contexto: {context} | Pais: {country}")
 
-        # Limpiar candidatos anteriores
+        # Limpiar candidatos anteriores (también el contador y el detalle: antes seguían los de la búsqueda previa)
         self.candidates_table.setRowCount(0)
         self.candidates_data = []
+        self.search_warnings = {}
+        self.candidate_details.clear()
+        self.lbl_stats.setText("(buscando…)")
         self._log(f"Herramientas marcadas: {len(selected)} ({', '.join(selected)})")
 
         # Iniciar thread
-        self.profiler_thread = ProfilerThread(seed, selected)
+        self.profiler_thread = ProfilerThread(seed, selected, case_id=case_id)
         self.profiler_thread.progress.connect(self._log)
         self.profiler_thread.candidates_ready.connect(self._on_candidates_ready)
         self.profiler_thread.case_saved.connect(self._on_case_saved)
@@ -652,9 +666,10 @@ class ProfilingTab(QWidget):
     def _on_case_saved(self, case_id: int):
         """Activa el caso recién guardado y refresca las pestañas dependientes."""
         name = f"Perfil: {self.input_name.text().strip()}"
+        self._profile_case_id = case_id
         self.app.active_case_id = case_id
         self.app.active_case_name = name
-        self.app.case_badge.setText(f"CASO ACTIVO: #{case_id} — {name.upper()}")
+        self.app.show_active_case(case_id, name)
         self._log(f"💾 Resultados guardados en el caso #{case_id}. Míralos en la pestaña Reportes.")
         for page_name, widget in self.app.pages:
             if page_name in ("Casos", "Datos", "Reportes") and hasattr(widget, "refresh"):
@@ -726,12 +741,19 @@ class ProfilingTab(QWidget):
         """Perfilamiento completado."""
         self._set_busy(False)
 
-        msg = f"Completado: {summary['candidates']} candidatos de {summary['total_results']} resultados"
-        self._log(msg)
-        self.app.toast.show(msg, kind="success")
-
+        self.search_warnings = summary.get('warnings') or {}
         if summary['candidates'] == 0:
-            self._log("No se encontraron candidatos. Intenta agregar mas contexto o datos.")
+            msg = "Completado: no se encontraron candidatos"
+            self._log(msg + ". Intenta añadir más contexto o datos.")
+        else:
+            msg = f"Completado: {summary['candidates']} candidatos de {summary['total_results']} resultados"
+            self._log(msg)
+        if self.search_warnings:
+            self._log("⚠️ BÚSQUEDA INCOMPLETA: " + ", ".join(self.search_warnings) + " no pudieron consultar todas sus "
+                      "fuentes (bloqueo o límite de los buscadores). Repite en unos 10 minutos; la ficha lo indicará.")
+            self.app.toast.show(msg + " — búsqueda incompleta, ver registro", kind="warning")
+        else:
+            self.app.toast.show(msg, kind="success")
 
     def _on_error(self, error_msg):
         """Error en el perfilamiento."""
@@ -869,7 +891,7 @@ Snippet:
 
         self._log(f"🔁 Refinando con datos nuevos: {', '.join(new_bits)}")
         self.app.toast.show("Refinando búsqueda con los datos confirmados…", kind="info")
-        self._on_search()
+        self._on_search(case_id=self._profile_case_id)
 
     def _on_export(self):
         """Exportar perfil completo."""
@@ -890,14 +912,19 @@ Snippet:
             ],
             "rejected_count": len(self.rejected_urls),
             "total_candidates": len(self.candidates_data),
-            "all_candidates": self.candidates_data[:50]
+            "search_warnings": self.search_warnings,
+            # Antes se cortaba en 50 sin avisar (Luisito: 125 candidatos → 50 en el archivo)
+            "all_candidates": self.candidates_data,
         }
 
-        # Guardar en archivo
-        output_dir = Path.home() / "Downloads"
-        name = self.input_name.text().replace(" ", "_")[:20]
-        output_file = output_dir / f"perfil_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-
+        from PySide6.QtWidgets import QFileDialog
+        name = re.sub(r"[^\w-]+", "_", self.input_name.text())[:30].strip("_") or "persona"
+        default = Path.home() / "Downloads" / f"perfil_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        path, _ = QFileDialog.getSaveFileName(self, "Guardar los datos del perfil (JSON, para otras herramientas)",
+                                              str(default), "Datos JSON (*.json)")
+        if not path:
+            return
+        output_file = Path(path)
         output_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 
         self._log(f"Exportado: {output_file}")
@@ -918,7 +945,7 @@ Snippet:
         seed_dict = {"name": seed.name, "context": seed.context, "country": seed.country, "city": seed.city,
                      "username": seed.username, "email": seed.email, "phone": seed.phone, "domain": seed.domain}
         report = build_person_report(seed_dict, self.candidates_data, self.confirmed_urls, self.rejected_urls,
-                                     case_id=getattr(self.app, "active_case_id", None))
+                                     case_id=self._profile_case_id, warnings=self.search_warnings)
         output_dir = Path.home() / "Downloads"
         output_dir.mkdir(parents=True, exist_ok=True)
         name = re.sub(r"[^\w-]+", "_", seed.name)[:30].strip("_") or "persona"
@@ -931,5 +958,12 @@ Snippet:
         self.app.toast.show("Ficha generada y abierta en el navegador", kind="success")
 
     def refresh(self):
-        """Refrescar tab."""
-        pass
+        """Al cambiar de caso se vacía el perfil si era de otro caso.
+
+        Prueba de usuario (2026-10-13): al abrir un caso nuevo seguían a la vista los datos y candidatos del
+        perfilamiento anterior de otra persona (riesgo LOPDP y de mezclar casos).
+        """
+        if self.candidates_data or self.input_name.text().strip():
+            if self.app.active_case_id != self._profile_case_id:
+                self._clear_profile()
+                self._log("Perfil anterior cerrado al cambiar de caso.")

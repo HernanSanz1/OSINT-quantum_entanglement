@@ -199,6 +199,9 @@ class IpReputationTool(OSINTTool):
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         raw = (query_params.ip or "").strip()
         if not raw or not validate_ip(raw):
+            # Antes: "0 resultados" sin decir por qué (prueba real con "hola mundo" guardado como IP)
+            self._report_progress(f"⚠️ IP Reputation: «{raw[:60]}» no es una dirección IP válida (ejemplo: 8.8.8.8); "
+                                  "se omite. Corrígela en la pestaña Datos.")
             return []
         ip = ipaddress.ip_address(raw)
         if not ip.is_global:

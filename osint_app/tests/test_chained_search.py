@@ -27,6 +27,7 @@ def _engine(tools):
     eng.progress_callback = lambda _msg: None
     eng.tools = tools
     eng.results = []
+    eng.warnings = {}
     return eng
 
 

@@ -80,6 +80,25 @@ class OSINTFramework:
 
     # ── Execution ─────────────────────────────────────────────────────────────
 
+    MAX_TARGETS_PER_RUN = 25
+    _PARAM_TO_FIELD = {"target_name": "name", "role": "note", "hash_value": "hash"}
+
+    def _split_by_main_field(self, tool, case_data: List[TargetData]):
+        """Una tanda por cada valor marcado del dato principal de la herramienta, con el resto de datos igual.
+
+        Las herramientas reciben un solo valor por tipo (QueryParameters). Antes, con 3 IP marcadas, IP Reputation
+        analizaba solo una e ignoraba el resto sin avisar (prueba real 2026-10-13: la IP de salida de Tor, marcada
+        junto a 8.8.8.8, no se analizó). Devuelve ([(etiqueta, datos)], nº de valores); una sola tanda si no hay varios.
+        """
+        reqs = getattr(tool, "requirements", None)
+        for param in (reqs.mandatory if reqs else []):
+            field = self._PARAM_TO_FIELD.get(param, param)
+            main = [d for d in case_data if d.field_type.lower() == field]
+            if len(main) > 1:
+                rest = [d for d in case_data if d.field_type.lower() != field]
+                return [(d.value, rest + [d]) for d in main[:self.MAX_TARGETS_PER_RUN]], len(main)
+        return [("", case_data)], 1
+
     def run_tool(
         self,
         tool_name: str,
@@ -99,32 +118,45 @@ class OSINTFramework:
         case_data = db.get_target_data(case_id)
         if target_data_ids is not None:
             case_data = [d for d in case_data if d.id in target_data_ids]
-            
-        compat = self.compat.check_tool(tool, case_data, extra_args=extra_args)
 
-        if not compat.can_run:
-            raise RuntimeError(compat.user_message())
+        batches, total_targets = self._split_by_main_field(tool, case_data)
+        checks = [(label, self.compat.check_tool(tool, data, extra_args=extra_args)) for label, data in batches]
+        if not checks[0][1].can_run:
+            raise RuntimeError(checks[0][1].user_message())
 
         if progress_cb:
             progress_cb(f"Iniciando {tool_name}…")
+            if len(checks) > 1:
+                progress_cb(f"🎯 {len(checks)} objetivos marcados: se analizan uno por uno.")
+            if total_targets > len(batches):
+                progress_cb(f"⚠️ Solo se analizan los primeros {self.MAX_TARGETS_PER_RUN} objetivos marcados.")
 
         if tool.is_heavy and self.resource.is_overloaded():
             if progress_cb:
                 progress_cb("⚠️  Sistema bajo carga. Continuando de todos modos…")
 
         start = time.time()
-        error_text = ""
+        results: List[SearchResult] = []
+        errors: List[str] = []
         try:
             tool._progress_cb = progress_cb   # ← allows tool to emit progress
-            results: List[SearchResult] = tool.execute(compat.auto_params)
-            status = "ok"
-        except Exception as e:
-            logger.error(f"Tool error [{tool_name}]: {e}")
-            results = []
-            status = "error"
-            error_text = f"{type(e).__name__}: {e}"[:200]
+            for i, (label, compat) in enumerate(checks, 1):
+                if getattr(tool, "_is_cancelled", False):
+                    break
+                if len(checks) > 1 and progress_cb:
+                    progress_cb(f"▶ Objetivo {i}/{len(checks)}: {label}")
+                try:
+                    results.extend(tool.execute(compat.auto_params))
+                except Exception as e:
+                    logger.error(f"Tool error [{tool_name}] {label}: {e}")
+                    errors.append(f"{label + ': ' if label else ''}{type(e).__name__}: {e}"[:200])
+                    if progress_cb and len(checks) > 1:
+                        progress_cb(f"❌ {label}: {type(e).__name__}: {e}"[:200])
         finally:
             tool._progress_cb = None           # ← always clean up
+        # Solo es "error" si no salió nada; un objetivo fallido entre varios queda anotado en el resumen
+        status = "error" if errors and not results else "ok"
+        error_text = "; ".join(errors)[:200]
 
         elapsed = time.time() - start
 
@@ -136,7 +168,11 @@ class OSINTFramework:
             summary = f"Error: {error_text}"
         else:
             summary = f"{len(results)} resultados. "
+            if len(checks) > 1:
+                summary = f"{len(checks)} objetivos · " + summary
             summary += "  ".join(f"{k}: {v}" for k, v in cats.items())
+            if errors:
+                summary += f"  · Fallaron {len(errors)}: {error_text}"
 
         # Persist report
         report = ToolReport(

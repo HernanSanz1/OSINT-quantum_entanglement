@@ -191,6 +191,7 @@ class CorrelationTab(QWidget):
         self.table_correlations.setHorizontalHeaderLabels(["Entidad A", "Relación", "Entidad B", "Confianza", "Evidencia"])
         self.table_correlations.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table_correlations.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table_correlations.setEditTriggers(QTableWidget.NoEditTriggers)
         corr_layout.addWidget(self.table_correlations)
 
         right_splitter.addWidget(corr_frame)
@@ -242,10 +243,11 @@ class CorrelationTab(QWidget):
 
     # ── Actions ────────────────────────────────────────────────────────────────
 
-    def _on_analyze(self):
-        """Analiza el caso actual"""
+    def _on_analyze(self, quiet: bool = False):
+        """Analiza el caso actual (`quiet`: sin avisos emergentes, al refrescar por un cambio de caso)."""
         if not self.app.active_case_id:
-            self.app.toast.show("Abre un caso primero", kind="warning")
+            if not quiet:
+                self.app.toast.show("Abre un caso primero", kind="warning")
             return
 
         self._log("Analizando caso...")
@@ -274,7 +276,8 @@ class CorrelationTab(QWidget):
                 self.lbl_suggestions.setText("No hay sugerencias. Agrega más datos al caso.")
 
             self._log(f"✅ Análisis completado: {summary['total_entities']} entidades, {summary['total_correlations']} correlaciones")
-            self.app.toast.show("Análisis completado", kind="success")
+            if not quiet:   # antes salía "Análisis completado" al crear o abrir cualquier caso
+                self.app.toast.show("Análisis completado", kind="success")
 
         except Exception as e:
             self._log(f"❌ Error: {str(e)}")
@@ -393,8 +396,11 @@ class CorrelationTab(QWidget):
         self.app.toast.show(f"Error: {error_msg[:50]}", kind="error")
 
     def _on_cross_case(self):
-        """Correlación entre casos"""
-        self._log("Buscando correlaciones entre casos...")
+        """Datos que identifican a alguien (correo, usuario, teléfono…) y aparecen en el caso activo y en otros."""
+        if not self.app.active_case_id:
+            self.app.toast.show("Abre un caso primero: se buscan sus datos en los demás casos", kind="warning")
+            return
+        self._log("Buscando datos del caso activo que aparecen también en otros casos...")
 
         try:
             correlator = CrossCaseCorrelator()
@@ -402,6 +408,7 @@ class CorrelationTab(QWidget):
             # Cargar todos los casos
             from ..db.feedback_db import db
             cases = db.get_cases()
+            names = {case.id: case.name for case in cases}
 
             if len(cases) < 2:
                 self.app.toast.show("Necesitas al menos 2 casos para correlación cruzada", kind="warning")
@@ -410,19 +417,20 @@ class CorrelationTab(QWidget):
             for case in cases:
                 correlator.load_case(case.id)
 
-            shared = correlator.find_cross_correlations()
+            shared = correlator.find_cross_correlations(focus_case=self.app.active_case_id)
 
             if shared:
-                msg = f"Encontradas {len(shared)} entidades compartidas:\n\n"
-                for s in shared[:5]:
-                    msg += f"• {s['entity_type']}: {s['value']}\n"
-                    msg += f"  Casos: {', '.join(map(str, s['cases']))}\n\n"
+                msg = f"Encontrados {len(shared)} datos compartidos con otros casos:\n\n"
+                for s in shared[:10]:
+                    others = [f"#{c} {names.get(c, '')}" for c in s['cases'] if c != self.app.active_case_id]
+                    msg += f"• {s['entity_type']}: {s['value']}\n  También en: {', '.join(others)}\n\n"
 
                 self._log(msg)
-                self.app.toast.show(f"{len(shared)} entidades compartidas entre casos", kind="success")
+                self.app.toast.show(f"{len(shared)} datos compartidos con otros casos", kind="success")
             else:
-                self._log("No se encontraron entidades compartidas entre casos")
-                self.app.toast.show("No hay correlaciones cruzadas", kind="info")
+                self._log("Ningún correo, usuario, teléfono, dominio o IP de este caso aparece en otros casos "
+                          "(país, ciudad y contexto no cuentan: los comparte mucha gente).")
+                self.app.toast.show("No hay datos compartidos con otros casos", kind="info")
 
         except Exception as e:
             self._log(f"❌ Error: {str(e)}")
@@ -508,10 +516,19 @@ class CorrelationTab(QWidget):
             return
 
         summary = self.engine.get_profile_summary()
-        self._log(f"Perfil exportado:\n{json.dumps(summary, indent=2, ensure_ascii=False)}")
-        self.app.toast.show("Perfil exportado al log", kind="success")
+        # Antes volcaba el JSON en el registro y no creaba ningún archivo
+        from pathlib import Path
+        from PySide6.QtWidgets import QFileDialog
+        default = Path.home() / "Downloads" / f"correlacion_caso_{self.app.active_case_id}.json"
+        path, _ = QFileDialog.getSaveFileName(self, "Guardar el perfil correlacionado (JSON)", str(default),
+                                              "Datos JSON (*.json)")
+        if not path:
+            return
+        Path(path).write_text(json.dumps(summary, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+        self._log(f"Perfil exportado: {path}")
+        self.app.toast.show(f"Perfil exportado a {Path(path).name}", kind="success")
 
     def refresh(self):
         """Refrescar tab"""
         if self.app.active_case_id:
-            self._on_analyze()
+            self._on_analyze(quiet=True)

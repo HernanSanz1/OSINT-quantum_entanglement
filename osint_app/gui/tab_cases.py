@@ -16,7 +16,7 @@ class CasesTab(QWidget):
         
         self.table = QTableWidget()
         self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["ID", "Name", "Description", "Status", "Created Date"])
+        self.table.setHorizontalHeaderLabels(["ID", "Nombre", "Descripción", "Estado", "Creado"])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -44,7 +44,7 @@ class CasesTab(QWidget):
 
             # Status badge
             is_active = self.app.active_case_id == c.id
-            c_status = QTableWidgetItem("● Active" if is_active else "○ Open")
+            c_status = QTableWidgetItem("● Activo" if is_active else "○ Abierto")
             c_status.setTextAlignment(Qt.AlignCenter)
             c_status.setForeground(Qt.green if is_active else Qt.gray)
 
@@ -76,7 +76,7 @@ class CasesTab(QWidget):
         
         self.app.active_case_id = case_id
         self.app.active_case_name = name
-        self.app.case_badge.setText(f"CASO ACTIVO: #{case_id} — {name.upper()}")
+        self.app.show_active_case(case_id, name)
         self.app.set_status(f"✔  Caso abierto: {name}", "success")
         self.app.toast.show(f"Caso {name} establecido como activo", kind="success")
         self.refresh()
@@ -100,7 +100,7 @@ class CasesTab(QWidget):
                 if self.app.active_case_id == case_id:
                     self.app.active_case_id = None
                     self.app.active_case_name = ""
-                    self.app.case_badge.setText("CASO ACTIVO: NINGUNO")
+                    self.app.show_active_case(None, "")
                 self.app._update_all_tabs()
                 modal.accept()
             except Exception as e:
@@ -127,12 +127,13 @@ class CasesTab(QWidget):
         def _save():
             name = e_name.text().strip()
             if not name:
+                self.app.toast.show("Escribe un nombre para el caso.", kind="warning")
                 return
             new_id = self.app.case_mgr.create(name, e_desc.text().strip()).id
             self.app.toast.show(f"Caso creado: {name}", kind="success")
             self.app.active_case_id = new_id
             self.app.active_case_name = name
-            self.app.case_badge.setText(f"CASO ACTIVO: #{new_id} — {name.upper()}")
+            self.app.show_active_case(new_id, name)
             self.app._update_all_tabs()
             modal.accept()
 
@@ -164,6 +165,7 @@ class CasesTab(QWidget):
         def _save():
             name = e_name.text().strip()
             if not name:
+                self.app.toast.show("Escribe un nombre para el caso.", kind="warning")
                 return
             self.app.case_mgr.update(case_id, name, e_desc.text().strip())
             self.app.toast.show(f"Caso '{name}' actualizado.", kind="success")
@@ -171,7 +173,7 @@ class CasesTab(QWidget):
             # Si es el caso activo, actualizar el badge
             if self.app.active_case_id == case_id:
                 self.app.active_case_name = name
-                self.app.case_badge.setText(f"CASO ACTIVO: #{case_id} — {name.upper()}")
+                self.app.show_active_case(case_id, name)
                 
             self.refresh()
             modal.accept()

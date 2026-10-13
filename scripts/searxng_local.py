@@ -15,6 +15,7 @@ futuro asistente de instalación (--setup).
 """
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -62,16 +63,29 @@ def run(*args, check=True, capture=True):
     return result
 
 
-def ensure_config() -> Path:
+def ensure_config() -> tuple:
+    """Crea o actualiza la configuración. Devuelve (carpeta, si cambió)."""
     folder = config_dir()
     (folder / "config").mkdir(parents=True, exist_ok=True)
     (folder / "data").mkdir(parents=True, exist_ok=True)
     settings = folder / "config" / "settings.yml"
+    template = TEMPLATE.read_text(encoding="utf-8")
+    changed = False
     if not settings.exists():
-        text = TEMPLATE.read_text(encoding="utf-8").replace("__SECRET__", secrets.token_hex(32))
-        settings.write_text(text, encoding="utf-8")
+        settings.write_text(template.replace("__SECRET__", secrets.token_hex(32)), encoding="utf-8")
         print(f"🆕 Configuración creada en {settings} (con clave secreta propia)")
-    return folder
+        changed = True
+    else:
+        # Plantilla nueva (p. ej. más buscadores): se actualiza conservando la clave secreta del usuario
+        current = settings.read_text(encoding="utf-8")
+        version = re.search(r"sentinel-template: (\d+)", template)
+        if version and f"sentinel-template: {version.group(1)}" not in current:
+            secret = re.search(r'secret_key: "([^"]+)"', current)
+            settings.write_text(template.replace("__SECRET__", secret.group(1) if secret else secrets.token_hex(32)),
+                                encoding="utf-8")
+            print(f"🔄 Configuración actualizada a la plantilla {version.group(1)}")
+            changed = True
+    return folder, changed
 
 
 def container_state() -> str:
@@ -105,9 +119,12 @@ def connect_sentinel() -> None:
 
 
 def start() -> None:
-    folder = ensure_config()
+    folder, changed = ensure_config()
     state = container_state()
-    if state == "running":
+    if state == "running" and changed:
+        run("restart", CONTAINER)
+        print("🔁 SearXNG reiniciado con la configuración nueva")
+    elif state == "running":
         print("✅ SearXNG ya estaba funcionando")
     elif state:
         run("start", CONTAINER)
@@ -155,6 +172,8 @@ def remove() -> None:
 
 
 if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     actions = {"start": start, "status": status, "test": test, "stop": stop, "remove": remove}
     action = sys.argv[1] if len(sys.argv) > 1 else "status"
     if action not in actions:

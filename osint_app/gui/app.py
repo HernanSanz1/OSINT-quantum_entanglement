@@ -92,7 +92,7 @@ class OSINTGUI(QMainWindow):
         self.case_badge = QLabel("CASO ACTIVO: NINGUNO")
         self.case_badge.setObjectName("lblActiveCase")
         self.case_badge.setAlignment(Qt.AlignCenter)
-        self.case_badge.setFixedSize(240, 40)   # ← tamaño del badge
+        self.case_badge.setFixedSize(340, 40)   # ← tamaño del badge (hasta el panel de CPU, x=730)
         topbar.add(self.case_badge, x=375, y=35)  # ← posición en el topbar
 
         # ── CPU Panel ───────────────────────────────────────────────────
@@ -142,6 +142,10 @@ class OSINTGUI(QMainWindow):
         self.btn_tor_toggle.setStyleSheet("background-color: #374151; color: #a1a1aa; font-weight: bold; border-radius: 4px; font-size: 14px;")
         self.btn_tor_toggle.clicked.connect(self._action_toggle_tor)
         self.btn_tor_toggle.setFixedSize(180, 40)
+        self.btn_tor_toggle.setToolTip(
+            "Envía por la red Tor los comandos de la terminal avanzada (pestaña Herramientas → Opciones avanzadas).\n"
+            "OJO: las herramientas normales y el Perfilamiento NO pasan por Tor.\n"
+            "Necesita Tor en marcha en este equipo (Tor Browser o el servicio tor, puerto 9050).")
         topbar.add(self.btn_tor_toggle, x=1220, y=35)
 
         self.root_layout.addWidget(topbar)
@@ -370,13 +374,34 @@ class OSINTGUI(QMainWindow):
                     self._switch_tab(0)
                 self.toast.show("Selecciona un caso, dato o reporte y presiona Editar", kind="warning")
 
+    def show_active_case(self, case_id, name: str):
+        """Cabecera del caso activo. Con nombres largos se cortaba ("O: #4 — PERFIL: …"): ahora se abrevia con «…»
+        y el texto completo queda en la ayuda emergente."""
+        from PySide6.QtGui import QFontMetrics
+        full = f"CASO #{case_id} · {name.upper()}" if case_id else "CASO ACTIVO: NINGUNO"
+        width = self.case_badge.width() - 36            # margen interior del recuadro
+        self.case_badge.setText(QFontMetrics(self.case_badge.font()).elidedText(full, Qt.ElideRight, width))
+        self.case_badge.setToolTip(full)
+
     def _action_toggle_tor(self):
-        self._use_tor_proxy = not getattr(self, "_use_tor_proxy", False)
+        """Tor para la terminal avanzada. Antes decía "Herramientas rutearán vía Tor" sin que fuera cierto (solo
+        la terminal lo usa) y sin comprobar que Tor estuviera en marcha: alguien podía creerse anónimo sin serlo."""
+        turning_on = not getattr(self, "_use_tor_proxy", False)
+        if turning_on:
+            import socket
+            try:
+                socket.create_connection(("127.0.0.1", 9050), timeout=2).close()
+            except OSError:
+                self.toast.show("Tor no está en marcha en este equipo (puerto 9050). Abre Tor Browser o el "
+                                "servicio tor y vuelve a intentarlo.", kind="warning")
+                return
+        self._use_tor_proxy = turning_on
         if self._use_tor_proxy:
             self.btn_tor_toggle.setText("🌐 Tor: ON")
             self.btn_tor_toggle.setStyleSheet("background-color: #9333ea; color: #ffffff; font-weight: bold; border-radius: 4px; border: 1px solid #c084fc; font-size: 14px;")
-            self.toast.show("Red Cebolla Activada. Herramientas rutearán vía 127.0.0.1:9050", kind="success")
+            self.toast.show("Tor activado SOLO para la terminal avanzada. Las herramientas y el Perfilamiento "
+                            "NO pasan por Tor.", kind="warning")
         else:
             self.btn_tor_toggle.setText("🌐 Tor: OFF")
             self.btn_tor_toggle.setStyleSheet("background-color: #374151; color: #a1a1aa; font-weight: bold; border-radius: 4px; font-size: 14px;")
-            self.toast.show("Red Cebolla Desactivada. Volviendo a Clear Web.", kind="info")
+            self.toast.show("Tor desactivado: la terminal avanzada vuelve a la conexión normal.", kind="info")

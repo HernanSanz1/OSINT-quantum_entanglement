@@ -1,4 +1,4 @@
-# Plantilla de SearXNG para SENTINEL (búsqueda web propia, sin captcha de un solo buscador).
+# Plantilla de SearXNG para SENTINEL (búsqueda web propia, sin captcha de un solo buscador). sentinel-template: 2
 # NO contiene secretos: scripts/searxng_local.py la copia a la carpeta de datos del usuario
 # (%LOCALAPPDATA%\SENTINEL\searxng en Windows) y cambia __SECRET__ por una clave aleatoria.
 use_default_settings: true
@@ -22,3 +22,16 @@ search:
 
 ui:
   default_locale: "es"
+
+# Más buscadores de respaldo (versión 2 de la plantilla). Con solo brave, duckduckgo y google cse, tras 3-4
+# perfilamientos seguidos los tres quedaban suspendidos ("demasiadas peticiones") y la búsqueda devolvía 0 resultados
+# (prueba de usuario real, 2026-10-13). Repartir las consultas entre más motores reduce el bloqueo.
+engines:
+  - name: google
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: qwant
+    disabled: false
+  - name: yahoo
+    disabled: false

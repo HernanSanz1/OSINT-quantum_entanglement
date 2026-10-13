@@ -105,6 +105,8 @@ class GoogleDorksTool(OSINTTool):
             
         self._report_progress(f"🔍 Google Dorks: {total} consultas a enviar a los buscadores…")
 
+        from ..utils.search_engine import SearchTracker
+        tracker = SearchTracker()
         raw_hits = []
         for i, q_obj in enumerate(queries_objs, 1):
             if self._is_cancelled:
@@ -113,11 +115,15 @@ class GoogleDorksTool(OSINTTool):
 
             q_text = q_obj["query"]
             self._report_progress(f"[{i}/{total}] ✨ Score {q_obj['score']} | {q_text[:70]}…")
+            self._last_outcome = None
             hits = self._search(q_text, max_results=5)
             outcome = getattr(self, "_last_outcome", None)
+            if outcome is not None:
+                tracker.record(outcome)
             if outcome is not None and outcome.all_blocked:
                 # Todos los buscadores bloquean: seguir solo alarga la espera y empeora el bloqueo
-                self._report_progress(f"⚠️ Google Dorks: {outcome.explain()}")
+                tracker.failed += total - i
+                tracker.total += total - i
                 self._report_progress(f"⏹️ Se detienen las {total - i} consultas restantes.")
                 break
             
@@ -259,8 +265,13 @@ class GoogleDorksTool(OSINTTool):
                 raw_data=h,
             ))
 
+        warning = tracker.warning("Google Dorks")
+        if warning:
+            self._report_progress(warning)
+        else:
+            # Una búsqueda incompleta no se guarda en caché: si no, el "0" se repetiría al reintentar
+            self._cache.set(query_params.to_dict(), results)
         self._report_progress(f"✅ Dorks completo — {len(results)} resultados legítimos verificados")
-        self._cache.set(query_params.to_dict(), results)
         return results
 
 

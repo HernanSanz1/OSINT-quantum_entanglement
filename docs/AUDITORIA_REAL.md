@@ -219,3 +219,43 @@ candidatos separados; convendría agruparlas bajo su perfil en la vista para no 
 - Interfaz gráfica: abierta en modo sin pantalla, recorridas las 7 pestañas sin errores y un perfilamiento real
   lanzado desde la propia interfaz (36 candidatos en 98 s, guardados en un caso).
 - Suite automática y CI en verde en cada punto de control (Windows y Ubuntu, Python 3.12 y 3.14).
+
+## 9. Evaluación como usuario final (Claude Cowork, 13-10-2026)
+
+Un agente usó la aplicación solo desde la interfaz, como un analista no técnico, durante 64 minutos: 10 perfiles de
+figuras públicas, las herramientas técnicas y las pruebas de robustez. Notas: facilidad 5, utilidad 6, fiabilidad 5,
+claridad 5 y ficha 6 sobre 10. Acertó el 83 % de los 10 primeros candidatos y no hubo ningún cuelgue. Cada hallazgo
+se comprobó en el código y se reprodujo antes de corregirlo.
+
+### 9.1 Corregido
+
+| Hallazgo | Causa real | Corrección | Verificación real |
+|---|---|---|---|
+| La búsqueda web daba 0 resultados en silencio | SearXNG responde 200 con 0 resultados cuando sus buscadores internos están suspendidos y eso contaba como "no hay nada" | Se trata como bloqueo; aviso de **búsqueda incompleta** en el registro, el resumen final y la ficha; los resultados incompletos no se guardan en caché | 4 perfiles con los buscadores bloqueados: todos avisan |
+| SearXNG se agotaba tras 3-4 perfiles | Solo tenía 3 buscadores web activos | Plantilla v2 con Google, Bing, Qwant y Yahoo; se actualiza sola conservando la clave secreta; pausa de 2 min en vez de 10 | Con los otros suspendidos, respondió Yahoo dentro de SearXNG |
+| Sin aviso con Docker apagado | No se comprobaba | Aviso al empezar si SearXNG no responde o no contesta a tiempo, en segundo plano | Docker Desktop caído de verdad durante la prueba: aviso correcto |
+| Solo se analizaba el primer dato marcado | Cada herramienta recibe un valor por tipo | Un análisis por cada dato marcado del tipo principal, con resumen por objetivo | 8.8.8.8, "hola mundo" y una salida de Tor: las 3 analizadas y la de Tor con riesgo alto |
+| Datos del objetivo en "otra persona" | La regla de país penalizaba aunque el texto hablara de él | Sin penalización si lo ligan el gentilicio, el contexto, su web, su cuenta en Wikidata o su nacionalidad; ".co" es genérico; País "Otro" sin regla | Wikipedia de Carapaz: antes "menciona Italia", ahora nada; métrica de homónimos al 100 % |
+| La ficha listaba un sitio para adultos y homónimos como "sus cuentas" | Coincidencia de usuario tratada como hallazgo | Sitios sensibles (adultos, citas, pagos) ocultos con recuento; sección "SIN VERIFICAR"; en una plataforma con cuenta clara, las demás pasan a "otra persona" | Ficha real de Carapaz: 3 sitios sensibles ocultos |
+| Perfilamiento mostraba el perfil anterior de otra persona | El estado vivía en memoria sin ligarse al caso | Se vacía al cambiar de caso | Prueba de la interfaz |
+| "Refinar" creaba un caso duplicado | Siempre guardaba en un caso nuevo | Guarda en el mismo caso | — |
+| "Exportar JSON" cortaba en 50 | Límite fijo | Exporta todos y pregunta dónde guardar | — |
+| URL guardada como dominio; "hola mundo" aceptado como IP | Desplegable y sin validación | "Detectar automáticamente" por defecto y validación con mensajes claros | 5 valores reales en la interfaz |
+| Ventanas de consola de Sherlock y Maigret | Procesos sin la opción de ocultar ventana | `CREATE_NO_WINDOW` en todos los procesos externos | — |
+| Botón Tor engañoso | Decía "las herramientas irán por Tor" pero solo lo usa la terminal avanzada | Explica a qué afecta y comprueba que Tor esté en marcha | Sin Tor: no se activa y lo explica |
+| Correlación Cruzada inventaba relaciones | Unía casos por "país: Ecuador" | Solo correo, usuario, teléfono, dominio, IP o URL, y solo del caso activo | Caso de prueba: 3 coincidencias reales con el caso #5 |
+| CTI con la tabla vacía y JSON en bruto | Carga sin programar | Tabla con las 300 noticias más recientes (de 4024), explotadas en rojo, resúmenes legibles y botones sin programar desactivados | Interfaz: 300 filas |
+| Textos en inglés y jerga | — | Datos y Casos en español; guía con "Qué hace / Qué necesita / Qué obtendrás"; estado "✅ Lista"; terminal y parámetros de consola en "Opciones avanzadas" | Prueba de la interfaz |
+| Otros | — | "Variantes de username" ya no es candidato; País "Otro" ya no suma puntos por la palabra "otro"; países con tildes y más opciones; ejemplos genéricos en el formulario; cabecera del caso abreviada con el nombre completo en la ayuda; tablas sin modo edición; avisos al dejar campos vacíos | Suite de 980 tests |
+
+### 9.2 Limitaciones que siguen (y cómo superarlas)
+
+- **Los buscadores públicos bloquean tras muchas consultas seguidas.** Durante esta sesión, Yahoo, DuckDuckGo y los
+  buscadores internos de SearXNG quedaron suspendidos. Ahora la aplicación lo dice, pero no puede inventar los
+  resultados. Solución estable: una clave de pago de Brave Search (unos 5 USD de crédito al mes) o espaciar los
+  perfilamientos.
+- **Docker Desktop puede caerse** ("unable to start"); SearXNG depende de él. Hay que reiniciar Docker Desktop.
+- **CTI:** "Comprobar fuentes" sigue en modo prueba porque el almacén de noticias está dentro del repositorio; antes
+  de guardar cosechas reales hay que moverlo a la carpeta de datos del usuario.
+- **Decisiones pendientes del usuario:** ocultar o no CTI y Correlación hasta que aporten más, y si el correo
+  personal de una figura pública (sacado de commits públicos) debe salir en la ficha.

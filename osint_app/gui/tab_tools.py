@@ -10,7 +10,7 @@ Botón "Verificar Tool":
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
     QPlainTextEdit, QPushButton, QLabel, QProgressBar, QSplitter, QFrame,
-    QLineEdit
+    QLineEdit, QCheckBox
 )
 from PySide6.QtCore import Qt, Signal, QThread, QProcess, QProcessEnvironment
 from ..core.models import SearchResult
@@ -36,7 +36,7 @@ class ToolRunnerThread(QThread):
     def run(self):
         try:
             self.progress.emit(f"🚀 Iniciando ejecución de {self.t_name}...")
-            report = self.framework.run_tool(
+            self.framework.run_tool(
                 tool_name=self.t_name,
                 case_id=self.case_id,
                 progress_cb=self.progress.emit,
@@ -58,6 +58,17 @@ _STATUS_LABELS = {
     "needs_key":         "FALTA API KEY",
     "not_installed":     "NO INSTALADA / SERVIDOR APAGADO",
     "python_pkg_missing": "PAQUETE PYTHON FALTANTE",
+}
+
+
+# Nombres de los datos en lenguaje llano (la guía mostraba "domain", "observable"…)
+_FIELD_WORDS = {
+    "domain": "dominio (ej. ejemplo.com)", "ip": "dirección IP (ej. 8.8.8.8)", "url": "enlace web (https://…)",
+    "email": "correo", "username": "nombre de usuario", "target_name": "nombre de la persona", "phone": "teléfono",
+    "company": "empresa", "location": "ubicación", "observable": "indicador a analizar", "hash_value": "hash",
+    "role": "nota", "context": "contexto", "subdomain": "subdominios", "dns": "registros DNS",
+    "social_profile": "perfiles sociales", "person": "personas", "tech": "tecnologías", "cve": "vulnerabilidades (CVE)",
+    "organization": "organizaciones", "hash": "hash", "name": "nombres",
 }
 
 
@@ -142,8 +153,9 @@ class ToolsTab(QWidget):
         )
         right_layout.addWidget(self.log_area)
 
-        # ── INTERACTIVE MINI SHELL ──
-        shell_lay = QHBoxLayout()
+        # ── INTERACTIVE MINI SHELL ── (solo en "Opciones avanzadas": un analista no técnico no sabe qué escribir)
+        self.shell_box = QWidget()
+        shell_lay = QHBoxLayout(self.shell_box)
         shell_lay.setContentsMargins(0, 4, 0, 4)
         
         lbl_prompt = QLabel(">_")
@@ -151,7 +163,7 @@ class ToolsTab(QWidget):
         shell_lay.addWidget(lbl_prompt)
         
         self.txt_shell = QLineEdit()
-        self.txt_shell.setPlaceholderText("Terminal Interactiva: Envía comandos a la tool (Ej: ghunt login)")
+        self.txt_shell.setPlaceholderText("Terminal (avanzado): envía comandos a la herramienta, p. ej. ghunt login")
         self.txt_shell.setStyleSheet("background-color: #0c111d; color: #00ff66; font-family: monospace; border: 1px solid #1f2937; padding: 4px;")
         self.txt_shell.returnPressed.connect(self._on_shell_enter)
         shell_lay.addWidget(self.txt_shell)
@@ -173,7 +185,8 @@ class ToolsTab(QWidget):
         self.btn_shell_export.clicked.connect(self._export_shell_log)
         shell_lay.addWidget(self.btn_shell_export)
         
-        right_layout.addLayout(shell_lay)
+        right_layout.addWidget(self.shell_box)
+        self.shell_box.hide()
         self._shell_process = None
 
         # Progress bar
@@ -200,7 +213,7 @@ class ToolsTab(QWidget):
         self.btn_check.setEnabled(False)
         bot_lay.addWidget(self.btn_check)
 
-        self.btn_run = QPushButton("▶  Ejecutar Tool")
+        self.btn_run = QPushButton("▶  Ejecutar")
         self.btn_run.setObjectName("btnPrimary")
         self.btn_run.setCursor(Qt.PointingHandCursor)
         self.btn_run.clicked.connect(self._run_tool)
@@ -214,6 +227,10 @@ class ToolsTab(QWidget):
         bot_lay.addWidget(self.btn_stop)
 
         bot_lay.addStretch()
+        self.chk_advanced = QCheckBox("Opciones avanzadas")
+        self.chk_advanced.setToolTip("Muestra la terminal y los parámetros de consola (para usuarios técnicos)")
+        self.chk_advanced.toggled.connect(self.shell_box.setVisible)
+        bot_lay.addWidget(self.chk_advanced)
         right_layout.addLayout(bot_lay)
 
         splitter.addWidget(right_panel)
@@ -397,6 +414,7 @@ class ToolsTab(QWidget):
             item.setToolTip(st.reason + (f"\n\nCómo activarla:\n{st.fix}" if st.fix else ""))
             item.setData(Qt.UserRole, name)   # store clean name
             self.list_tools.addItem(item)
+        self.list_tools.scrollToTop()          # antes se abría desplazada a la mitad
 
     # ── Selection changed ─────────────────────────────────────────────────────
 
@@ -420,10 +438,8 @@ class ToolsTab(QWidget):
         self.btn_check.setEnabled(True)
         self.btn_guide.setEnabled(True)
 
-        # "Ejecutar" solo si tool lista Y hay caso abierto
-        self.btn_run.setEnabled(
-            tool.is_available and bool(self.app.active_case_id) and not self._running
-        )
+        # "Ejecutar" siempre pulsable: si no se puede, el clic explica por qué (antes estaba gris y sin aviso)
+        self.btn_run.setEnabled(not self._running)
 
         # Actualizar placeholder del mini-shell para guiar al usuario
         # Fill input with the actual command path so it works like a normal shell
@@ -493,13 +509,14 @@ class ToolsTab(QWidget):
             return
 
         self.log_area.clear()
-        diag = tool.diagnose_status()
+        from ..utils.tool_status import tool_status
+        st = tool_status(tool)
 
-        status   = diag["status"]
-        icon     = diag["icon"]
-        message  = diag["message"]
-        inst_cmd = diag["install_cmd"]
-        color    = _STATUS_COLORS.get(status, "#E0E6ED")
+        status   = st.code
+        icon     = st.icon
+        message  = st.reason
+        inst_cmd = st.fix
+        color    = st.color
 
         # Update status banner
         self.lbl_status_icon.setText(icon)
@@ -519,7 +536,7 @@ class ToolsTab(QWidget):
         # Log full diagnostic
         self.log_area.appendPlainText(f"{'─'*50}")
         self.log_area.appendPlainText(f"DIAGNÓSTICO: {t_name}")
-        self.log_area.appendPlainText(f"Estado : {icon} {status}")
+        self.log_area.appendPlainText(f"Estado : {icon} {st.label}")
         self.log_area.appendPlainText(f"Mensaje: {message}")
         if inst_cmd:
             self.log_area.appendPlainText(f"\nCOMO INSTALAR:\n{inst_cmd}")
@@ -529,13 +546,10 @@ class ToolsTab(QWidget):
                     "\n⚠️  Herramienta lista — abre un caso para poder ejecutarla."
                 )
             else:
-                self.log_area.appendPlainText("\n✅  Lista para ejecutar. Presiona ▶ Ejecutar Tool.")
+                self.log_area.appendPlainText("\n✅  Lista para ejecutar. Pulsa ▶ Ejecutar.")
         self.log_area.appendPlainText(f"{'─'*50}")
 
-        # Update run button state after diagnosis
-        self.btn_run.setEnabled(
-            status == "ready" and bool(self.app.active_case_id) and not self._running
-        )
+        self.btn_run.setEnabled(not self._running)
 
     # ── Show tool guide ───────────────────────────────────────────────────────
 
@@ -554,27 +568,28 @@ class ToolsTab(QWidget):
         lay.setSpacing(10)
         
         # Backend Description
-        lbl_desc = QLabel(f"<b>Operación Backend:</b><br>{tool.description}")
+        lbl_desc = QLabel(f"<b>Qué hace:</b><br>{tool.description}")
         lbl_desc.setWordWrap(True)
         lay.addWidget(lbl_desc)
         
         reqs = tool.requirements
         
         # Mandatory
-        mand_str = ", ".join(reqs.mandatory) if reqs.mandatory else "Ninguno"
-        lbl_mand = QLabel(f"<span style='color: #ff3333;'><b>Requisitos Obligatorios:</b></span> {mand_str}")
+        mand_str = ", ".join(_FIELD_WORDS.get(f, f) for f in reqs.mandatory) if reqs.mandatory else "Nada"
+        lbl_mand = QLabel(f"<span style='color: #ff3333;'><b>Qué necesita:</b></span> {mand_str} "
+                          f"<small>(añádelo en la pestaña Datos)</small>")
         lbl_mand.setWordWrap(True)
         lay.addWidget(lbl_mand)
         
         # Optional
-        opt_str = ", ".join(reqs.optional) if reqs.optional else "Ninguno"
-        lbl_opt = QLabel(f"<span style='color: #ffaa00;'><b>Mejoradores (Opcionales):</b></span> {opt_str}")
+        opt_str = ", ".join(_FIELD_WORDS.get(f, f) for f in reqs.optional) if reqs.optional else "Nada"
+        lbl_opt = QLabel(f"<span style='color: #ffaa00;'><b>Funciona mejor si además hay:</b></span> {opt_str}")
         lbl_opt.setWordWrap(True)
         lay.addWidget(lbl_opt)
         
         # Produces
-        prod_str = ", ".join(reqs.produces) if reqs.produces else "Datos crudos"
-        lbl_prod = QLabel(f"<span style='color: #00ff66;'><b>Datos Descubiertos:</b></span> {prod_str}")
+        prod_str = ", ".join(_FIELD_WORDS.get(str(f).lower(), str(f)) for f in reqs.produces) if reqs.produces else "Datos sin procesar"
+        lbl_prod = QLabel(f"<span style='color: #00ff66;'><b>Qué obtendrás:</b></span> {prod_str}")
         lbl_prod.setWordWrap(True)
         lay.addWidget(lbl_prod)
         
@@ -597,9 +612,15 @@ class ToolsTab(QWidget):
 
         items = self.list_tools.selectedItems()
         if not items:
+            self.app.toast.show("Elige una herramienta de la lista", kind="warning")
             return
         t_name = items[0].data(Qt.UserRole)
         tool = self.app.framework.tools.get(t_name)
+        from ..utils.tool_status import tool_status
+        st = tool_status(tool)
+        if not st.usable:
+            self.app.toast.show(f"{t_name}: {st.label}. Pulsa «Verificar Estado» para ver cómo activarla.", kind="warning")
+            return
 
         def _execute(selected_ids, extra_args=""):
             self._running = True
@@ -680,7 +701,7 @@ class ToolsTab(QWidget):
             modal_layout = QVBoxLayout(modal.content)
             
             # --- SECCION DATOS ---
-            modal_layout.addWidget(QLabel("1. Selecciona los datos objetivo:", modal.content))
+            modal_layout.addWidget(QLabel("Marca los datos que quieres analizar (se analizan uno por uno):", modal.content))
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             content = QWidget()
@@ -696,18 +717,18 @@ class ToolsTab(QWidget):
             scroll.setWidget(content)
             modal_layout.addWidget(scroll)
             
-            # --- SECCION EXTRA ARGS ---
-            lbl_extra = QLabel("2. Opcional: Parámetros personalizados / Console Flags:", modal.content)
-            lbl_extra.setStyleSheet("margin-top: 10px; color: #ffaa00; font-weight: bold;")
-            modal_layout.addWidget(lbl_extra)
-            
+            # --- SECCION EXTRA ARGS --- (solo con "Opciones avanzadas")
             txt_extra = QLineEdit()
-            txt_extra.setPlaceholderText("Ej: -b all -l 500")
-            txt_extra.setStyleSheet(
-                "background-color: #0c111d; color: #00ff66; "
-                "padding: 8px; border-radius: 4px; border: 1px solid #1f2937;"
-            )
-            modal_layout.addWidget(txt_extra)
+            if self.chk_advanced.isChecked():
+                lbl_extra = QLabel("2. Opcional (avanzado): parámetros de consola para la herramienta:", modal.content)
+                lbl_extra.setStyleSheet("margin-top: 10px; color: #ffaa00; font-weight: bold;")
+                modal_layout.addWidget(lbl_extra)
+                txt_extra.setPlaceholderText("Ej: -b all -l 500")
+                txt_extra.setStyleSheet(
+                    "background-color: #0c111d; color: #00ff66; "
+                    "padding: 8px; border-radius: 4px; border: 1px solid #1f2937;"
+                )
+                modal_layout.addWidget(txt_extra)
             
             def _on_confirm():
                 selected_ids = [td_id for chk, td_id in checkboxes.items() if chk.isChecked()]

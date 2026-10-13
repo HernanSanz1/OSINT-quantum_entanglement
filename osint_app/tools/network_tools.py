@@ -252,6 +252,7 @@ class TheHarvesterTool(OSINTTool):
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=300,
                 encoding="utf-8", errors="replace",
                 env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             out = (p.stdout or "")[:MAX_OUTPUT_BYTES]
             

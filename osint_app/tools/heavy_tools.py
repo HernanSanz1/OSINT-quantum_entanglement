@@ -54,6 +54,8 @@ def _run(tool, cmd: List[str], timeout: int = 300, stdin_text: str = "") -> tupl
             encoding="utf-8",
             errors="replace",
             env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
+            # Sin esto, en Windows cada herramienta abría una ventana de consola encima de la app
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if stdin_text:
             try:
@@ -527,7 +529,8 @@ class MaigretTool(OSINTTool):
                 # Con datos extraídos del perfil (nombre, ubicación…) la cuenta es más verificable
                 relevance_score=85 if ids else 70,
                 raw_data={"site": site, "url": url, "tags": (info.get("site") or {}).get("tags", [])},
-                extra_data={"username": username, "platform": site, **{f"profile_{k}": v for k, v in ids.items()}},
+                extra_data={"username": username, "platform": site, "tags": (info.get("site") or {}).get("tags", []),
+                            **{f"profile_{k}": v for k, v in ids.items()}},
             ))
         self._report_progress(f"✅ Maigret: {len(results)} perfiles encontrados")
         return results
