@@ -2,7 +2,7 @@
 
 ## Tres Modulos Principales
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                      SENTINEL UNIFIED                           │
 ├─────────────────┬─────────────────┬─────────────────────────────┤
@@ -57,7 +57,7 @@
 > eliminaron). En `sentinel_unified/modules/` solo queda `cti/`, que usa la
 > pestaña CTI de `osint_app`.
 
-```
+```text
 sentinel_unified/
 ├── core/
 │   ├── models.py          # Case, Target, Asset, IOC, Correlation
@@ -142,7 +142,7 @@ sentinel_unified/
 
 ## Integracion CTI ↔ OSINT
 
-- Si perfilo a "Juan Perez" y encuentro su email juan@empresa.com
+- Si perfilo a "Juan Perez" y encuentro su email `juan@empresa.com`
 - Puedo correlacionar empresa.com con IOCs de CTI
 - Si empresa.com aparece en un feed de phishing → alerta
 - Si Juan es admin de un servidor comprometido → vincular actor
