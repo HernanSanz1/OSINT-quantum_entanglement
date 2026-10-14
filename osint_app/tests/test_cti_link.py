@@ -91,7 +91,7 @@ def test_load_skips_bad_lines(tmp_path):
     assert len(CtiStore.load(p)) == 2
 
 
-@pytest.mark.skipif(not cti_link.DEFAULT_STORE.exists(),
+@pytest.mark.skipif(not cti_link.default_store_path().exists(),
                     reason="almacén CTI real no presente")
 def test_real_store_loads_and_indexes():
     s = CtiStore.load()

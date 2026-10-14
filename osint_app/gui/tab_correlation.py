@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
 
-from .components import SentinelModal
+from .components import DevNotice, SentinelModal
 from ..correlation_engine import CorrelationEngine, EntityExtractor, CrossCaseCorrelator
 
 
@@ -102,6 +102,10 @@ class CorrelationTab(QWidget):
         header.addWidget(self.lbl_correlations)
 
         layout.addLayout(header)
+        layout.addWidget(DevNotice(
+            "La correlación dentro de un caso y entre casos ya funciona, pero el cruce con CTI (noticias y "
+            "vulnerabilidades) todavía es básico: solo compara CVE y nombres de tecnología. Revisa los resultados "
+            "antes de usarlos en un informe."))
 
         # ── Actions Bar ────────────────────────────────────────────────────────
         actions = QHBoxLayout()

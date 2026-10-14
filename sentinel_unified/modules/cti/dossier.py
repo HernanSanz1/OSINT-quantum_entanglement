@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import re
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -16,7 +17,8 @@ from fuentes import FUENTES
 from seleccion_cliente import internal_client_selection
 
 BASE_DIR = Path(__file__).resolve().parent
-STORE = BASE_DIR / "store"
+# SENTINEL pasa la carpeta de datos del usuario (fuera del proyecto); sin ella, la de siempre.
+STORE = Path(os.environ.get("SENTINEL_CTI_STORE") or BASE_DIR / "store")
 ITEMS = STORE / "items.jsonl"
 ENRICH = STORE / "enriquecimiento.json"
 CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.I)
@@ -461,7 +463,7 @@ def previous_report_keys(period_id: str, start: dt.datetime | None = None, end: 
 
 
 def previously_published_cves(period_id: str, start: dt.datetime | None = None, end: dt.datetime | None = None) -> set[str]:
-    reports_dir = BASE_DIR.parent / "reports" / "cti-altel"
+    reports_dir = Path(os.environ.get("SENTINEL_CTI_REPORTS") or BASE_DIR.parent / "reports" / "cti-altel")
     target = re.sub(r"\D", "", period_id)
     prior_by_stamp: dict[str, list[Path]] = {}
     for path in reports_dir.glob("AltelThreatIntell_*.html"):

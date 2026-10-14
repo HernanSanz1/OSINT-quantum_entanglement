@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import html
 import json
+import os
 import re
 import urllib.error
 import urllib.request
@@ -15,8 +16,9 @@ from pathlib import Path
 from exposicion_cve import extract_cvss, severity_from_cvss
 
 BASE_DIR = Path(__file__).resolve().parent
-STORE = BASE_DIR / "store"
-REPORTS = BASE_DIR.parent / "reports" / "cti-altel"
+# SENTINEL pasa la carpeta de datos del usuario (fuera del proyecto); sin ella, la de siempre.
+STORE = Path(os.environ.get("SENTINEL_CTI_STORE") or BASE_DIR / "store")
+REPORTS = Path(os.environ.get("SENTINEL_CTI_REPORTS") or BASE_DIR.parent / "reports" / "cti-altel")
 CVSS_CACHE = STORE / "cvss-v3-cache.json"
 
 

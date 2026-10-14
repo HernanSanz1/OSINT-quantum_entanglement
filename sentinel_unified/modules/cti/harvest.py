@@ -26,7 +26,8 @@ from pathlib import Path
 from fuentes import ENRIQUECIMIENTO, FUENTES
 
 BASE_DIR = Path(__file__).resolve().parent
-STORE = BASE_DIR / "store"
+# SENTINEL pasa la carpeta de datos del usuario (fuera del proyecto); sin ella, la de siempre.
+STORE = Path(os.environ.get("SENTINEL_CTI_STORE") or BASE_DIR / "store")
 ITEMS = STORE / "items.jsonl"
 ENRICH = STORE / "enriquecimiento.json"
 STATE = STORE / "state.json"

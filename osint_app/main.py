@@ -49,6 +49,10 @@ def main():
         from osint_app.gui.app import OSINTGUI
         
         app = QApplication(sys.argv)
+
+        # Noticias CTI: la primera vez se copian desde la carpeta del proyecto a la de datos del usuario
+        from osint_app.utils.data_paths import prepare_cti_store
+        prepare_cti_store()
         
         # Load QSS styles
         qss_path = os.path.join(os.path.dirname(__file__), 'gui', 'style.qss')

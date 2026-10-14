@@ -67,3 +67,8 @@ osint_results/
 /duck.*.txt
 /logistica_ecuador.txt
 /amass_passive.txt
+
+# Noticias CTI, dossiers por cliente y boletines: datos de cada usuario. Se guardan en su carpeta de datos
+# (%LOCALAPPDATA%\SENTINEL\cti, ver osint_app/utils/data_paths.py); estas rutas antiguas solo quedan como respaldo.
+sentinel_unified/modules/cti/store/
+sentinel_unified/modules/reports/cti-altel/

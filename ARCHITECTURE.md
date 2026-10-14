@@ -108,7 +108,7 @@ sentinel_unified/
 │
 ├── store/                 # Datos persistentes
 │   ├── sentinel.db        # SQLite principal
-│   ├── items.jsonl        # Items CTI raw
+│   ├── (items CTI)        # ya no aquí: %LOCALAPPDATA%\SENTINEL\cti (osint_app/utils/data_paths.py)
 │   └── cache/             # Cache de herramientas
 │
 └── main.py

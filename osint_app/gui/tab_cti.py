@@ -18,23 +18,29 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
 
-from .components import SentinelModal
+from .components import DevNotice, SentinelModal
+from ..utils.data_paths import active_cti_store, cti_reports_dir
 
 
-# Rutas del modulo CTI
+# Código del módulo CTI (los datos van aparte, en la carpeta del usuario: ver active_cti_store)
 CTI_BASE = Path(__file__).parent.parent.parent / "sentinel_unified" / "modules" / "cti"
-CTI_STORE = Path(__file__).parent.parent / "data"
 
 
-def _run_cti_script(cti_path: Path, script: str, args: list, timeout: int) -> subprocess.CompletedProcess:
+def _run_cti_script(cti_path: Path, script: str, args: list, timeout: int,
+                    store: Path = None, reports: Path = None) -> subprocess.CompletedProcess:
     """Ejecuta un script del módulo CTI con el mismo Python que SENTINEL.
 
     - sys.executable: "python3" no existe en Windows (abre la Microsoft Store).
     - os.pathsep: el separador de PYTHONPATH es ";" en Windows y ":" en Linux/Mac.
     - UTF-8 en ambos sentidos: los scripts imprimen acentos y emojis, y la
       consola de Windows (cp1252) no los admite.
+    - store/reports: carpetas de datos fuera del proyecto (sin ellas, el script usa las de dentro).
     """
     env = os.environ.copy()
+    if store:
+        env["SENTINEL_CTI_STORE"] = str(store)
+    if reports:
+        env["SENTINEL_CTI_REPORTS"] = str(reports)
     env["PYTHONPATH"] = os.pathsep.join(p for p in (str(cti_path), env.get("PYTHONPATH", "")) if p)
     env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
@@ -56,9 +62,10 @@ class HarvestThread(QThread):
     finished_ok = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, cti_path):
+    def __init__(self, cti_path, store=None):
         super().__init__()
         self.cti_path = cti_path
+        self.store = Path(store) if store else cti_path / "store"
 
     def run(self):
         try:
@@ -67,18 +74,24 @@ class HarvestThread(QThread):
                 self.error.emit(f"No existe {harvest_py}")
                 return
 
-            self.progress.emit("Iniciando recoleccion de feeds CTI...")
+            self.progress.emit("Descargando de las fuentes y guardando lo nuevo (tarda 1–3 minutos)...")
 
-            result = _run_cti_script(self.cti_path, "harvest.py", ["--dry-run"], timeout=120)
+            # Antes iba en modo prueba (--dry-run) para no tocar archivos versionados dentro del proyecto;
+            # ahora los datos están en la carpeta del usuario y se guardan de verdad.
+            result = _run_cti_script(self.cti_path, "harvest.py", [], timeout=300, store=self.store)
 
             if result.returncode == 0:
-                self.progress.emit(result.stdout)
-                self.finished_ok.emit({"output": result.stdout})
+                audit = {}
+                try:
+                    audit = json.loads((self.store / "harvest-run.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    pass
+                self.finished_ok.emit({"output": result.stdout, "audit": audit})
             else:
                 self.error.emit(result.stderr or "Error desconocido")
 
         except subprocess.TimeoutExpired:
-            self.error.emit("Timeout: la recoleccion tardo mas de 2 minutos")
+            self.error.emit("Timeout: la recolección tardó más de 5 minutos")
         except Exception as e:
             self.error.emit(str(e))
 
@@ -89,9 +102,10 @@ class DossierThread(QThread):
     finished_ok = Signal(str)
     error = Signal(str)
 
-    def __init__(self, cti_path, client="", fecha=""):
+    def __init__(self, cti_path, client="", fecha="", store=None, reports=None):
         super().__init__()
         self.cti_path = cti_path
+        self.store, self.reports = store, reports
         self.client = client
         self.fecha = fecha
 
@@ -110,7 +124,8 @@ class DossierThread(QThread):
             if self.fecha:
                 args.extend(["--fecha", self.fecha])
 
-            result = _run_cti_script(self.cti_path, "dossier.py", args, timeout=180)
+            result = _run_cti_script(self.cti_path, "dossier.py", args, timeout=180,
+                                     store=self.store, reports=self.reports)
 
             if result.returncode == 0:
                 self.progress.emit(result.stdout)
@@ -130,9 +145,11 @@ class RenderThread(QThread):
     finished_ok = Signal(str)  # Emite la ruta del HTML generado
     error = Signal(str)
 
-    def __init__(self, cti_path):
+    def __init__(self, cti_path, store=None, reports=None):
         super().__init__()
         self.cti_path = cti_path
+        self.store = Path(store) if store else cti_path / "store"
+        self.reports = reports
 
     def run(self):
         try:
@@ -147,13 +164,14 @@ class RenderThread(QThread):
             # "dossier-2026-W39.json" va después de "dossier-2026-W39-CER.json":
             # renderizaba el global aunque acabaras de generar el de un cliente.
             # Se le pasa explícitamente el dossier generado más recientemente.
-            dossiers = sorted((self.cti_path / "store").glob("dossier-*.json"),
+            dossiers = sorted(self.store.glob("dossier-*.json"),
                               key=lambda f: f.stat().st_mtime)
             if not dossiers:
                 self.error.emit("No hay dossier para renderizar. Genera uno primero.")
                 return
             self.progress.emit(f"Dossier: {dossiers[-1].name}")
-            result = _run_cti_script(self.cti_path, "render.py", [str(dossiers[-1])], timeout=120)
+            result = _run_cti_script(self.cti_path, "render.py", [str(dossiers[-1])], timeout=120,
+                                     store=self.store, reports=self.reports)
 
             if result.returncode == 0:
                 # El output es la ruta del HTML generado
@@ -203,13 +221,16 @@ class CTITab(QWidget):
         header.addWidget(self.combo_client)
 
         layout.addLayout(header)
+        layout.addWidget(DevNotice(
+            "Recoger noticias, generar el dossier y ver el boletín ya funcionan. Falta cruzar estas amenazas con "
+            "los casos de forma automática, y Validar y Enviar aún no están programados."))
 
         # ── Actions Bar ────────────────────────────────────────────────────────
         actions = QHBoxLayout()
 
-        self.btn_harvest = QPushButton("📡  Comprobar fuentes")
-        self.btn_harvest.setToolTip("Consulta las fuentes de noticias y vulnerabilidades y cuenta lo disponible "
-                                    "(modo prueba: todavía no guarda lo nuevo)")
+        self.btn_harvest = QPushButton("📡  Actualizar noticias")
+        self.btn_harvest.setToolTip("Descarga noticias y vulnerabilidades nuevas de las fuentes públicas y las guarda "
+                                    "en tu carpeta de datos (no en la del programa)")
         self.btn_harvest.setObjectName("btnPrimary")
         self.btn_harvest.clicked.connect(self._on_harvest)
         actions.addWidget(self.btn_harvest)
@@ -344,7 +365,7 @@ class CTITab(QWidget):
         self._set_busy(True)
         self._log("Consultando las fuentes de inteligencia de amenazas...")
 
-        self.harvest_thread = HarvestThread(CTI_BASE)
+        self.harvest_thread = HarvestThread(CTI_BASE, store=active_cti_store())
         self.harvest_thread.progress.connect(self._log)
         self.harvest_thread.finished_ok.connect(self._on_harvest_done)
         self.harvest_thread.error.connect(self._on_error)
@@ -352,13 +373,19 @@ class CTITab(QWidget):
 
     def _on_harvest_done(self, result):
         self._set_busy(False)
-        try:
-            data = json.loads(result.get("output", "") or "{}")
-            self._log(f"✅ {data.get('fuentes', '?')} fuentes consultadas: {data.get('items', '?')} noticias y "
-                      f"vulnerabilidades disponibles. Modo prueba: aún no se guardan; la tabla muestra las ya guardadas.")
-        except (ValueError, AttributeError):
-            self._log("✅ Fuentes comprobadas")
-        self.app.toast.show("Fuentes CTI comprobadas", kind="success")
+        audit = result.get("audit") or {}
+        sources = audit.get("sources") or {}
+        if audit.get("finished"):
+            self._log(f"✅ {len(sources)} fuentes consultadas: {audit.get('total_leidos', 0)} noticias y "
+                      f"vulnerabilidades leídas, {audit.get('total_nuevos', 0)} nuevas guardadas.")
+            empty = [name for name, st in sources.items() if not st.get("leidos")]
+            if empty:
+                self._log("   Sin resultados esta vez: " + ", ".join(empty))
+            for err in audit.get("errors") or []:
+                self._log(f"   ⚠️ {err.get('fuente')}: no respondió ({str(err.get('error'))[:120]})")
+        else:
+            self._log("✅ Recolección terminada")
+        self.app.toast.show(f"Noticias CTI actualizadas: {audit.get('total_nuevos', 0)} nuevas", kind="success")
         self._load_items()
 
     def _on_dossier(self):
@@ -367,7 +394,7 @@ class CTITab(QWidget):
         self._set_busy(True)
         self._log(f"Generando dossier para {client}...")
 
-        self.dossier_thread = DossierThread(CTI_BASE, client)
+        self.dossier_thread = DossierThread(CTI_BASE, client, store=active_cti_store(), reports=cti_reports_dir())
         self.dossier_thread.progress.connect(self._log)
         self.dossier_thread.finished_ok.connect(self._on_dossier_done)
         self.dossier_thread.error.connect(self._on_error)
@@ -398,7 +425,7 @@ class CTITab(QWidget):
         self._set_busy(True)
         self._log("Renderizando HTML del boletin...")
 
-        self.render_thread = RenderThread(CTI_BASE)
+        self.render_thread = RenderThread(CTI_BASE, store=active_cti_store(), reports=cti_reports_dir())
         self.render_thread.progress.connect(self._log)
         self.render_thread.finished_ok.connect(self._on_render_done)
         self.render_thread.error.connect(self._on_error)
@@ -445,7 +472,7 @@ class CTITab(QWidget):
         Antes la tabla quedaba siempre vacía con el aviso "Carga de items en desarrollo".
         """
         self.table.setRowCount(0)
-        items_file = CTI_BASE / "store" / "items.jsonl"
+        items_file = active_cti_store() / "items.jsonl"
         if not items_file.exists():
             self.lbl_items.setText("📰  Noticias y vulnerabilidades guardadas: ninguna todavía")
             return

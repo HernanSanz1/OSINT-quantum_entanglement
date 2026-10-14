@@ -255,7 +255,12 @@ se comprobó en el código y se reprodujo antes de corregirlo.
   resultados. Solución estable: una clave de pago de Brave Search (unos 5 USD de crédito al mes) o espaciar los
   perfilamientos.
 - **Docker Desktop puede caerse** ("unable to start"); SearXNG depende de él. Hay que reiniciar Docker Desktop.
-- **CTI:** "Comprobar fuentes" sigue en modo prueba porque el almacén de noticias está dentro del repositorio; antes
-  de guardar cosechas reales hay que moverlo a la carpeta de datos del usuario.
-- **Decisiones pendientes del usuario:** ocultar o no CTI y Correlación hasta que aporten más, y si el correo
-  personal de una figura pública (sacado de commits públicos) debe salir en la ficha.
+- **CTI (resuelto el 14-10-2026):** las noticias, los dossiers y los boletines estaban dentro del repositorio y git
+  los vigilaba. Ahora se copian una sola vez a `%LOCALAPPDATA%\SENTINEL\cti` (la carpeta antigua no se toca y git
+  deja de vigilarla), y "Actualizar noticias" guarda de verdad. Prueba real: copia idéntica (misma huella MD5);
+  recolección de 15 fuentes en 20 s con 2.029 noticias nuevas (el boletín de Microsoft de octubre) y 6.053 en total,
+  sin duplicados; dossier W42 para CER (59 hallazgos, 8 explotados) y su boletín, todo en la carpeta nueva y sin un
+  solo cambio en la del proyecto.
+- **Decisiones del usuario (14-10-2026):** el correo se mantiene en la ficha (todo dato es útil en OSINT; la ficha
+  lleva el aviso de confidencialidad). CTI y Correlación siguen visibles con un aviso "EN DESARROLLO" hasta que el
+  cruce caso ↔ CTI esté terminado.

@@ -1,7 +1,7 @@
 """
 Puente CTI ↔ casos.
 
-Lee el almacén del módulo CTI (sentinel_unified/modules/cti/store/items.jsonl)
+Lee el almacén del módulo CTI (items.jsonl en la carpeta de datos del usuario; ver data_paths.active_cti_store)
 y lo indexa para poder cruzar las entidades de un caso de investigación con la
 inteligencia de amenazas: ¿un CVE del caso está siendo explotado? ¿el objetivo
 usa una tecnología con vulnerabilidades activas?
@@ -20,11 +20,12 @@ logger = logging.getLogger(__name__)
 
 CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.I)
 
-# Ruta por defecto del almacén CTI, relativa a la raíz del repo.
-DEFAULT_STORE = (
-    Path(__file__).resolve().parent.parent
-    / "sentinel_unified" / "modules" / "cti" / "store" / "items.jsonl"
-)
+
+
+def default_store_path() -> Path:
+    """items.jsonl de la carpeta CTI en uso (la del usuario; la antigua del proyecto si aún no se copió)."""
+    from .utils.data_paths import CTI_ITEMS, active_cti_store
+    return active_cti_store() / CTI_ITEMS
 
 
 def _truthy(value) -> bool:
@@ -108,7 +109,7 @@ class CtiStore:
     @classmethod
     def load(cls, path: Path = None) -> "CtiStore":
         """Carga items.jsonl. Si no existe o falla, devuelve un almacén vacío."""
-        path = Path(path) if path else DEFAULT_STORE
+        path = Path(path) if path else default_store_path()
         items: List[Dict] = []
         if not path.exists():
             logger.warning(f"CTI store no encontrado en {path}")

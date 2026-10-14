@@ -4,7 +4,7 @@
 Uso:
     python scripts/cti_metrics.py
 
-Lee el almacén CTI real (sentinel_unified/modules/cti/store/items.jsonl) y el
+Lee el almacén CTI real (items.jsonl en la carpeta de datos del usuario) y el
 inventario de tecnologías por cliente, y mide cuántas de las tecnologías que usa
 cada cliente tienen CVEs activos en la inteligencia de amenazas.
 """

@@ -6,6 +6,7 @@ del sistema (en Windows, %LOCALAPPDATA%\\SENTINEL). Se puede cambiar con la vari
 """
 import logging
 import os
+import shutil
 import sqlite3
 import sys
 from pathlib import Path
@@ -124,3 +125,91 @@ def resolve_db_path() -> Path:
         if legacy.exists() and not new_path.exists():
             return legacy
     return new_path
+
+
+# ── Noticias y vulnerabilidades del módulo CTI ───────────────────────────────────────────────────────────────────────
+# Antes se guardaban dentro del proyecto (sentinel_unified/modules/cti/store) y git las vigilaba como si fueran código:
+# cada recolección ensuciaba el repositorio, un "git pull" chocaba con los datos de cada usuario y los dossiers por
+# cliente viajaban con el código. Ahora van a la carpeta de datos del usuario, junto a la base de casos.
+CTI_ITEMS = "items.jsonl"
+
+
+def legacy_cti_store() -> Path:
+    """Dónde guardaba las noticias CTI la versión anterior: dentro de la carpeta del proyecto."""
+    return Path(__file__).resolve().parent.parent.parent / "sentinel_unified" / "modules" / "cti" / "store"
+
+
+def legacy_cti_reports() -> Path:
+    return Path(__file__).resolve().parent.parent.parent / "sentinel_unified" / "modules" / "reports" / "cti-altel"
+
+
+def cti_store_dir() -> Path:
+    return data_dir() / "cti"
+
+
+def cti_reports_dir() -> Path:
+    """Boletines HTML generados a partir de los dossiers."""
+    return cti_store_dir() / "boletines"
+
+
+def active_cti_store() -> Path:
+    """Carpeta CTI a usar: la nueva; la antigua solo si la nueva aún no tiene noticias (copia no hecha o fallida)."""
+    new_dir = cti_store_dir()
+    legacy = legacy_cti_store()
+    if not (new_dir / CTI_ITEMS).exists() and (legacy / CTI_ITEMS).exists():
+        return legacy
+    return new_dir
+
+
+def _copy_checked(src: Path, dst: Path) -> None:
+    tmp = dst.with_name(dst.name + ".tmp")
+    tmp.unlink(missing_ok=True)
+    shutil.copy2(src, tmp)
+    if tmp.stat().st_size != src.stat().st_size:
+        tmp.unlink(missing_ok=True)
+        raise OSError(f"la copia de {src.name} no tiene el mismo tamaño que el original")
+    os.replace(tmp, dst)
+
+
+def migrate_legacy_cti_store(new_dir: Optional[Path] = None, legacy: Optional[Path] = None,
+                             legacy_reports: Optional[Path] = None) -> int:
+    """Copia las noticias CTI antiguas (y sus boletines) a la carpeta nueva, una sola vez. Nunca borra ni mueve nada.
+
+    Devuelve cuántos archivos copió (0 si no había nada que hacer). items.jsonl se copia el último: si existe en la
+    carpeta nueva es que la copia terminó entera. Lanza OSError si falla (se sigue leyendo la carpeta antigua).
+    """
+    new_dir = Path(new_dir) if new_dir else cti_store_dir()
+    legacy = Path(legacy) if legacy else legacy_cti_store()
+    legacy_reports = Path(legacy_reports) if legacy_reports else legacy_cti_reports()
+    if (new_dir / CTI_ITEMS).exists() or not (legacy / CTI_ITEMS).exists():
+        return 0
+    if legacy.resolve() == new_dir.resolve():
+        return 0
+    new_dir.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    if legacy_reports.is_dir():
+        reports = new_dir / "boletines"
+        reports.mkdir(exist_ok=True)
+        for src in legacy_reports.iterdir():
+            if src.is_file() and not (reports / src.name).exists():
+                _copy_checked(src, reports / src.name)
+                copied += 1
+    for src in sorted((f for f in legacy.iterdir() if f.is_file()), key=lambda f: f.name == CTI_ITEMS):
+        if src.name.endswith(".tmp") or (new_dir / src.name).exists():
+            continue
+        _copy_checked(src, new_dir / src.name)
+        copied += 1
+    return copied
+
+
+def prepare_cti_store() -> Path:
+    """Al arrancar: copia las noticias antiguas si hace falta y devuelve la carpeta CTI que se va a usar."""
+    try:
+        copied = migrate_legacy_cti_store()
+        if copied:
+            logger.info(f"Noticias CTI copiadas a {cti_store_dir()} ({copied} archivos). La carpeta antigua "
+                        f"{legacy_cti_store()} NO se tocó: bórrala cuando confirmes que todo está bien.")
+    except OSError as e:
+        logger.error(f"No se pudieron copiar las noticias CTI a {cti_store_dir()} ({type(e).__name__}: {e}). "
+                     f"Se sigue usando {legacy_cti_store()}.")
+    return active_cti_store()

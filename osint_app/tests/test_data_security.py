@@ -151,6 +151,50 @@ def test_tests_never_touch_the_real_data_dir():
     assert "sentinel-tests-" in str(data_dir())
 
 
+# ── noticias CTI fuera del proyecto ──────────────────────────────────────────
+
+def _legacy_cti(tmp_path):
+    legacy, reports = tmp_path / "proyecto" / "store", tmp_path / "proyecto" / "cti-altel"
+    legacy.mkdir(parents=True)
+    reports.mkdir(parents=True)
+    (legacy / "items.jsonl").write_text('{"id": "a"}\n{"id": "b"}\n', encoding="utf-8")
+    (legacy / "dossier-2026-W39-CER.json").write_text("{}", encoding="utf-8")
+    (reports / "AltelThreatIntell_2026W39.html").write_text("<html></html>", encoding="utf-8")
+    return legacy, reports
+
+
+def test_cti_store_is_copied_once_and_the_original_is_kept(tmp_path):
+    legacy, reports = _legacy_cti(tmp_path)
+    new_dir = tmp_path / "local" / "cti"
+    assert data_paths.migrate_legacy_cti_store(new_dir, legacy, reports) == 3
+    assert (new_dir / "items.jsonl").read_bytes() == (legacy / "items.jsonl").read_bytes()
+    assert (new_dir / "dossier-2026-W39-CER.json").exists()
+    assert (new_dir / "boletines" / "AltelThreatIntell_2026W39.html").exists()
+    assert (legacy / "items.jsonl").exists() and (reports / "AltelThreatIntell_2026W39.html").exists()
+    (new_dir / "items.jsonl").write_text('{"id": "nuevo"}\n', encoding="utf-8")
+    assert data_paths.migrate_legacy_cti_store(new_dir, legacy, reports) == 0     # nunca pisa lo nuevo
+    assert (new_dir / "items.jsonl").read_text(encoding="utf-8") == '{"id": "nuevo"}\n'
+
+
+def test_cti_reads_the_old_folder_until_the_copy_is_complete(tmp_path, monkeypatch):
+    legacy, _ = _legacy_cti(tmp_path)
+    new_dir = tmp_path / "local" / "cti"
+    monkeypatch.setattr(data_paths, "cti_store_dir", lambda: new_dir)
+    monkeypatch.setattr(data_paths, "legacy_cti_store", lambda: legacy)
+    assert data_paths.active_cti_store() == legacy
+    new_dir.mkdir(parents=True)
+    (new_dir / "dossier-2026-W39-CER.json").write_text("{}", encoding="utf-8")   # copia a medias: sin items.jsonl
+    assert data_paths.active_cti_store() == legacy
+    (new_dir / "items.jsonl").write_text("", encoding="utf-8")
+    assert data_paths.active_cti_store() == new_dir
+
+
+def test_cti_store_lives_in_the_user_data_dir_not_in_the_project():
+    project = Path(data_paths.__file__).resolve().parent.parent.parent
+    assert data_paths.cti_store_dir().parent == data_dir()
+    assert project not in data_paths.cti_store_dir().parents
+
+
 # ── baúl de claves cifrado ───────────────────────────────────────────────────
 
 class FakeDpapi:

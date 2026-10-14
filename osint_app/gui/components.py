@@ -76,6 +76,15 @@ class SectionDivider(QLabel):
         super().__init__(text)
         self.setStyleSheet("color: #00d4ff; font-weight: bold; border-bottom: 1px solid #00507a;")
 
+class DevNotice(QLabel):
+    """Franja de aviso para una pestaña que funciona pero aún no está terminada (se quita cuando lo esté)."""
+    def __init__(self, text):
+        super().__init__("🚧  EN DESARROLLO — " + text)
+        self.setObjectName("devNotice")
+        self.setWordWrap(True)
+        self.setStyleSheet("background-color: #3a2a00; color: #ffcc66; border: 1px solid #806000; "
+                           "border-radius: 4px; padding: 6px 10px;")
+
 class EmptyState(QWidget):
     def __init__(self, parent, icon, title, subtitle):
         super().__init__(parent)
