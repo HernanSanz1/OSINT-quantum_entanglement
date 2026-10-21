@@ -21,14 +21,17 @@ La idea central del proyecto es la **correlación** (perfilamiento + CTI). Los m
 (Ollama/ChatGPT/Venice) se **quitaron a propósito** el 25-09-2026; no volver a meterlos.
 
 Historia: el proyecto lo empezó Hernán (HernanSanz1, primeros 4 commits del 22 y 23-09-2026). Desde el 24-09-2026
-How1 (edupera91-cpu) trabaja en esta **copia privada**, con ayuda de Claude Code: unos 55 commits más.
+How1 (edupera91-cpu) trabajó en una copia privada, con ayuda de Claude Code: unos 58 commits más, subidos al
+original el 21-10-2026.
 
 ## 2. Reglas obligatorias (no negociables)
 
 1. **Responder siempre en español** y explicar en palabras sencillas: los usuarios no son programadores.
-2. **Nunca hacer push al repositorio de Hernán** (`HernanSanz1/OSINT-quantum_entanglement`). Solo a este repositorio
-   privado (`edupera91-cpu/OSINT-quantum_entanglement`). Mejor en una **rama propia** (`paul/...`) y pull request a
-   `main`; no reescribir la historia de `main` (nada de `push --force`).
+2. **Repositorios:** el original es `HernanSanz1/OSINT-quantum_entanglement` (público). Desde el 21-10-2026, con
+   autorización de Hernán, los cambios se suben también ahí; la copia de trabajo es
+   `edupera91-cpu/OSINT-quantum_entanglement` (privada). Subir **solo cuando la persona lo pida**, mejor en una **rama
+   propia** (`paul/...`) con pull request a `main`, y **nunca** reescribir la historia de `main` (nada de
+   `push --force`). Antes de subir al original, comprobar que no hay commits suyos sin combinar.
 3. **Claves y contraseñas:** Claude **nunca** las escribe, ni las pide por el chat, ni las pone en el código, en
    archivos de prueba o en commits. Cada persona guarda **sus propias claves** con
    `env\Scripts\python.exe -m osint_app.main --set-key NOMBRE` (las pide ocultas y las guarda cifradas). Las claves
