@@ -139,18 +139,23 @@ El perfilamiento depende de **buscar a la persona en la web**, y ese fue el fall
 3. **Brave Search API** era la solución oficial, pero **desde febrero de 2026 ya no es gratis**: pide tarjeta y da
    unos 5 USD de crédito al mes (unas 1.000 consultas). Queda como opción (`--set-key BraveSearch`); el usuario aún
    no la ha contratado.
-4. Se eligió **SearXNG**, un metabuscador libre que cada uno aloja: reparte las consultas entre Google, Bing, Qwant y
-   Yahoo, así que un bloqueo no deja la búsqueda en cero. No hay servidor compartido, así que se ejecuta en
+4. Se eligió **SearXNG**, un metabuscador libre que cada uno aloja: reparte las consultas entre varios buscadores,
+   así que un bloqueo no deja la búsqueda en cero. Plantilla 3 (21-10-2026): **Yandex, Yep, Yahoo y Bing** son los que
+   responden desde Ecuador; Google, Qwant y DuckDuckGo dan "403" desde la primera consulta y Brave ya no se puede leer
+   (medido con un SearXNG de prueba aparte, buscador por buscador). No hay servidor compartido, así que se ejecuta en
    **Docker en el propio equipo** (solo accesible desde ese equipo).
 5. **Medido con 10 búsquedas reales de personas:** con SearXNG, 94 resultados relevantes en 21 s; sin él, 74 en 49 s.
 
 Orden de búsqueda actual (`utils/search_engine.py`): Brave (si hay clave) → SearXNG (si está configurado) → Yahoo y
 modo "auto" de `ddgs` → DuckDuckGo. Cada motor que falla se aparta un tiempo ("enfriamiento"; SearXNG, 120 s).
 
-**Sigue pasando:** tras muchas búsquedas seguidas, incluso los motores internos de SearXNG se bloquean. Por eso ahora
-la app **avisa con "⚠️ búsqueda web INCOMPLETA"** (en el registro, en el resumen y en la ficha) en vez de dar 0 en
-silencio, y no guarda en caché las búsquedas incompletas. Recomendación: **espaciar los perfilamientos unos 3 minutos**
-o contratar Brave.
+**Filtro de pertinencia:** si la consulta lleva un nombre de 2+ palabras entre comillas, se descartan los resultados
+que no lo mencionan (sin tildes, también en la URL). Bing ignora las comillas cuando el nombre lleva tildes y con
+`"Jefferson Pérez"` devolvía páginas de Thomas Jefferson.
+
+Si aun así los buscadores se bloquean, la app **avisa con "⚠️ búsqueda web INCOMPLETA"** (registro, resumen y ficha)
+en vez de dar 0 en silencio, y no guarda en caché las búsquedas incompletas. Prueba real del 21-10-2026: 3 perfiles
+seguidos sin pausa, 28 consultas, **0 incompletas** y el 98 % de los resultados sobre la persona buscada.
 
 ## 7. Herramientas: estado actual
 
@@ -236,7 +241,9 @@ pausó a mitad. Quedan midudev, Glenda Morejón, Gonzalo Plata, Correlación, Re
      con el Python de SENTINEL (`utils/python_cli.py`) y, si algo se bloquea, se explica en palabras sencillas.
      Prueba real: Maigret con midudev, 38 perfiles en 66 s, 0 bloqueos. Pendiente menor: Maigret da como perfil una
      búsqueda de Stack Overflow (`users/filter?search=`).
-  3. La búsqueda queda **incompleta incluso en el primer perfil del día**: revisar los motores de SearXNG.
+  3. **CORREGIDO (21-10):** búsqueda incompleta desde el primer perfil. Solo 2-3 buscadores de SearXNG respondían
+     (Bing, Yahoo, Google CSE) y Bing metía basura con nombres con tildes. Plantilla 3 con Yandex y Yep + filtro de
+     pertinencia: 3 perfiles seguidos sin pausa, 0 de 28 consultas incompletas.
   4. Sitios sensibles no ocultos: `cracked.ax` (foro de cracking) y `cavalier.hudsonrock.com` (credenciales robadas).
   5. Homónimos sin marcar: GitHub de otras personas llamadas igual (Jefferson Pérez) salen en "Cuentas" de la ficha.
   6. El canal oficial de YouTube (sacado de Wikidata) se marcó como "otra persona"; Forbes Colombia sobre Luisito,

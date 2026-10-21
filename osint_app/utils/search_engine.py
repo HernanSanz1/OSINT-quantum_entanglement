@@ -24,6 +24,7 @@ import random
 import re
 import threading
 import time
+import unicodedata
 import urllib.parse
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
@@ -77,6 +78,39 @@ class SearchOutcome:
                     ". Esto NO significa que no haya información. Espera unos minutos o añade una clave de "
                     "Brave Search (python -m osint_app.main --set-key BraveSearch).")
         return "ningún buscador encontró resultados para esta consulta"
+
+
+# ── pertinencia: el nombre buscado entre comillas tiene que aparecer ─────────
+# Visto en real (21-10-2026): Bing, dentro de SearXNG, ignora las comillas cuando el nombre lleva tildes y con
+# "Jefferson Pérez" marchista devolvía 10 páginas de Thomas Jefferson; con "Glenda Morejón", 10 de 10 sin relación.
+# Esos resultados ocupaban sitio y podían acabar como candidatos o como "homónimos".
+_QUOTED = re.compile(r'(?<![:\w])"([^"]+)"')
+
+
+def _fold(text: str) -> str:
+    return unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode("ascii").lower()
+
+
+def required_words(query: str) -> List[str]:
+    """Palabras (sin tildes) del primer nombre de 2+ palabras entre comillas, fuera de grupos ( … OR … ); [] si no hay.
+
+    Solo nombres: un correo, teléfono, usuario o ruta entre comillas puede aparecer escrito de otra forma en el
+    resultado, y filtrarlos quitaría aciertos.
+    """
+    for match in _QUOTED.finditer(query or ""):
+        before = query[:match.start()]
+        if before.count("(") > before.count(")"):
+            continue
+        words = _fold(match.group(1)).split()
+        if len(words) >= 2 and all(w.isalpha() for w in words):
+            return words
+    return []
+
+
+def mentions_all(hit: Dict[str, str], words: List[str]) -> bool:
+    """True si el título, el fragmento o la URL del resultado contienen todas las palabras (sin tildes)."""
+    text = _fold(" ".join((hit.get("title", ""), hit.get("snippet", ""), urllib.parse.unquote(hit.get("url", "")))))
+    return all(w in text for w in words)
 
 
 # ── estado compartido entre hilos ─────────────────────────────────────────────
@@ -341,6 +375,7 @@ def web_search(query: str, max_results: int = 10, engines: Optional[List[str]] =
     `engines` limita los motores a usar (por nombre), en el orden por defecto.
     """
     outcome = SearchOutcome()
+    words = required_words(query)
     for name, fn in _engines():
         if engines and name not in engines:
             continue
@@ -349,7 +384,9 @@ def web_search(query: str, max_results: int = 10, engines: Optional[List[str]] =
             continue
         _wait_turn(name)
         try:
-            hits = [_unmerge(h) for h in fn(query, max_results) if h.get("url", "").startswith(("http://", "https://"))]
+            # A SearXNG se le piden más (no cuesta otra consulta) por si el filtro de pertinencia descarta algunos
+            asked = max_results * 3 if (words and name == "searxng") else max_results
+            hits = [_unmerge(h) for h in fn(query, asked) if h.get("url", "").startswith(("http://", "https://"))]
         except EngineBlocked as e:
             _cool_down(name, str(e))
             outcome.attempts.append((name, f"bloqueado: {e}"))
@@ -358,6 +395,12 @@ def web_search(query: str, max_results: int = 10, engines: Optional[List[str]] =
             _cool_down(name, type(e).__name__)
             outcome.attempts.append((name, f"error: {type(e).__name__}"))
             continue
+        if words:
+            relevant = [h for h in hits if mentions_all(h, words)]
+            if len(relevant) < len(hits):
+                logger.info(f"Búsqueda: {name} dio {len(hits) - len(relevant)} resultados que no mencionan "
+                            f"{' '.join(words)}; descartados")
+            hits = relevant
         if hits:
             outcome.hits, outcome.engine = hits[:max_results], name
             outcome.attempts.append((name, "ok"))

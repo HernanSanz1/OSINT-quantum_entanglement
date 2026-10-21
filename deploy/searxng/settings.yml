@@ -1,4 +1,4 @@
-# Plantilla de SearXNG para SENTINEL (búsqueda web propia, sin captcha de un solo buscador). sentinel-template: 2
+# Plantilla de SearXNG para SENTINEL (búsqueda web propia, sin captcha de un solo buscador). sentinel-template: 3
 # NO contiene secretos: scripts/searxng_local.py la copia a la carpeta de datos del usuario
 # (%LOCALAPPDATA%\SENTINEL\searxng en Windows) y cambia __SECRET__ por una clave aleatoria.
 use_default_settings: true
@@ -35,3 +35,12 @@ engines:
     disabled: false
   - name: yahoo
     disabled: false
+  # Versión 3 (21-10-2026), medido desde Ecuador con 3 figuras públicas: Yandex dio 40 de 40 resultados sobre la
+  # persona y Yep 20 de 20; Google, Qwant y DuckDuckGo responden "403 acceso denegado" desde la primera consulta y
+  # Brave ya no se puede leer (cambió su página). Se dejan Google, Qwant y DuckDuckGo por si funcionan en otra red.
+  - name: yandex
+    disabled: false
+  - name: yep
+    disabled: false
+  - name: brave
+    disabled: true
