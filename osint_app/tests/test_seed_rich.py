@@ -212,8 +212,8 @@ def test_real_tab_seed_without_extras_is_the_same_as_before():
 
 def test_real_tab_candidate_table_keeps_rows_visible_on_a_laptop_screen():
     # Evaluación 2 (14-10-2026): en 1536×864 los detalles y el registro, de altura fija, dejaban la tabla en 0 px.
+    tab = _real_tab()                           # primero: se salta donde Qt no puede abrirse (p. ej. Ubuntu sin libEGL)
     from PySide6.QtWidgets import QApplication, QTableWidgetItem
-    tab = _real_tab()
     table = tab.candidates_table
     table.setRowCount(20)
     for row in range(20):
