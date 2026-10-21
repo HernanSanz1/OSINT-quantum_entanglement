@@ -229,10 +229,13 @@ pausó a mitad. Quedan midudev, Glenda Morejón, Gonzalo Plata, Correlación, Re
   Jefferson Pérez y Luisito; los avisos de búsqueda incompleta funcionan; están confirmados como corregidos todos los
   puntos de la evaluación 1 que se repitieron.
 - **Fallos nuevos por corregir (prioridad alta primero):**
-  1. **Grave: la tabla de candidatos de Perfilamiento se ve con altura 0** (solo la cabecera, sin filas). Es una
-     regresión de la interfaz.
-  2. **Maigret bloqueado por Windows**: "WinError 4551: una directiva de Control de aplicaciones bloqueó este archivo"
-     (Smart App Control / WDAC). Hay que detectarlo y explicarlo en palabras sencillas.
+  1. **CORREGIDO (21-10):** la tabla de candidatos se veía con altura 0 en pantallas de portátil (1366×768,
+     1536×864). Ahora tabla, detalles y registro van en un separador arrastrable (de 0 a 5 filas en 1536×864).
+  2. **CORREGIDO (21-10):** Windows (Smart App Control) bloqueaba `env\Scripts\maigret.exe`, el lanzador sin firma
+     que crea pip (WinError 4551; 18 bloqueos en el registro CodeIntegrity). Maigret, Sherlock y Holehe se lanzan ahora
+     con el Python de SENTINEL (`utils/python_cli.py`) y, si algo se bloquea, se explica en palabras sencillas.
+     Prueba real: Maigret con midudev, 38 perfiles en 66 s, 0 bloqueos. Pendiente menor: Maigret da como perfil una
+     búsqueda de Stack Overflow (`users/filter?search=`).
   3. La búsqueda queda **incompleta incluso en el primer perfil del día**: revisar los motores de SearXNG.
   4. Sitios sensibles no ocultos: `cracked.ax` (foro de cracking) y `cavalier.hudsonrock.com` (credenciales robadas).
   5. Homónimos sin marcar: GitHub de otras personas llamadas igual (Jefferson Pérez) salen en "Cuentas" de la ficha.

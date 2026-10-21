@@ -24,8 +24,10 @@ def program(monkeypatch):
     def install(output="", code=0, installed=("sherlock", "holehe", "ghunt", "instaloader", "snscrape")):
         state["calls"].clear()                                    # cada instalación empieza con el registro vacío
         monkeypatch.setattr(social_tools.shutil, "which", lambda name: f"/bin/{name}" if name in installed else None)
+        monkeypatch.setattr(social_tools, "pip_tool_command",
+                            lambda name: [f"/bin/{name}"] if name in installed else [])
 
-        def fake_run(cmd, timeout=300):
+        def fake_run(cmd, timeout=300, label=""):
             state["calls"].append((cmd, timeout))
             return output, code
         monkeypatch.setattr(social_tools, "_run", fake_run)

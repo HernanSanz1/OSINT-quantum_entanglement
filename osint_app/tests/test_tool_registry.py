@@ -12,6 +12,8 @@ from osint_app.tools.heavy_tools import (
 def nothing_installed(tmp_path, monkeypatch):
     """Simula un equipo sin binarios en el PATH y con ~/go/bin vacío."""
     monkeypatch.setattr(heavy_tools.shutil, "which", lambda name: None)
+    from osint_app.utils import python_cli
+    monkeypatch.setattr(python_cli, "_entry_point_command", lambda name: [])   # ni instaladas en el Python de SENTINEL
     monkeypatch.setattr(heavy_tools.Path, "home", classmethod(lambda cls: tmp_path))
     monkeypatch.setattr(heavy_tools, "SPIDERFOOT_PATH", tmp_path / "spiderfoot" / "sf.py")
     return tmp_path

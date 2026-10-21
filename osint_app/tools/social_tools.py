@@ -6,6 +6,7 @@ import subprocess, shutil, logging, shlex, re
 from typing import List
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
 from ..core.base_tool import OSINTTool
+from ..utils.python_cli import blocked_by_windows, pip_tool_command
 from ..utils.sanitizer import sanitize_snippet
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ def child_env() -> dict:
     return {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
 
 
-def _run(cmd: List[str], timeout: int = 300):
+def _run(cmd: List[str], timeout: int = 300, label: str = ""):
     # encoding explícito: con text=True a secas Windows decodifica en cp1252 y la barra de progreso de Holehe
     # ("█") hacía caer la lectura (UnicodeDecodeError) y luego la herramienta (stdout None). Verificado en real.
     try:
@@ -47,6 +48,9 @@ def _run(cmd: List[str], timeout: int = 300):
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         logger.warning(f"Subprocess error ({cmd[0]}): {e}")
         return "", -1
+    except OSError as e:                                    # p. ej. Windows bloqueó el programa (WinError 4551)
+        logger.warning(f"Subprocess error ({cmd[0]}): {e}")
+        return blocked_by_windows(label or cmd[0], e) or f"❌ No se pudo abrir {cmd[0]}: {e}", -1
 
 
 class SherlockTool(OSINTTool):
@@ -61,7 +65,7 @@ class SherlockTool(OSINTTool):
             )
         )
         self.is_heavy = True
-        self.is_available = shutil.which("sherlock") is not None
+        self.is_available = bool(pip_tool_command("sherlock"))
         self._binary_names = ["sherlock"]
         self._install_cmd = (
             "Guía de Instalación Sherlock (Entorno Virtual):\n"
@@ -74,27 +78,28 @@ class SherlockTool(OSINTTool):
         )
 
     def check_available(self) -> bool:
-        self.is_available = shutil.which("sherlock") is not None
+        self.is_available = bool(pip_tool_command("sherlock"))
         return self.is_available
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
-        cmd_path = shutil.which("sherlock")
-        if not cmd_path:
+        # Con el Python de SENTINEL y no con sherlock.exe, que Windows puede bloquear (ver utils/python_cli)
+        command = pip_tool_command("sherlock")
+        if not command:
             return []
         username = _clean_username(query_params.username)
         if not username:
             self._report_progress("⚠️ Sherlock: el usuario está vacío o no es válido (no puede empezar por '-').")
             return []
 
-        cmd_args = [cmd_path, username]
+        cmd_args = command + [username]
         if query_params.extra_args:
             cmd_args.extend(shlex.split(query_params.extra_args))
         else:
             cmd_args.extend(["--print-found", "--timeout", "10"])
 
-        out, code = _run(cmd_args)
+        out, code = _run(cmd_args, label="Sherlock")
         if code == -1:
-            self._report_progress("⚠️ Sherlock: se agotó el tiempo (5 min) o no se pudo ejecutar; no hay resultados.")
+            self._report_progress(out or "⚠️ Sherlock: se agotó el tiempo (5 min) o no se pudo ejecutar; no hay resultados.")
         results = []
         for line in out.splitlines():
             line = line.strip()
@@ -122,7 +127,7 @@ class HoleheTool(OSINTTool):
                 hint="Necesita un email. Extráelo de Google Dorks o Hunter.io.",
             )
         )
-        self.is_available = shutil.which("holehe") is not None
+        self.is_available = bool(pip_tool_command("holehe"))
         self._binary_names = ["holehe"]
         self._install_cmd = (
             "Guía de Instalación Holehe (Entorno Virtual):\n"
@@ -135,20 +140,20 @@ class HoleheTool(OSINTTool):
         )
 
     def check_available(self) -> bool:
-        self.is_available = shutil.which("holehe") is not None
+        self.is_available = bool(pip_tool_command("holehe"))
         return self.is_available
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
-        cmd_path = shutil.which("holehe")
-        if not cmd_path:
+        command = pip_tool_command("holehe")             # sin holehe.exe: ver utils/python_cli
+        if not command:
             return []
         email = _clean_email(query_params.email)
         if not email:
             self._report_progress("⚠️ Holehe: el correo está vacío o no es válido.")
             return []
-        out, code = _run([cmd_path, email, "--only-used"])
+        out, code = _run(command + [email, "--only-used"], label="Holehe")
         if code == -1:
-            self._report_progress("⚠️ Holehe: se agotó el tiempo o no se pudo ejecutar; no hay resultados.")
+            self._report_progress(out or "⚠️ Holehe: se agotó el tiempo o no se pudo ejecutar; no hay resultados.")
         results = []
         for line in out.splitlines():
             line = line.strip()

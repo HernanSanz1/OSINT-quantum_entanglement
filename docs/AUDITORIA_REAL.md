@@ -264,3 +264,12 @@ se comprobó en el código y se reprodujo antes de corregirlo.
 - **Decisiones del usuario (14-10-2026):** el correo se mantiene en la ficha (todo dato es útil en OSINT; la ficha
   lleva el aviso de confidencialidad). CTI y Correlación siguen visibles con un aviso "EN DESARROLLO" hasta que el
   cruce caso ↔ CTI esté terminado.
+
+## 10. Segunda evaluación como usuario final (en curso, 14-10-2026)
+
+La evaluación quedó a mitad; sus fallos se corrigen a medida que salen.
+
+| Hallazgo | Causa real | Corrección | Verificación real |
+|---|---|---|---|
+| La tabla de candidatos no mostraba ninguna fila | Detalles y registro con altura fija: en 1366×768 y 1536×864 se quedaban todo el espacio | Separador vertical arrastrable; detalles y registro en una caja con pestañas; mínimo de unas 4 filas; filas alternas oscuras; el título ocupa el espacio libre | Ventana real a 1536×790: de 0 a 5 filas; a 1920×1050, 13. Test que falla con el código anterior |
+| Maigret daba 0 resultados con "WinError 4551" | Smart App Control bloquea `env\Scripts\maigret.exe`, el lanzador sin firma que crea pip (18 bloqueos en el registro CodeIntegrity del 14-10) | Maigret, Sherlock y Holehe se lanzan con el Python de SENTINEL, que está firmado (`utils/python_cli.py`); si Windows bloquea algo, se explica en palabras sencillas | Maigret con midudev: 38 perfiles en 66 s y 0 bloqueos nuevos; Maigret y Sherlock arrancan de verdad por esa vía en los tests |

@@ -13,6 +13,7 @@ from typing import List
 from pathlib import Path
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
 from ..core.base_tool import OSINTTool
+from ..utils.python_cli import blocked_by_windows, pip_tool_command
 from ..utils.sanitizer import (
     sanitize_shell_arg, sanitize_snippet, validate_domain, validate_ip,
 )
@@ -109,6 +110,10 @@ def _run(tool, cmd: List[str], timeout: int = 300, stdin_text: str = "") -> tupl
     except FileNotFoundError:
         logger.warning(f"Binary not found: {cmd[0]}")
         return f"❌ Error: Binario '{cmd[0]}' no alojado localmente o no está en el PATH.", -1
+    except OSError as e:
+        logger.error(f"_run({cmd[0]}): {e}")
+        blocked = blocked_by_windows(getattr(tool, "name", cmd[0]), e)
+        return blocked or f"❌ No se pudo abrir {cmd[0]}: {e}", -1
     except Exception as e:
         logger.error(f"_run({cmd[0]}): {e}")
         return f"❌ Excepción crítica de Python en {cmd[0]}: {e}", -1
@@ -126,6 +131,8 @@ def _tool_failed(tool, label: str, out: str, rc: int) -> bool:
         tool._report_progress(f"🛑 {label} cancelado por el usuario.")
     elif out.startswith("⚠️"):
         tool._report_progress(f"⚠️ {label}: se agotó el tiempo; no hay resultados.")
+    elif out.startswith(f"❌ {label}:"):                 # ya es un mensaje completo (p. ej. bloqueo de Windows)
+        tool._report_progress(out[:400])
     else:
         tool._report_progress(f"❌ {label}: {out[:150]}")
     return True
@@ -472,7 +479,7 @@ class MaigretTool(OSINTTool):
         )
 
     def check_available(self) -> bool:
-        return shutil.which("maigret") is not None
+        return bool(pip_tool_command("maigret"))
 
     # Sitios que maigret marca como "Claimed" pero que no son un perfil (la portada del servicio)
     _NOT_A_PROFILE = ("https://discord.com", "https://discord.com/")
@@ -494,7 +501,8 @@ class MaigretTool(OSINTTool):
             return []
         self._report_progress(f"🔍 Maigret: buscando @{username} en los {self.MAX_SITES} sitios principales…")
         with tempfile.TemporaryDirectory(prefix="sentinel_maigret_") as folder:
-            cmd = ["maigret", username, "--json", "simple", "--folderoutput", folder, "--timeout", "15",
+            # Con el Python de SENTINEL y no con maigret.exe: Windows bloqueaba ese .exe sin firma (ver python_cli)
+            cmd = pip_tool_command("maigret") + [username, "--json", "simple", "--folderoutput", folder, "--timeout", "15",
                    "--top-sites", str(self.MAX_SITES), "--dns-resolver", "threaded", "--no-progressbar", "--no-color"]
             out, rc = _run(self, cmd, timeout=420)
             if _tool_failed(self, "Maigret", out, rc):
