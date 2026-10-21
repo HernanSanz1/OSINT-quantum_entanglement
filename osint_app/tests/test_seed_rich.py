@@ -208,3 +208,22 @@ def test_real_tab_seed_without_extras_is_the_same_as_before():
     tab.input_name.setText("Juan Perez")
     seed = tab._seed_from_inputs()
     assert seed.company is None and seed.city == "" and seed.aliases == [] and seed.extra_emails == []
+
+
+def test_real_tab_candidate_table_keeps_rows_visible_on_a_laptop_screen():
+    # Evaluación 2 (14-10-2026): en 1536×864 los detalles y el registro, de altura fija, dejaban la tabla en 0 px.
+    from PySide6.QtWidgets import QApplication, QTableWidgetItem
+    tab = _real_tab()
+    table = tab.candidates_table
+    table.setRowCount(20)
+    for row in range(20):
+        table.setItem(row, 1, QTableWidgetItem(f"Candidato {row}"))
+    tab.resize(1300, 560)                       # lo que le queda a la pestaña en una pantalla de portátil
+    tab.show()
+    QApplication.processEvents()
+    assert table.viewport().height() >= 3 * table.rowHeight(0)
+    tab.candidates_data = [{"url": f"https://ejemplo.com/{i}", "source": "WebSearch", "confidence": 60,
+                            "matched": [], "snippet": ""} for i in range(20)]
+    table.selectRow(2)
+    assert tab.info_tabs.currentIndex() == tab.TAB_DETAILS   # al elegir un candidato se ven sus detalles
+    tab.close()

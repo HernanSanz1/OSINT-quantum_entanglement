@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QTableWidget, QTableWidgetItem, QPlainTextEdit,
     QProgressBar, QFrame, QSplitter, QHeaderView, QGroupBox, QTextEdit, QComboBox,
-    QListWidget, QListWidgetItem, QAbstractItemView
+    QListWidget, QListWidgetItem, QAbstractItemView, QTabWidget
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
@@ -445,7 +445,7 @@ class ProfilingTab(QWidget):
         self.btn_reject_selected.clicked.connect(self._on_reject_candidate)
         cand_header.addWidget(self.btn_reject_selected)
 
-        self.btn_refine = QPushButton("🔄 Refinar Busqueda")
+        self.btn_refine = QPushButton("🔄 Refinar búsqueda")
         self.btn_refine.clicked.connect(self._on_refine)
         cand_header.addWidget(self.btn_refine)
 
@@ -455,21 +455,30 @@ class ProfilingTab(QWidget):
         self.candidates_table = QTableWidget()
         self.candidates_table.setColumnCount(6)
         self.candidates_table.setHorizontalHeaderLabels([
-            "Fuente", "Titulo", "Coincidencias", "Confianza", "Categoria", "Estado"
+            "Fuente", "Título", "Coincidencias", "Confianza", "Categoría", "Estado"
         ])
-        self.candidates_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # El título ocupa el espacio libre; el resto, lo justo (antes todas iguales y el título salía cortado)
+        cand_header_view = self.candidates_table.horizontalHeader()
+        cand_header_view.setSectionResizeMode(QHeaderView.ResizeToContents)
+        cand_header_view.setSectionResizeMode(1, QHeaderView.Stretch)
+        self.candidates_table.verticalHeader().setVisible(False)
         self.candidates_table.setSelectionBehavior(QTableWidget.SelectRows)
         # Doble clic abre el enlace: sin esto, también ponía la celda en modo edición
         self.candidates_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.candidates_table.setAlternatingRowColors(True)
         self.candidates_table.itemSelectionChanged.connect(self._on_candidate_selected)
         self.candidates_table.itemDoubleClicked.connect(self._on_open_url)
-        right_layout.addWidget(self.candidates_table, 1)   # la tabla se queda con el espacio libre
+        # Tabla, detalles y registro en un separador vertical arrastrable. Antes los detalles y el registro tenían
+        # altura fija y, en pantallas de portátil (1366×768, 1536×864), la tabla se quedaba con 0 px: no se veía
+        # ninguna fila aunque hubiera 50 candidatos.
+        self.candidates_table.setMinimumHeight(170)       # unas 4 filas siempre visibles
+        self.results_split = QSplitter(Qt.Vertical)
+        self.results_split.setChildrenCollapsible(False)
+        self.results_split.addWidget(self.candidates_table)
 
-        # Candidate Details
-        details_group = QGroupBox("📋 Detalles del Candidato")
-        details_group.setStyleSheet("QGroupBox { font-weight: bold; color: #8A9AA9; }")
-        details_layout = QVBoxLayout(details_group)
+        # Detalles y registro comparten una caja con pestañas: en pantallas bajas cada cabecera de caja quitaba
+        # filas a la tabla.
+        self.info_tabs = QTabWidget()
 
         self.candidate_details = QTextEdit()
         self.candidate_details.setReadOnly(True)
@@ -477,15 +486,7 @@ class ProfilingTab(QWidget):
             "background-color: #0c111d; color: #E0E6ED; "
             "font-family: monospace; font-size: 11px;"
         )
-        self.candidate_details.setMaximumHeight(120)
-        details_layout.addWidget(self.candidate_details)
-
-        right_layout.addWidget(details_group)
-
-        # Log Area
-        log_group = QGroupBox("📋 Log de Ejecucion")
-        log_group.setStyleSheet("QGroupBox { font-weight: bold; color: #8A9AA9; }")
-        log_layout = QVBoxLayout(log_group)
+        self.candidate_details.setMinimumHeight(40)
 
         self.log_area = QPlainTextEdit()
         self.log_area.setReadOnly(True)
@@ -493,16 +494,22 @@ class ProfilingTab(QWidget):
             "background-color: #0c111d; color: #8A9AA9; "
             "font-family: monospace; font-size: 10px;"
         )
-        self.log_area.setMaximumHeight(140)
-        log_layout.addWidget(self.log_area)
+        self.log_area.setMinimumHeight(40)
 
-        right_layout.addWidget(log_group)
+        self.TAB_DETAILS = self.info_tabs.addTab(self.candidate_details, "📋 Detalles del candidato")
+        self.TAB_LOG = self.info_tabs.addTab(self.log_area, "📜 Registro")
+        self.info_tabs.setCurrentIndex(self.TAB_LOG)
+        self.results_split.addWidget(self.info_tabs)
+        self.results_split.setStretchFactor(0, 1)          # el espacio que sobra, para la tabla
+        self.results_split.setStretchFactor(1, 0)
+        self.results_split.setSizes([420, 160])
+        right_layout.addWidget(self.results_split, 1)
 
         splitter.addWidget(right_panel)
         splitter.setSizes([400, 700])
 
         # Status
-        self.lbl_status = QLabel("Estado: Listo para nueva busqueda")
+        self.lbl_status = QLabel("Estado: Listo para una nueva búsqueda")
         self.lbl_status.setStyleSheet("color: #00ff66;")
         layout.addWidget(self.lbl_status)
 
@@ -651,6 +658,7 @@ class ProfilingTab(QWidget):
         self.candidates_data = []
         self.search_warnings = {}
         self.candidate_details.clear()
+        self.info_tabs.setCurrentIndex(self.TAB_LOG)        # durante la búsqueda interesa el registro
         self.lbl_stats.setText("(buscando…)")
         self._log(f"Herramientas marcadas: {len(selected)} ({', '.join(selected)})")
 
@@ -775,13 +783,14 @@ class ProfilingTab(QWidget):
 {aviso}
 Fuente: {c['source']}
 Confianza: {c['confidence']:.0f}%
-Categoria: {c.get('category', 'N/A')}
+Categoría: {c.get('category', 'N/A')}
 Coincidencias: {', '.join(c['matched']) if c['matched'] else 'Ninguna'}
 
-Snippet:
-{c['snippet'][:300] if c['snippet'] else 'Sin descripcion'}
+Fragmento:
+{c['snippet'][:300] if c['snippet'] else 'Sin descripción'}
 """
             self.candidate_details.setPlainText(details)
+            self.info_tabs.setCurrentIndex(self.TAB_DETAILS)
 
     def _on_open_url(self, item):
         """Abrir URL del candidato en el navegador."""

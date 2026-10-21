@@ -204,6 +204,8 @@ QTableWidget, QTreeWidget {
     gridline-color: transparent;
     color: #E0E6ED;
     padding: 8px;
+    /* filas alternas oscuras: sin esto Qt usaba el gris claro del sistema y el texto claro no se leía */
+    alternate-background-color: #0F1726;
 }
 QTableWidget::item, QTreeWidget::item {
     padding: 8px;
