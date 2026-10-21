@@ -11,6 +11,9 @@ logging.basicConfig(
 
 
 def main():
+    # La consola de Windows (cp1252) no admite los emojis de --check-tools y --keys: se caía con UnicodeEncodeError
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="OSINT Framework v2")
     parser.add_argument("--cli", action="store_true", help="Run in CLI mode (no GUI)")
     parser.add_argument("--check-tools", action="store_true",
