@@ -147,6 +147,8 @@ def _host_of(url: str) -> str:
 
 # "Username Generation": la lista de variantes que se generan para probar no es un hallazgo (salía en el top 10)
 NON_CANDIDATE_CATEGORIES = {"Aviso", "Error", "Config Error", "Alerta", "Sin resultado", "Username Generation"}
+# Cuentas y web oficiales que da Wikidata de la ficha identificada sin dudas: nunca por debajo de esto
+OFFICIAL_CONFIDENCE = 85.0
 
 
 class ProfilerEngine:
@@ -210,9 +212,10 @@ class ProfilerEngine:
         def forward(message: str):
             if any(mark in str(message) for mark in ("⚠️", "❌", "🛑")):
                 self._log(f"    {message}")
-                if "⚠️" in str(message) and "incomplet" in str(message).lower():
+                if "⚠️" in str(message) and "búsqueda web INCOMPLETA" in str(message):
                     # Se guardan para la ficha: una búsqueda bloqueada no debe parecer "no hay nada". Solo los de
-                    # resultado incompleto (no, p. ej., "Wikidata: 2 personas con ese nombre")
+                    # búsqueda web incompleta (no "Wikidata: 2 personas con ese nombre", ni el de Maigret "muchos
+                    # sitios fallaron por red o DNS", que salía en todos los perfiles: siguen en el registro)
                     self.warnings[tool_name] = str(message).replace("⚠️", "").strip()
         return forward
 
@@ -616,6 +619,13 @@ class ProfilerEngine:
                     warning = homonyms.warning_text(signals)
                     if signals:
                         confidence = max(0.0, confidence - homonyms.total_penalty(signals))
+                    extra = sr.extra_data if isinstance(sr.extra_data, dict) else {}
+                    if sr.source_tool == "Wikidata" and (extra.get("platform") or extra.get("official_site")):
+                        # Cuenta o web oficial de la ficha que Wikidata identificó sin dudas. Puntuada como cualquier
+                        # resultado, un canal de YouTube (UCECJDeK0…) o una web (jeffersonperez.com) no llevan el
+                        # nombre y bajaban a 50 y 25: la ficha los daba por "otra persona" (prueba real 2026-10-21).
+                        confidence = max(confidence, OFFICIAL_CONFIDENCE)
+                        extra = {**extra, "official": True}
 
                     candidate = Candidate(
                         source_tool=tool_result.tool_name,
@@ -628,7 +638,7 @@ class ProfilerEngine:
                         raw_data=sr.raw_data if sr.raw_data else {},
                         user_verdict='pending',
                         warning=warning,
-                        extra_data=sr.extra_data if isinstance(sr.extra_data, dict) else {},
+                        extra_data=extra,
                     )
                     all_candidates.append(candidate)
 

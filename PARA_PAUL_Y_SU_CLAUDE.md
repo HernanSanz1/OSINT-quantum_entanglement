@@ -245,9 +245,14 @@ pausó a mitad. Quedan midudev, Glenda Morejón, Gonzalo Plata, Correlación, Re
      (Bing, Yahoo, Google CSE) y Bing metía basura con nombres con tildes. Plantilla 3 con Yandex y Yep + filtro de
      pertinencia: 3 perfiles seguidos sin pausa, 0 de 28 consultas incompletas.
   4. Sitios sensibles no ocultos: `cracked.ax` (foro de cracking) y `cavalier.hudsonrock.com` (credenciales robadas).
-  5. Homónimos sin marcar: GitHub de otras personas llamadas igual (Jefferson Pérez) salen en "Cuentas" de la ficha.
-  6. El canal oficial de YouTube (sacado de Wikidata) se marcó como "otra persona"; Forbes Colombia sobre Luisito,
-     también, porque "menciona Colombia".
+  5. **CORREGIDO (21-10):** homónimos en "Cuentas" y cuentas suyas en "otra persona". Las cuentas y la web oficiales
+     de Wikidata ya no bajan de 85 y salen como "Oficial"; el mismo usuario que una cuenta suya (reypalomo_) se queda
+     con una nota; un perfil sin nada del nombre (LinkedIn "net-worth-fever") pasa a menciones; con < 40 % y solo el
+     nombre (GitHub "jefferson-quezada") pasa a "otra persona" con el motivo (`person_report._sort_accounts`).
+     Verificado con perfiles reales de Jefferson Pérez, Boscán y Luisito. La franja "Búsqueda incompleta" de la ficha
+     ya solo recoge la búsqueda web (el aviso de DNS de Maigret salía en todos los perfiles).
+  6. Pendiente: Forbes Colombia sobre Luisito marcado por "menciona Colombia" (no se repitió el 21-10); Maigret avisa
+     en todos los perfiles de "muchos sitios fallaron por red o DNS"; es.linkedin.com se toma como "de España".
   7. Menores: la barra de estado inferior no se actualiza al cambiar de caso; la columna de estado de Herramientas
      corta el texto; jerga en las guías (RDAP, DKIM, "note"); faltan tildes en "busqueda" y "Ejecucion"; tooltip de
      Hunter con un comando de consola; la tabla CTI sale vacía hasta refrescar.

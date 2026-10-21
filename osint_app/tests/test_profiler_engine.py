@@ -323,3 +323,32 @@ def test_second_round_timeout_keeps_partial_results():
     new = eng.run_second_round(_Seed(name="Juan Perez"), ["otro_usuario"], timeout_per_tool=1)
     assert {(r.tool_name, r.status) for r in new} == {("GitHubOSINT:otro_usuario", "timeout"), ("Sherlock:otro_usuario", "ok")}
     assert len(eng.results) == 2
+
+
+def test_wikidata_official_accounts_keep_a_high_score():
+    # Real (2026-10-21): el YouTube oficial de Luisito (canal UCECJDeK0…) bajaba a 50 y jeffersonperez.com a 25:
+    # sin el nombre en la URL, la ficha los daba por "otra persona"
+    from osint_app.profiler_engine import OFFICIAL_CONFIDENCE, SeedData, ToolResult
+    yt = _SR(title="YouTube oficial de Luisito Comunica: UCECJDeK0MNapZbpaOzxrUPA",
+             url="https://www.youtube.com/channel/UCECJDeK0MNapZbpaOzxrUPA", snippet="", source_tool="Wikidata",
+             category="Social Media", relevance_score=90,
+             extra_data={"name": "Luisito Comunica", "platform": "YouTube", "username": "UCECJDeK0MNapZbpaOzxrUPA"})
+    web = _SR(title="Web oficial de Jefferson Pérez", url="http://jeffersonperez.com/", snippet="",
+              source_tool="Wikidata", category="Web", relevance_score=85, extra_data={"official_site": True})
+    other = _SR(title="Un blog", url="https://blog.ejemplo.com/x", snippet="", source_tool="WebSearch",
+                category="Web", relevance_score=40)
+    eng = _engine_with_results([ToolResult(tool_name="Wikidata", status="ok", results=[yt, web]),
+                                ToolResult(tool_name="WebSearch", status="ok", results=[other])])
+    cands = {c.url: c for c in eng.extract_candidates(SeedData(name="Luis Arturo Villar Sudek"), min_confidence=0)}
+    for url in (yt.url, web.url):
+        assert cands[url].confidence >= OFFICIAL_CONFIDENCE and cands[url].extra_data["official"] is True
+    assert "official" not in cands[other.url].extra_data
+
+
+def test_only_web_search_warnings_reach_the_ficha_banner():
+    eng = _engine_with_results([])
+    eng.warnings = {}
+    eng._tool_message_forwarder("WebSearch")("⚠️ WebSearch: búsqueda web INCOMPLETA — 2 de 6 consultas no se pudieron hacer")
+    eng._tool_message_forwarder("Maigret")("⚠️ Maigret: muchos sitios fallaron por red o DNS; el resultado puede estar incompleto.")
+    eng._tool_message_forwarder("Wikidata")("⚠️ Wikidata: 2 personas con ese nombre")
+    assert list(eng.warnings) == ["WebSearch"]

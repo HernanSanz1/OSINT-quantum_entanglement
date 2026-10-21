@@ -952,7 +952,9 @@ Fragmento:
 
         seed = self._seed_from_inputs()
         seed_dict = {"name": seed.name, "context": seed.context, "country": seed.country, "city": seed.city,
-                     "username": seed.username, "email": seed.email, "phone": seed.phone, "domain": seed.domain}
+                     "username": seed.username, "email": seed.email, "phone": seed.phone, "domain": seed.domain,
+                     # alias y usuarios extra: ligan a la persona cuentas como reypalomo_ (alias de Luisito Comunica)
+                     "aliases": list(seed.aliases), "extra_usernames": list(seed.extra_usernames)}
         report = build_person_report(seed_dict, self.candidates_data, self.confirmed_urls, self.rejected_urls,
                                      case_id=self._profile_case_id, warnings=self.search_warnings)
         output_dir = Path.home() / "Downloads"

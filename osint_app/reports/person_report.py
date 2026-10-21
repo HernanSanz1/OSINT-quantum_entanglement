@@ -19,7 +19,8 @@ import re
 from collections import OrderedDict
 from datetime import datetime
 from typing import Dict, Iterable, List, Optional
-from urllib.parse import urlsplit
+import unicodedata
+from urllib.parse import unquote, urlsplit
 
 from ..utils.identity import is_content_url, parse_profile_url
 
@@ -56,6 +57,27 @@ def _host(url: str) -> str:
     except ValueError:
         return ""
     return host[4:] if host.startswith("www.") else host
+
+
+def _fold(text: str) -> str:
+    """Minúsculas, sin tildes y solo letras y números: "Agustín-Domínguez" → "agustindominguez"."""
+    plain = unicodedata.normalize("NFKD", unquote(text or "")).encode("ascii", "ignore").decode("ascii").lower()
+    return re.sub(r"[^a-z0-9]", "", plain)
+
+
+def _identity_keys(seed: Dict):
+    """(palabras del nombre y alias de 4+ letras, usuarios conocidos) del objetivo, sin tildes."""
+    names = [seed.get("name") or ""] + list(seed.get("aliases") or [])
+    words = {_fold(w) for n in names for w in re.split(r"[\s.\-_]+", n or "") if len(_fold(w)) >= 4}
+    users = {_fold(u) for u in [seed.get("username")] + list(seed.get("extra_usernames") or []) if u}
+    return words, users - {""}
+
+
+def _handle_key(handle: str) -> str:
+    """Usuario comparable entre plataformas; un canal de YouTube "c/Nombre" o "user/Nombre" es el usuario "Nombre"."""
+    if handle.lower().startswith(("c/", "user/")):
+        handle = handle.split("/", 1)[1]
+    return _fold(handle)
 
 
 def _status(url: str, confirmed: set, rejected: set) -> str:
@@ -115,15 +137,20 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
         parsed = parse_profile_url(url) if url else None
         if parsed and not is_content_url(url):
             platform, handle, canonical = parsed
-            key = f"{platform}:{handle}"
+            hkey = _handle_key(handle) if not handle.lower().startswith("channel/") else _fold(handle)
+            key = f"{platform}:{hkey}"
             # Enlace con la URL ORIGINAL: el analizador pasa el usuario a minúsculas y los canales de YouTube
-            # (UCECJDeK0…) distinguen mayúsculas: con la canónica el enlace quedaba roto (visto en real)
-            label = handle if "/" not in handle else "canal " + url.rstrip("/").rsplit("/", 1)[-1]
+            # (UCECJDeK0…) distinguen mayúsculas: con la canónica el enlace quedaba roto (visto en real).
+            # El nombre del canal sale de la ruta, no del final de la URL ("channels?app=desktop…", visto en real)
+            segs = [x for x in (urlsplit(url).path or "").split("/") if x]
+            label = handle if "/" not in handle else "canal " + (segs[1] if len(segs) > 1 else handle.split("/", 1)[1])
             acc = accounts.setdefault(key, {"platform": PLATFORM_NAMES.get(platform, platform.capitalize()),
                                             "handle": label, "url": url, "score": score, "posts": [],
-                                            "status": item["status"], "sources": set(), "name": extra.get("name") or ""})
+                                            "status": item["status"], "sources": set(), "name": extra.get("name") or "",
+                                            "official": False, "hkey": hkey, "item": item, "note": ""})
             acc["score"] = max(acc["score"], score)
             acc["sources"].add(item["source"])
+            acc["official"] = acc["official"] or bool(extra.get("official"))
             if item["status"] == "confirmada":
                 acc["status"] = "confirmada"
             continue
@@ -153,20 +180,9 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
             accounts[f"{parsed[0]}:{parsed[1]}"]["posts"].append(m)
             mentions.remove(m)
 
-    account_list = sorted(accounts.values(), key=lambda a: (a["status"] != "confirmada", -a["score"]))
-    # En una plataforma donde ya hay una cuenta claramente suya, las demás de confianza media o baja suelen ser
-    # homónimos (midudev: su LinkedIn @midudev y cuatro "Miguel Ángel Durán" ajenos salían como "sus cuentas")
-    best_by_platform: Dict[str, Dict] = {}
-    for acc in account_list:
-        if acc["score"] >= 70 or acc["status"] == "confirmada":
-            best_by_platform.setdefault(acc["platform"], acc)
-    for acc in list(account_list):
-        best = best_by_platform.get(acc["platform"])
-        if best is not None and acc is not best and acc["score"] < 70 and acc["status"] != "confirmada":
-            account_list.remove(acc)
-            homonyms.append({"url": acc["url"], "title": f"{acc['platform']} @{acc['handle']}", "snippet": "",
-                             "warning": f"Probablemente otra persona: la cuenta de {acc['platform']} más probable "
-                                        f"es @{best['handle']}."})
+    account_list = sorted(accounts.values(), key=lambda a: (a["status"] != "confirmada", not a["official"], -a["score"]))
+    _sort_accounts(account_list, seed or {}, homonyms, mentions)
+    mentions.sort(key=lambda m: -float(m.get("score") or 0))   # los perfiles ajenos movidos aquí, en su sitio
     for acc in account_list:
         acc["level"] = confidence_word(acc["score"])
         acc["sources"] = sorted(s for s in acc["sources"] if s)
@@ -180,6 +196,55 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
         "sources": sorted(s for s in sources if s), "confirmed_count": len(confirmed), "rejected_count": len(rejected),
         "hidden_sensitive": hidden_sensitive, "warnings": dict(warnings or {}),
     }
+
+
+def _sort_accounts(account_list: List[Dict], seed: Dict, homonyms: List[Dict], mentions: List[Dict]) -> None:
+    """Decide qué cuentas son de la persona, cuáles de otra y cuáles solo hablan de ella (enfoque A: se marcan y se
+    separan con su motivo, nunca se borran). Reglas medidas con perfiles reales (Jefferson Pérez, Andersson Boscán y
+    Luisito Comunica, 2026-10-21):
+
+    1. Suya: oficial (Wikidata), confirmada por el analista o con confianza ≥ 70.
+    2. Mismo usuario que una cuenta suya (reypalomo_, alias oficial de Luisito): se queda, con una nota.
+    3. En una plataforma con una cuenta claramente suya, las demás de confianza < 70 son otra persona (midudev:
+       cuatro "Miguel Ángel Durán" ajenos en LinkedIn).
+    4. Un perfil cuyo usuario no tiene nada del nombre ni del alias (LinkedIn "net-worth-fever", "agustín-domínguez-
+       prieto") es de otra persona que HABLA de ella: pasa a menciones.
+    5. Con confianza < 40 y solo coincidencias de nombre (GitHub "jefferson-quezada" de un desarrollador): otra persona.
+    """
+    words, users = _identity_keys(seed)
+
+    def trusted(acc):
+        return acc["official"] or acc["status"] == "confirmada" or acc["score"] >= 70
+
+    sure = [a for a in account_list if trusted(a)]
+    sure_handles = {a["hkey"] for a in sure} | users
+    best_by_platform: Dict[str, Dict] = {}
+    for acc in sure:
+        best_by_platform.setdefault(acc["platform"], acc)
+
+    for acc in list(account_list):
+        if trusted(acc):
+            continue
+        if acc["hkey"] in sure_handles:                                                         # regla 2
+            acc["note"] = "Mismo usuario que una de sus cuentas verificadas: probablemente suya, sin confirmar."
+            continue
+        best = best_by_platform.get(acc["platform"])
+        reason = ""
+        if best is not None:                                                                    # regla 3
+            reason = (f"Probablemente otra persona: la cuenta de {acc['platform']} más probable es "
+                      f"{best['handle'] if best['handle'].startswith('canal ') else '@' + best['handle']}.")
+        elif words and not any(w in acc["hkey"] for w in words) and not acc["hkey"].startswith("channel"):  # regla 4
+            account_list.remove(acc)
+            mentions.append({**acc["item"], "warning": ""})
+            mentions.extend(acc["posts"])
+            continue
+        elif acc["score"] < 40:                                                                 # regla 5
+            reason = ("Posiblemente otra persona: solo coincide el nombre y nada más la liga a esta persona "
+                      "(ni su usuario ni sus cuentas verificadas). Ábrela antes de atribuírsela.")
+        if reason:
+            account_list.remove(acc)
+            homonyms.append({"url": acc["url"], "title": f"{acc['platform']} {acc['handle']}", "snippet": "",
+                             "score": acc["score"], "warning": reason})
 
 
 # ── HTML ─────────────────────────────────────────────────────────────────────
@@ -245,7 +310,10 @@ def render_person_html(r: Dict) -> str:
         if a["posts"]:
             posts = "<details><summary>{} publicación(es) de esta cuenta</summary><ul>{}</ul></details>".format(
                 len(a["posts"]), "".join(f"<li>{_link(p['url'], p['title'][:110])}</li>" for p in a["posts"][:10]))
-        status = "✔ Confirmada por el analista" if a["status"] == "confirmada" else "Por revisar"
+        status = ("✔ Confirmada por el analista" if a["status"] == "confirmada"
+                  else "✔ Oficial (Wikidata)" if a.get("official") else "Por revisar")
+        if a.get("note"):
+            posts = f"<br><small>{_e(a['note'])}</small>" + posts
         acc_rows += (f"<tr><td>{_e(a['platform'])}</td><td>{_link(a['url'], a['handle'] if a['handle'].startswith('canal ') else '@' + a['handle'])}"
                      f"{('<br><small>' + _e(a['name']) + '</small>') if a['name'] else ''}{posts}</td>"
                      f"<td>{_badge(a['level'])}</td><td>{_e(status)}</td><td>{_e(', '.join(a['sources']))}</td></tr>")
