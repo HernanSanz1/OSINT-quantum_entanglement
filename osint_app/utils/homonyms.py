@@ -224,8 +224,23 @@ def _own_codes(target: str, known_places: str) -> Set[str]:
     return codes
 
 
+def _mentions_alias(norm_text: str, aliases, name: str = "") -> bool:
+    """True si el texto cita un alias distintivo del objetivo: 2+ palabras y no contenido en su nombre legal.
+
+    "Luisito Comunica" identifica a la persona tanto como su web; un nombre completo, no (hay homónimos con nombre
+    y apellidos iguales), por eso solo cuentan los alias.
+    """
+    legal = normalize_text(name or "")
+    for alias in aliases or ():
+        phrase = normalize_text(alias or "").strip()
+        if len(phrase.split()) >= 2 and phrase not in legal and \
+                re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", norm_text):
+            return True
+    return False
+
+
 def homonym_signals(text: str, url: str, seed_country: str, seed_context: str = "",
-                    known_places: str = "", own_site: bool = False) -> List[Signal]:
+                    known_places: str = "", own_site: bool = False, aliases=(), name: str = "") -> List[Signal]:
     """Indicios de que un resultado habla de otra persona con el mismo nombre. Lista vacía = ninguno.
 
     Si el resultado está ligado al objetivo (menciona su país, una de sus ciudades, su gentilicio, su profesión o
@@ -252,7 +267,9 @@ def homonym_signals(text: str, url: str, seed_country: str, seed_context: str = 
     except ValueError:
         host_tld = ""
     tied_to_target = (bool(target) and (target in countries or bool(own) or host_tld == target)) \
-        or _context_matches(norm, seed_context)
+        or _context_matches(norm, seed_context) or _mentions_alias(norm, aliases, name)
+    # (alias: "Top Creators 2024 | 'Luisito Comunica' - Forbes Colombia" habla de él aunque el medio sea colombiano;
+    # caso real #27, iba a "otra persona" por "menciona Colombia")
 
     signals: List[Signal] = []
     if not tied_to_target:

@@ -251,8 +251,10 @@ pausó a mitad. Quedan midudev, Glenda Morejón, Gonzalo Plata, Correlación, Re
      nombre (GitHub "jefferson-quezada") pasa a "otra persona" con el motivo (`person_report._sort_accounts`).
      Verificado con perfiles reales de Jefferson Pérez, Boscán y Luisito. La franja "Búsqueda incompleta" de la ficha
      ya solo recoge la búsqueda web (el aviso de DNS de Maigret salía en todos los perfiles).
-  6. Pendiente: Forbes Colombia sobre Luisito marcado por "menciona Colombia" (no se repitió el 21-10); Maigret avisa
-     en todos los perfiles de "muchos sitios fallaron por red o DNS"; es.linkedin.com se toma como "de España".
+  6. **CORREGIDO (26-10):** Forbes Colombia sobre Luisito iba a "otra persona" por "menciona Colombia": un alias
+     distintivo (2+ palabras, fuera del nombre legal) liga el texto a la persona (`homonyms._mentions_alias`).
+     Pendiente: Maigret avisa en todos los perfiles de "muchos sitios fallaron por red o DNS"; es.linkedin.com se
+     toma como "de España".
   7. Menores: la barra de estado inferior no se actualiza al cambiar de caso; la columna de estado de Herramientas
      corta el texto; jerga en las guías (RDAP, DKIM, "note"); faltan tildes en "busqueda" y "Ejecucion"; tooltip de
      Hunter con un comando de consola; la tabla CTI sale vacía hasta refrescar.
@@ -260,7 +262,10 @@ pausó a mitad. Quedan midudev, Glenda Morejón, Gonzalo Plata, Correlación, Re
 ## 11. Lo que falta (orden de trabajo acordado)
 
 1. Corregir los fallos de la sección 10 y **terminar la segunda evaluación** con Cowork.
-2. **Ficha desde un caso guardado** (hoy solo desde el perfilamiento en curso) y **exportar a PDF**.
+2. **HECHO (26-10): ficha desde un caso guardado y PDF.** El caso guarda la semilla exacta y los avisos
+   (`profile_runs`) y las decisiones del analista (`candidate_verdicts`); `reports/case_profile.py` rehace los
+   candidatos con la puntuación actual (casos antiguos incluidos, desde sus datos "seed"); el PDF sale del motor web
+   de Qt (`gui/pdf_export.py`). Verificado con los casos reales #24-#28.
 3. **Cruce real caso ↔ CTI** (dominios, IP y tecnologías del caso contra las amenazas guardadas); después, quitar la
    franja "EN DESARROLLO".
 4. **Carpeta segura** para fichas e informes (hoy van a Descargas sin cifrar; la base tampoco está cifrada en disco:

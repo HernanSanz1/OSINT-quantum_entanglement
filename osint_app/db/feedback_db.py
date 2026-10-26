@@ -68,6 +68,25 @@ class Database:
                     FOREIGN KEY (report_id) REFERENCES tool_reports(id),
                     FOREIGN KEY (case_id) REFERENCES cases(id)
                 );
+                -- Cada perfilamiento guardado en un caso: la semilla exacta (con alias y usuarios extra) y los avisos de
+                -- búsqueda incompleta, para rehacer la ficha más tarde desde el caso
+                CREATE TABLE IF NOT EXISTS profile_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    case_id INTEGER NOT NULL,
+                    seed_json TEXT NOT NULL,
+                    warnings_json TEXT DEFAULT '{}',
+                    run_at TEXT,
+                    FOREIGN KEY (case_id) REFERENCES cases(id)
+                );
+                -- Lo que el analista confirmó o descartó de cada candidato (antes los descartes no se guardaban)
+                CREATE TABLE IF NOT EXISTS candidate_verdicts (
+                    case_id INTEGER NOT NULL,
+                    url TEXT NOT NULL,
+                    verdict TEXT NOT NULL,
+                    decided_at TEXT,
+                    PRIMARY KEY (case_id, url),
+                    FOREIGN KEY (case_id) REFERENCES cases(id)
+                );
                 -- Tabla heredada de la antigua función de IA: ya no se usa, se conserva para no tocar bases existentes
                 CREATE TABLE IF NOT EXISTS ai_correlations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,6 +138,8 @@ class Database:
             c.execute("DELETE FROM tool_reports WHERE case_id=?", (case_id,))
             c.execute("DELETE FROM data_extracts WHERE case_id=?", (case_id,))
             c.execute("DELETE FROM ai_correlations WHERE case_id=?", (case_id,))
+            c.execute("DELETE FROM profile_runs WHERE case_id=?", (case_id,))
+            c.execute("DELETE FROM candidate_verdicts WHERE case_id=?", (case_id,))
 
     # ── TargetData ────────────────────────────────────────────────────────────
 
@@ -184,6 +205,38 @@ class Database:
         with sqlite3.connect(self.db_path) as c:
             c.execute("DELETE FROM tool_reports WHERE id=?", (report_id,))
             c.execute("DELETE FROM data_extracts WHERE report_id=?", (report_id,))
+
+    # ── Perfilamientos y decisiones del analista ──────────────────────────────
+
+    def save_profile_run(self, case_id: int, seed: Dict, warnings: Optional[Dict] = None) -> int:
+        with sqlite3.connect(self.db_path) as c:
+            cur = c.execute(
+                "INSERT INTO profile_runs (case_id, seed_json, warnings_json, run_at) VALUES (?,?,?,?)",
+                (case_id, json.dumps(seed, ensure_ascii=False), json.dumps(warnings or {}, ensure_ascii=False),
+                 datetime.now().isoformat()))
+            return cur.lastrowid  # type: ignore
+
+    def get_profile_runs(self, case_id: int) -> List[Dict]:
+        """Perfilamientos del caso, el más reciente primero: {"seed": {...}, "warnings": {...}, "run_at": "..."}."""
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory = sqlite3.Row
+            rows = c.execute("SELECT * FROM profile_runs WHERE case_id=? ORDER BY id DESC", (case_id,)).fetchall()
+        return [{"seed": json.loads(r["seed_json"] or "{}"), "warnings": json.loads(r["warnings_json"] or "{}"),
+                 "run_at": r["run_at"]} for r in rows]
+
+    def set_verdict(self, case_id: int, url: str, verdict: str) -> None:
+        """verdict: "confirmado" o "descartado"; "" borra la decisión."""
+        with sqlite3.connect(self.db_path) as c:
+            if verdict:
+                c.execute("INSERT OR REPLACE INTO candidate_verdicts (case_id, url, verdict, decided_at) VALUES (?,?,?,?)",
+                          (case_id, url, verdict, datetime.now().isoformat()))
+            else:
+                c.execute("DELETE FROM candidate_verdicts WHERE case_id=? AND url=?", (case_id, url))
+
+    def get_verdicts(self, case_id: int) -> Dict[str, str]:
+        with sqlite3.connect(self.db_path) as c:
+            rows = c.execute("SELECT url, verdict FROM candidate_verdicts WHERE case_id=?", (case_id,)).fetchall()
+        return {url: verdict for url, verdict in rows}
 
     # ── DataExtracts ──────────────────────────────────────────────────────────
 

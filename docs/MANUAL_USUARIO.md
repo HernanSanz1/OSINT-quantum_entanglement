@@ -76,8 +76,12 @@ los datos personales se subirían a la nube. La base **no está cifrada en disco
 - **✅ Confirmar** un candidato pasa al caso lo que aporta (su perfil, usuario, correo, empresa y ubicación) como dato
   confirmado. No cambia el objetivo ni duplica datos.
 - **❌ Descartar** solo marca el candidato; **no borra** lo que ya se hubiera añadido (se corrige en la pestaña Datos).
+  Confirmar y descartar se guardan en el caso: la ficha los respeta aunque cierres el programa.
 - **🔄 Refinar búsqueda** vuelve a buscar usando lo que aportaron los candidatos confirmados.
-- **Exportar** guarda el resultado en tu carpeta de Descargas (JSON/HTML, **sin cifrar**: trátalo como dato personal).
+- **🎖️ Generar Ficha** abre un menú: **Ver en el navegador** o **Guardar como PDF**. Si no hay un perfilamiento en
+  pantalla, la ficha se rehace con el perfil guardado en el **caso abierto** (ábrelo en Casos y pulsa Generar Ficha).
+- **Exportar** guarda el resultado en tu carpeta de Descargas (JSON/HTML/PDF, **sin cifrar**: trátalo como dato
+  personal).
 
 ---
 

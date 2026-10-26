@@ -21,10 +21,10 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QTableWidget, QTableWidgetItem, QPlainTextEdit,
     QProgressBar, QFrame, QSplitter, QHeaderView, QGroupBox, QTextEdit, QComboBox,
-    QListWidget, QListWidgetItem, QAbstractItemView, QTabWidget
+    QListWidget, QListWidgetItem, QAbstractItemView, QTabWidget, QMenu, QFileDialog
 )
-from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QThread, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -144,7 +144,13 @@ class ProfilingTab(QWidget):
         self.btn_generate_dossier = QPushButton("🎖️  Generar Ficha")
         self.btn_generate_dossier.setObjectName("btnSuccess")
         self.btn_generate_dossier.setStyleSheet("background-color: #059669; font-weight: bold;")
-        self.btn_generate_dossier.clicked.connect(self._on_generate_dossier)
+        # Dos salidas: verla en el navegador o guardarla en PDF (para adjuntarla a un informe)
+        ficha_menu = QMenu(self.btn_generate_dossier)
+        ficha_menu.addAction("🌐  Ver en el navegador", lambda: self._on_generate_dossier("html"))
+        ficha_menu.addAction("📄  Guardar como PDF…", lambda: self._on_generate_dossier("pdf"))
+        self.btn_generate_dossier.setMenu(ficha_menu)
+        self.btn_generate_dossier.setToolTip("Ficha legible de la persona: del perfilamiento en pantalla o, si no hay "
+                                             "ninguno, del perfil guardado en el caso abierto")
         header.addWidget(self.btn_generate_dossier)
 
         self.btn_export = QPushButton("📤  Exportar JSON")
@@ -827,6 +833,7 @@ Fragmento:
 
             self._log(f"Confirmado: {summary}")
             self.app.toast.show("Candidato confirmado", kind="success")
+            self._save_verdict(url, "confirmado")
             self._promote_to_case(c)
 
     def _promote_to_case(self, candidate: Dict):
@@ -868,6 +875,19 @@ Fragmento:
 
             self._log(f"Descartado: {c['title'][:50]}")
             self.app.toast.show("Candidato descartado", kind="info")
+            self._save_verdict(url, "descartado")
+
+    def _save_verdict(self, url: str, verdict: str):
+        """Guarda en el caso lo que decidió el analista: antes los descartes se perdían al cerrar la ventana y la
+        ficha rehecha desde el caso los volvía a mostrar."""
+        case_id = self._profile_case_id or getattr(self.app, "active_case_id", None)
+        if not case_id or not url:
+            return
+        try:
+            from ..db.feedback_db import db
+            db.set_verdict(case_id, url, verdict)
+        except Exception as e:
+            self._log(f"⚠️ No se pudo guardar la decisión en el caso: {e}")
 
     def _on_refine(self):
         """Refinar búsqueda: enriquece la semilla con los candidatos confirmados
@@ -939,34 +959,79 @@ Fragmento:
         self._log(f"Exportado: {output_file}")
         self.app.toast.show(f"Perfil exportado a {output_file.name}", kind="success")
 
-    def _on_generate_dossier(self):
-        """Genera la ficha legible de la persona (reports/person_report) y la abre en el navegador.
+    def _current_report(self):
+        """(ficha, nombre) del perfilamiento en pantalla o, si no hay, del perfil guardado en el caso abierto."""
+        from ..reports.person_report import build_person_report
+        if self.candidates_data:
+            seed = self._seed_from_inputs()
+            seed_dict = {"name": seed.name, "context": seed.context, "country": seed.country, "city": seed.city,
+                         "username": seed.username, "email": seed.email, "phone": seed.phone, "domain": seed.domain,
+                         # alias y usuarios extra: ligan a la persona cuentas como reypalomo_ (alias de Luisito)
+                         "aliases": list(seed.aliases), "extra_usernames": list(seed.extra_usernames)}
+            report = build_person_report(seed_dict, self.candidates_data, self.confirmed_urls, self.rejected_urls,
+                                         case_id=self._profile_case_id, warnings=self.search_warnings)
+            return report, seed.name
+        case_id = getattr(self.app, "active_case_id", None)
+        if not case_id:
+            self.app.toast.show("Haz un perfilamiento o abre un caso que tenga un perfil guardado", kind="error")
+            return None, ""
+        from ..reports.case_profile import person_report_from_case
+        report = person_report_from_case(case_id)
+        if report is None:
+            self.app.toast.show("Este caso no tiene un perfil de persona guardado: haz un perfilamiento primero",
+                                kind="error")
+            return None, ""
+        self._log(f"Ficha rehecha desde el caso #{case_id} con los resultados guardados.")
+        return report, report["seed"].get("name", "")
+
+    def _on_generate_dossier(self, fmt: str = "html"):
+        """Ficha legible de la persona (reports/person_report): en el navegador o guardada en PDF.
 
         Sustituye a la "ficha de inteligencia" anterior, cuyas secciones de datos salían siempre vacías y que
-        cargaba imágenes de internet al abrirse (ver el módulo).
+        cargaba imágenes de internet al abrirse (ver el módulo). Antes solo funcionaba justo después de perfilar;
+        ahora también desde un caso guardado.
         """
-        if not self.candidates_data:
-            self.app.toast.show("Ejecuta un perfilamiento primero", kind="error")
+        from ..reports.person_report import render_person_html
+        report, person = self._current_report()
+        if report is None:
             return
-        from ..reports.person_report import build_person_report, render_person_html
-
-        seed = self._seed_from_inputs()
-        seed_dict = {"name": seed.name, "context": seed.context, "country": seed.country, "city": seed.city,
-                     "username": seed.username, "email": seed.email, "phone": seed.phone, "domain": seed.domain,
-                     # alias y usuarios extra: ligan a la persona cuentas como reypalomo_ (alias de Luisito Comunica)
-                     "aliases": list(seed.aliases), "extra_usernames": list(seed.extra_usernames)}
-        report = build_person_report(seed_dict, self.candidates_data, self.confirmed_urls, self.rejected_urls,
-                                     case_id=self._profile_case_id, warnings=self.search_warnings)
+        page = render_person_html(report)
         output_dir = Path.home() / "Downloads"
         output_dir.mkdir(parents=True, exist_ok=True)
-        name = re.sub(r"[^\w-]+", "_", seed.name)[:30].strip("_") or "persona"
-        output_file = output_dir / f"Ficha_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-        output_file.write_text(render_person_html(report), encoding="utf-8")
+        name = re.sub(r"[^\w-]+", "_", person)[:30].strip("_") or "persona"
+        stem = f"Ficha_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        if fmt == "pdf":
+            target, _ = QFileDialog.getSaveFileName(self, "Guardar la ficha en PDF", str(output_dir / f"{stem}.pdf"),
+                                                    "PDF (*.pdf)")
+            if not target:
+                return
+            if not target.lower().endswith(".pdf"):
+                target += ".pdf"
+            self._save_pdf(page, target)
+            return
+        output_file = output_dir / f"{stem}.html"
+        output_file.write_text(page, encoding="utf-8")
 
         import webbrowser
         webbrowser.open(output_file.as_uri())
         self._log(f"Ficha generada: {output_file}")
         self.app.toast.show("Ficha generada y abierta en el navegador", kind="success")
+
+    def _save_pdf(self, html: str, target: str):
+        from .pdf_export import save_html_as_pdf
+
+        def done(ok: bool, path: str):
+            self._pdf_page = None
+            if ok:
+                self._log(f"Ficha guardada en PDF: {path}")
+                self.app.toast.show("Ficha guardada en PDF", kind="success")
+                QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+            else:
+                self._log(f"❌ No se pudo crear el PDF en {path}")
+                self.app.toast.show("No se pudo crear el PDF", kind="error")
+
+        self._log("Creando el PDF de la ficha…")
+        self._pdf_page = save_html_as_pdf(html, target, done, parent=self)   # referencia viva hasta terminar
 
     def refresh(self):
         """Al cambiar de caso se vacía el perfil si era de otro caso.

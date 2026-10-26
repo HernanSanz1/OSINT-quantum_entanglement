@@ -186,3 +186,19 @@ def test_company_corroborates_the_person():
     other = eng._calculate_confidence(r, SeedData(name="Juan Perez", company="Produbanco"))
     assert "company" not in other[1]
     assert "company" not in eng._calculate_confidence(r, SeedData(name="Juan Perez", company="Ban"))[1]       # nombre demasiado corto
+
+
+def test_distinctive_alias_ties_the_text_to_the_target():
+    # Caso real #27: Forbes Colombia sobre Luisito Comunica iba a "otra persona" por "menciona Colombia"
+    title = "Top Creators 2024 | 'Luisito Comunica' - Forbes Colombia"
+    url = "https://forbes.co/2024/12/13/editors-picks/top-creators-2024-luisito-comunica/"
+    assert homonym_signals(title, url, "México") != []                                   # sin alias: avisa
+    assert homonym_signals(title, url, "México", aliases=["Luisito Comunica"],
+                           name="Luis Arturo Villar Sudek") == []
+
+
+def test_alias_must_be_distinctive_to_tie():
+    text = "Luis Villar, abogado de Bogotá, Colombia"
+    # un alias de una palabra o contenido en el nombre legal no liga: hay homónimos con ese nombre
+    assert homonym_signals(text, "", "México", aliases=["Luis"], name="Luis Arturo Villar Sudek") != []
+    assert homonym_signals(text, "", "México", aliases=["Luis Villar"], name="Luis Villar Sudek") != []

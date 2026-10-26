@@ -296,6 +296,11 @@ def render_person_html(r: Dict) -> str:
                         for key, label in (("name", "Nombre"), ("context", "Contexto"), ("country", "País"),
                                            ("city", "Ciudad"), ("username", "Usuario"), ("email", "Correo"),
                                            ("phone", "Teléfono"), ("domain", "Dominio")) if seed.get(key))
+    # Alias y usuarios extra también son datos de partida: son los que ligan cuentas como reypalomo_
+    for key, label in (("aliases", "Alias"), ("extra_usernames", "Otros usuarios")):
+        values = [str(v) for v in (seed.get(key) or []) if v]
+        if values:
+            seed_rows += f"<tr><th>{_e(label)}</th><td>{_e(', '.join(values))}</td></tr>"
 
     card = ""
     if r["public_card"]:

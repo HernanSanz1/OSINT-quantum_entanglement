@@ -51,6 +51,9 @@ def main():
         from PySide6.QtWidgets import QApplication
         from osint_app.gui.app import OSINTGUI
         
+        # El PDF de la ficha usa el motor web de Qt, que exige compartir contextos OpenGL antes de crear la app
+        from PySide6.QtCore import QCoreApplication, Qt
+        QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
         app = QApplication(sys.argv)
 
         # Noticias CTI: la primera vez se copian desde la carpeta del proyecto a la de datos del usuario

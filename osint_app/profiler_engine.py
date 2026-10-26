@@ -27,7 +27,7 @@ import concurrent.futures
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Callable, Tuple
 from urllib.parse import urlsplit
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from .tools import build_tool_registry
 from .core.models import QueryParameters, SearchResult
@@ -615,7 +615,8 @@ class ProfilerEngine:
                     profile = parse_profile_url(sr.url) if sr.url else None
                     own_site = own_site or (profile is not None and profile[:2] in own_profiles)
                     signals = homonyms.homonym_signals(text, sr.url, seed.country, f"{seed.context} {seed.city}",
-                                                       known_places=known_places, own_site=own_site)
+                                                       known_places=known_places, own_site=own_site,
+                                                       aliases=seed.aliases, name=seed.name)
                     warning = homonyms.warning_text(signals)
                     if signals:
                         confidence = max(0.0, confidence - homonyms.total_penalty(signals))
@@ -644,13 +645,21 @@ class ProfilerEngine:
 
         # Deduplicar: la misma página escrita distinto (http/https, www, barra, rastreo) cuenta una vez;
         # los resultados sin URL se distinguen por título y texto.
-        seen_keys = set()
-        unique_candidates = []
+        # Entre repetidos se queda el mejor (antes, el primero en llegar): si WebSearch traía x.com/jeffersonperezq
+        # antes que Wikidata, la cuenta perdía la marca de oficial según el orden en que acabaran las herramientas.
+        best: Dict[Any, Candidate] = {}
         for c in all_candidates:
             key = normalize_url(c.url) if c.url else (c.source_tool, c.title, c.snippet)
-            if key not in seen_keys:
-                seen_keys.add(key)
-                unique_candidates.append(c)
+            kept = best.get(key)
+            if kept is None:
+                best[key] = c
+                continue
+            winner, other = (c, kept) if c.confidence > kept.confidence else (kept, c)
+            if other.extra_data.get("official") and not winner.extra_data.get("official"):
+                winner.extra_data = {**winner.extra_data, "official": True}
+                winner.confidence = max(winner.confidence, other.confidence)
+            best[key] = winner
+        unique_candidates = list(best.values())
 
         # Ordenar por confianza
         unique_candidates.sort(key=lambda x: x.confidence, reverse=True)
@@ -837,6 +846,8 @@ class ProfilerEngine:
             db.save_report(report)
 
         self._promote_profile_fields(case_id)
+        # La semilla exacta y los avisos: con esto y los informes de arriba, la ficha se rehace desde el caso
+        db.save_profile_run(case_id, asdict(seed), dict(getattr(self, "warnings", {}) or {}))
         return case_id
 
     def _promote_profile_fields(self, case_id: int) -> None:
