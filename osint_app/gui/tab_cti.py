@@ -222,8 +222,8 @@ class CTITab(QWidget):
 
         layout.addLayout(header)
         layout.addWidget(DevNotice(
-            "Recoger noticias, generar el dossier y ver el boletín ya funcionan. Falta cruzar estas amenazas con "
-            "los casos de forma automática, y Validar y Enviar aún no están programados."))
+            "Validar y Enviar (correo) aún no están programados. Para cruzar estas amenazas con un caso, usa "
+            "«Cruzar con CTI» en la pestaña Correlación."))
 
         # ── Actions Bar ────────────────────────────────────────────────────────
         actions = QHBoxLayout()

@@ -253,11 +253,14 @@ class CorrelationEngine:
         """Carga entidades de datos existentes del caso"""
         target_data = db.get_target_data(self.case_id)
         # Nombre(s) del objetivo dados por el analista: sirven para no atribuirle lo que habla de otra persona
-        self.target_names = [td.value for td in target_data if td.field_type == "name" and td.source == "seed" and td.value]
+        self.target_names = [td.value for td in target_data if (td.field_type or "").lower() == "name" and td.source == "seed" and td.value]
         for td in target_data:
-            found = td.field_type.startswith("found_")
+            # La pestaña Datos guarda "DOMAIN" o "IP" y el resto del programa "domain" o "ip": sin pasarlo a
+            # minúsculas, lo que el analista metía a mano no se relacionaba con nada (visto en el caso real #23)
+            field_type = (td.field_type or "").lower()
+            found = field_type.startswith("found_")
             entity = Entity(
-                entity_type=td.field_type[len("found_"):] if found else td.field_type,
+                entity_type=field_type[len("found_"):] if found else field_type,
                 value=td.value,
                 source=td.source,
                 confidence=td.confidence
@@ -551,12 +554,17 @@ class CorrelationEngine:
         """Cruza las entidades del caso con la inteligencia de amenazas (CTI).
 
         Si no se pasa `store`, lo carga del almacén CTI por defecto. Devuelve
-        las coincidencias por CVE y por tecnología (ver cti_link).
+        las coincidencias por CVE y por tecnología (ver cti_link) y, en "targets", las del propio objetivo: víctima
+        de ransomware, menciones en noticias e IP como indicador (ver cti_match).
         """
         from .cti_link import CtiStore, correlate_entities_with_cti
+        from .cti_match import correlate_targets_with_cti, target_identifiers
         if store is None:
             store = CtiStore.load()
-        return correlate_entities_with_cti(self.entities.values(), store, tech_terms)
+        result = correlate_entities_with_cti(self.entities.values(), store, tech_terms)
+        ids = target_identifiers(db.get_target_data(self.case_id))
+        result["targets"] = correlate_targets_with_cti(ids, store.items)
+        return result
 
     def auto_enrich(self, max_tools: int = 3) -> List[str]:
         """

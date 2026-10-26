@@ -43,7 +43,7 @@ los datos personales se subirían a la nube. La base **no está cifrada en disco
 | **Datos** | Los datos que conoces del objetivo (correo, usuario, teléfono, dominio, URL…) |
 | **Herramientas** | Ejecutar una herramienta sobre los datos del caso, con indicador 🟢 🟡 🔴 de si tienes lo que necesita |
 | **Perfilamiento** | Buscar a una **persona** con muchas herramientas a la vez y revisar candidatos |
-| **Correlación** | Ver cómo se relacionan los datos del caso (qué correo va con qué usuario, qué perfil con qué nombre…), comparar casos y **cruzar las tecnologías detectadas con el CTI** (botón "Cruzar con CTI") |
+| **Correlación** | Ver cómo se relacionan los datos del caso (qué correo va con qué usuario, qué perfil con qué nombre…), comparar casos y **buscar el objetivo en la inteligencia de amenazas** (botón "Cruzar con CTI": ¿es víctima de ransomware?, ¿lo citan noticias de seguridad?, ¿sus IP salen en avisos?, ¿sus tecnologías tienen vulnerabilidades explotadas?) |
 | **CTI** | Recolectar feeds de amenazas y generar dossiers por cliente y boletines HTML |
 | **Reportes** | Ver y exportar lo que devolvió cada herramienta |
 

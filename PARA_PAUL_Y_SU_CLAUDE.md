@@ -220,10 +220,12 @@ Todas tienen tests y ficha en `docs/tools/`.
 ## 9. En desarrollo (funciona, pero no está terminado)
 
 - **Correlación:** dentro de un caso y entre casos funciona (la cruzada solo usa correo, usuario, teléfono, dominio,
-  IP o URL; ya no une casos por "país: Ecuador"). El cruce con CTI es básico: solo compara CVE y nombres de tecnología.
+  IP o URL; ya no une casos por "país: Ecuador"). **Cruce real con CTI (26-10-2026, `cti_match.py`):** con los datos
+  del objetivo (dominio, empresa, nombre, IP, correo corporativo) busca si es víctima de ransomware (ransomware.live
+  Ecuador), si lo citan noticias o boletines y si sus IP salen en avisos; los CVE y tecnologías se ordenan por
+  peligro con EPSS y exploit público. Ya sin franja "EN DESARROLLO".
 - **CTI:** recoger noticias, dossier por cliente (GLOBAL, CER, MAVESA, XTRIM, SERVIANDINA) y boletín HTML funcionan.
-  "Validar" y "Enviar" (correo) están desactivados porque no están programados.
-- La franja amarilla "EN DESARROLLO" (`DevNotice`) se quita cuando el cruce caso ↔ CTI sea real.
+  "Validar" y "Enviar" (correo) están desactivados porque no están programados: es lo único que sigue con la franja.
 
 ## 10. Segunda evaluación de usuario final: en curso (hallazgos parciales)
 
@@ -266,8 +268,10 @@ pausó a mitad. Quedan midudev, Glenda Morejón, Gonzalo Plata, Correlación, Re
    (`profile_runs`) y las decisiones del analista (`candidate_verdicts`); `reports/case_profile.py` rehace los
    candidatos con la puntuación actual (casos antiguos incluidos, desde sus datos "seed"); el PDF sale del motor web
    de Qt (`gui/pdf_export.py`). Verificado con los casos reales #24-#28.
-3. **Cruce real caso ↔ CTI** (dominios, IP y tecnologías del caso contra las amenazas guardadas); después, quitar la
-   franja "EN DESARROLLO".
+3. **HECHO (26-10): cruce real caso ↔ CTI.** Verificado: caso con `policia.gob.ec` → víctima de ransomware (The
+   Gentlemen, 16-10-2026); `presidencia.gob.ec` con Tech Detect real → WordPress con 7 CVE explotados (EPSS 98 %).
+   Arreglado de paso: la pestaña Datos guarda "DOMAIN"/"IP" en mayúsculas y el motor de correlación no los
+   relacionaba con nada.
 4. **Carpeta segura** para fichas e informes (hoy van a Descargas sin cifrar; la base tampoco está cifrada en disco:
    recomendar BitLocker).
 5. **Herramientas pesadas:** instalar Go y probar Subfinder y Amass; después TheHarvester, SpiderFoot y Recon-ng.

@@ -308,6 +308,8 @@ def harvest_ransomware_ec(fuente: dict) -> list[dict]:
             fuente_referencia=fuente["url"],
             url_reclamo_reservada=claimed_url if ".onion" in claimed_url.lower() else "",
             victima_reservada=victim,
+            # Aparte del resumen, que se corta a 900 caracteres: ahí se perdía la web en 10 de 36 víctimas reales
+            victima_web=str(row.get("website") or ""),
             verificacion="fuente_publica_osint",
         ))
     return out

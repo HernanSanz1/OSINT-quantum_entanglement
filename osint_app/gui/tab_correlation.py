@@ -12,8 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
 
-from .components import DevNotice, SentinelModal
-from ..correlation_engine import CorrelationEngine, EntityExtractor, CrossCaseCorrelator
+from ..correlation_engine import CorrelationEngine, CrossCaseCorrelator
 
 
 class AutoEnrichThread(QThread):
@@ -102,10 +101,6 @@ class CorrelationTab(QWidget):
         header.addWidget(self.lbl_correlations)
 
         layout.addLayout(header)
-        layout.addWidget(DevNotice(
-            "La correlación dentro de un caso y entre casos ya funciona, pero el cruce con CTI (noticias y "
-            "vulnerabilidades) todavía es básico: solo compara CVE y nombres de tecnología. Revisa los resultados "
-            "antes de usarlos en un informe."))
 
         # ── Actions Bar ────────────────────────────────────────────────────────
         actions = QHBoxLayout()
@@ -127,7 +122,8 @@ class CorrelationTab(QWidget):
 
         self.btn_cti = QPushButton("🛡️  Cruzar con CTI")
         self.btn_cti.clicked.connect(self._on_cti)
-        self.btn_cti.setToolTip("Cruza los CVEs y tecnologías del caso con la inteligencia de amenazas")
+        self.btn_cti.setToolTip("Busca el objetivo en la inteligencia de amenazas guardada: víctima de ransomware, "
+                                "noticias que lo citan, sus IP en avisos, sus CVE y sus tecnologías (con EPSS)")
         actions.addWidget(self.btn_cti)
 
         actions.addStretch()
@@ -469,16 +465,29 @@ class CorrelationTab(QWidget):
             result = engine.correlate_with_cti(tech_terms=tech_terms)
             self._populate_cti_matches(result)
 
-            n_cve = result["total_cve_matches"]
-            n_exp = result["actively_exploited"]
+            targets = result.get("targets") or {}
+            ids = targets.get("identifiers") or {}
+            n_rw, n_ioc = len(targets.get("ransomware", [])), len(targets.get("iocs", []))
+            n_ment = targets.get("mentions_total", 0)
+            n_cve, n_exp = result["total_cve_matches"], result["actively_exploited"]
             n_tech = result["total_tech_matches"]
-            self._log(f"✅ CTI: {n_cve} CVE(s) del caso en el CTI ({n_exp} explotados activamente); "
-                      f"{n_tech} tecnología(s) con vulnerabilidades activas.")
-            if n_cve == 0 and n_tech == 0:
-                self.app.toast.show("Sin coincidencias con el CTI para este caso", kind="info")
+            used = ", ".join(ids.get("domains", []) + ids.get("names", []) + ids.get("ips", [])) or "ninguno"
+            self._log(f"   Datos del objetivo cruzados: {used}")
+            if tech_terms:
+                self._log(f"   Tecnologías y fabricantes buscados: {', '.join(dict.fromkeys(tech_terms))}")
+            self._log(f"✅ CTI: {n_rw} registro(s) como víctima de ransomware · {n_ioc} IP en avisos · {n_ment} "
+                      f"noticia(s) que lo citan · {n_cve} CVE(s) del caso ({n_exp} explotados) · {n_tech} "
+                      f"tecnología(s) con vulnerabilidades conocidas.")
+            if n_tech:
+                self._log("   Ojo: que una tecnología tenga vulnerabilidades no significa que este sitio las tenga; "
+                          "depende de su versión y sus plugins. EPSS = probabilidad de que se explote en 30 días.")
+            if n_rw or n_ioc:
+                self.app.toast.show(f"🚨 CTI: {n_rw} registro(s) de ransomware y {n_ioc} IP en avisos", kind="error")
+            elif n_ment or n_cve or n_tech:
+                self.app.toast.show(f"CTI: {n_ment} noticia(s), {n_cve} CVE(s) y {n_tech} tecnología(s) coinciden",
+                                    kind="success")
             else:
-                self.app.toast.show(
-                    f"CTI: {n_cve} CVE(s) y {n_tech} tecnología(s) coinciden", kind="success")
+                self.app.toast.show("Sin coincidencias con el CTI para este caso", kind="info")
         except Exception as e:
             self._log(f"❌ Error al cruzar con CTI: {e}")
             self.app.toast.show(f"Error CTI: {str(e)[:50]}", kind="error")
@@ -489,14 +498,32 @@ class CorrelationTab(QWidget):
         """Muestra las coincidencias con el CTI en la tabla de correlaciones."""
         self.table_correlations.setRowCount(0)
 
-        def _add_row(a, rel, b, conf, ev, color=None):
+        def _add_row(a, rel, b, conf, ev, color=None, url=""):
             row = self.table_correlations.rowCount()
             self.table_correlations.insertRow(row)
             for col, val in enumerate((a, rel, b, conf, ev)):
                 item = QTableWidgetItem(str(val))
                 if color:
                     item.setForeground(QColor(color))
+                if url:
+                    item.setToolTip(url)
                 self.table_correlations.setItem(row, col, item)
+
+        def _epss(value):
+            return f"EPSS {value * 100:.0f} %" if isinstance(value, (int, float)) else "—"
+
+        # Lo más grave primero: el objetivo como víctima de ransomware o sus IP como indicadores
+        targets = result.get("targets") or {}
+        for v in targets.get("ransomware", []):
+            _add_row(v["website"] or v["name"], f"🚨 VÍCTIMA DE RANSOMWARE ({v['group'] or 'grupo sin identificar'})",
+                     f"{v['name']} · coincide {v['matched']}", "Crítica", f"{v['date']} · {v['source']}",
+                     "#ff3333", v["url"])
+        for i in targets.get("iocs", []):
+            _add_row(i["matched"], "🚨 IP en un aviso de seguridad", i["title"][:90], "Crítica",
+                     f"{i['date']} · {i['source']}", "#ff3333", i["url"])
+        for m in targets.get("mentions", []):
+            _add_row(m["matched"], "📰 citado en una noticia de seguridad", m["title"][:90], "Revisar",
+                     f"{m['date']} · {m['source']}", "#ffaa00", m["url"])
 
         for m in result["cve_matches"]:
             h = m["hits"][0]
@@ -507,11 +534,17 @@ class CorrelationTab(QWidget):
             if m["ransomware"]:
                 rel += " · ransomware"
             tech = f"{h['vendor']} {h['product']}".strip() or "—"
-            _add_row(m["cve"], rel, tech, h.get("severity") or "—", h.get("source") or "", color)
+            extra = " · exploit público" if any(x.get("poc") for x in m["hits"]) else ""
+            _add_row(m["cve"], rel, tech, _epss(h.get("epss")), (h.get("source") or "") + extra, color, h.get("url", ""))
 
+        # Tecnologías: el aviso más peligroso de cada una (explotado, con exploit público, mayor EPSS)
         for t in result["tech_matches"]:
-            _add_row(t["term"], f"tecnología · {t['count']} CVEs",
-                     f"{t['actively_exploited']} explotados", "—", "CTI", "#ffaa00")
+            h = t["hits"][0]
+            color = "#ff6b6b" if t["actively_exploited"] else "#ffaa00"
+            extra = " · exploit público" if h.get("poc") else ""
+            _add_row(t["term"], f"tecnología · {t['count']} aviso(s), {t['actively_exploited']} explotado(s)",
+                     f"{h['cve'] or '—'} {h['vendor']} {h['product']}".strip()[:90], _epss(h.get("epss")),
+                     f"{h['date']} · {h['source']}{extra} · comprueba versión y plugins", color, h.get("url", ""))
 
     def _on_export(self):
         """Exporta el perfil correlacionado"""

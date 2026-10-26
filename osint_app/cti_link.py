@@ -12,7 +12,7 @@ correlate_case_with_cti().
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -66,10 +66,17 @@ class CtiHit:
     kev: bool = False           # Known Exploited Vulnerability (CISA)
     exploited: bool = False
     ransomware: bool = False
+    epss: Optional[float] = None    # probabilidad de explotación en 30 días (FIRST EPSS), del enriquecimiento CTI
+    poc: bool = False               # hay exploit público (lista de PoC en GitHub)
+    date: str = ""
 
     @property
     def actively_exploited(self) -> bool:
         return self.kev or self.exploited
+
+    def priority(self) -> tuple:
+        """Para ordenar de más a menos peligroso: explotada, con exploit público, EPSS, más reciente."""
+        return (self.actively_exploited, self.ransomware, self.poc, self.epss or 0.0, self.date)
 
     def to_dict(self) -> Dict:
         return {
@@ -78,6 +85,7 @@ class CtiHit:
             "severity": self.severity, "kev": self.kev,
             "exploited": self.exploited, "ransomware": self.ransomware,
             "actively_exploited": self.actively_exploited,
+            "epss": self.epss, "poc": self.poc, "date": self.date,
         }
 
 
@@ -93,18 +101,33 @@ def _to_hit(item: Dict, cve: str) -> CtiHit:
         kev=_truthy(item.get("kev")),
         exploited=_truthy(item.get("exploited")),
         ransomware=_truthy(item.get("ransomware")),
+        date=str(item.get("fecha", "") or "")[:10],
     )
 
 
 class CtiStore:
     """Índice en memoria del almacén CTI para consultas rápidas."""
 
-    def __init__(self, items: List[Dict]):
+    def __init__(self, items: List[Dict], enrichment: Optional[Dict] = None):
         self._items = items
         self._by_cve: Dict[str, List[Dict]] = {}
         for item in items:
             for cve in normalize_cves(item.get("cves")):
                 self._by_cve.setdefault(cve, []).append(item)
+        enrichment = enrichment or {}
+        self._epss: Dict[str, Dict] = enrichment.get("epss") or {}
+        self._poc = {str(c).upper() for c in enrichment.get("poc_github") or []}
+
+    @property
+    def items(self) -> List[Dict]:
+        return self._items
+
+    def _hit(self, item: Dict, cve: str) -> CtiHit:
+        hit = _to_hit(item, cve)
+        if cve:
+            hit.epss = (self._epss.get(cve) or {}).get("epss")
+            hit.poc = cve in self._poc
+        return hit
 
     @classmethod
     def load(cls, path: Path = None) -> "CtiStore":
@@ -126,7 +149,15 @@ class CtiStore:
                         continue
         except OSError as e:
             logger.error(f"No se pudo leer el CTI store: {type(e).__name__}")
-        return cls(items)
+        # EPSS y exploits públicos que guarda la recolección junto a las noticias (antes no se usaban en el cruce)
+        enrichment: Dict = {}
+        enrich_path = path.parent / "enriquecimiento.json"
+        try:
+            if enrich_path.exists():
+                enrichment = json.loads(enrich_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            logger.warning(f"No se pudo leer el enriquecimiento CTI: {type(e).__name__}")
+        return cls(items, enrichment)
 
     def __len__(self) -> int:
         return len(self._items)
@@ -154,12 +185,13 @@ class CtiStore:
     def by_cve(self, cve: str) -> List[CtiHit]:
         """Ítems CTI que mencionan ese CVE exacto."""
         cve = (cve or "").strip().upper()
-        return [_to_hit(item, cve) for item in self._by_cve.get(cve, [])]
+        return [self._hit(item, cve) for item in self._by_cve.get(cve, [])]
 
     def search_tech(self, term: str, limit: int = 25) -> List[CtiHit]:
-        """Ítems cuyo vendor o product contienen `term` (coincidencia laxa).
+        """Ítems cuyo vendor o product contienen `term` (coincidencia laxa), los más peligrosos primero.
 
-        Sirve para: 'el objetivo usa <tecnología>' → CVEs activos de esa tech.
+        Sirve para: 'el objetivo usa <tecnología>' → CVEs activos de esa tech. Antes devolvía los 25 primeros del
+        archivo, sin orden: con Microsoft (3.760 boletines) salían los de una fecha cualquiera.
         """
         term = (term or "").strip().lower()
         if len(term) < 3:
@@ -169,10 +201,9 @@ class CtiStore:
             haystack = f"{item.get('vendor', '')} {item.get('product', '')}".lower()
             if term in haystack:
                 cves = normalize_cves(item.get("cves"))
-                hits.append(_to_hit(item, cves[0] if cves else ""))
-                if len(hits) >= limit:
-                    break
-        return hits
+                hits.append(self._hit(item, cves[0] if cves else ""))
+        hits.sort(key=lambda h: h.priority(), reverse=True)
+        return hits[:limit]
 
 
 def collect_tech_terms_from_reports(reports) -> List[str]:
