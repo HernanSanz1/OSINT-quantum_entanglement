@@ -245,14 +245,16 @@ def make_private(path: Path) -> bool:
             account = domain + "\\" + user if domain and user else user
             if not account:
                 return False
-            result = subprocess.run(
-                ["icacls", str(path), "/inheritance:r", "/grant:r", f"{account}:(OI)(CI)F",
-                 "/grant:r", "*S-1-5-18:(OI)(CI)F"],                     # S-1-5-18 = SYSTEM (copias, indexado)
-                capture_output=True, text=True, timeout=30,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            if result.returncode != 0:
-                logger.warning(f"No se pudo restringir {path}: {result.stdout.strip()} {result.stderr.strip()}")
-                return False
+            # Primero /reset: borra los permisos PROPIOS que ya tuviera la carpeta (visto en el Windows de GitHub:
+            # "Administrators" y "OWNER RIGHTS" sobrevivían a /inheritance:r, que solo quita los heredados)
+            for args in (["/reset"],
+                         ["/inheritance:r", "/grant:r", f"{account}:(OI)(CI)F",
+                          "/grant:r", "*S-1-5-18:(OI)(CI)F"]):         # S-1-5-18 = SYSTEM (copias, indexado)
+                result = subprocess.run(["icacls", str(path), *args], capture_output=True, text=True, timeout=30,
+                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                if result.returncode != 0:
+                    logger.warning(f"No se pudo restringir {path}: {result.stdout.strip()} {result.stderr.strip()}")
+                    return False
         else:
             os.chmod(path, 0o700)
         (path / _PRIVATE_MARK).write_text("Carpeta solo para tu usuario (la crea SENTINEL).\n", encoding="utf-8")

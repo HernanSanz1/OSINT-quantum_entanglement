@@ -313,6 +313,10 @@ def test_reports_go_to_the_user_data_dir_not_to_downloads():
 def test_private_folder_is_readable_only_by_the_user_and_system(tmp_path):
     import subprocess
     folder = tmp_path / "informes"
+    folder.mkdir()
+    # Permisos PROPIOS previos (así venía la carpeta en el Windows de GitHub): Administradores y Todos
+    subprocess.run(["icacls", str(folder), "/grant", "*S-1-5-32-544:(OI)(CI)F", "/grant", "*S-1-1-0:(OI)(CI)R"],
+                   capture_output=True, check=True)
     assert data_paths.make_private(folder) is True
     acl = subprocess.run(["icacls", str(folder)], capture_output=True, text=True).stdout
     entries = [line.strip() for line in acl.splitlines()[:-2] if ":" in line]
