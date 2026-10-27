@@ -213,3 +213,92 @@ def prepare_cti_store() -> Path:
         logger.error(f"No se pudieron copiar las noticias CTI a {cti_store_dir()} ({type(e).__name__}: {e}). "
                      f"Se sigue usando {legacy_cti_store()}.")
     return active_cti_store()
+
+
+# ── Fichas, informes y exportaciones: carpeta privada ────────────────────────────────────────────────────────────────
+# Antes iban a Descargas: se acumulaban, cualquier otra cuenta de Windows del equipo podía leerlas y en algunos equipos
+# Descargas se sincroniza con la nube. Llevan datos personales de terceros (LOPDP).
+REPORTS_DIR_NAME = "informes"
+_PRIVATE_MARK = ".carpeta_privada"
+_disk_encryption_cache: dict = {}
+
+
+def reports_dir() -> Path:
+    return data_dir() / REPORTS_DIR_NAME
+
+
+def make_private(path: Path) -> bool:
+    """Deja `path` legible solo por la cuenta actual (y el sistema). True si quedó restringida.
+
+    Windows: se quita la herencia de permisos y se da control total solo al usuario y a SYSTEM (icacls). Funciona
+    también en Windows Home. Linux/Mac: permisos 700.
+    """
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+    if (path / _PRIVATE_MARK).exists():
+        return True
+    try:
+        if sys.platform == "win32":
+            import subprocess
+            user = os.environ.get("USERNAME") or ""
+            domain = os.environ.get("USERDOMAIN") or ""
+            account = domain + "\\" + user if domain and user else user
+            if not account:
+                return False
+            result = subprocess.run(
+                ["icacls", str(path), "/inheritance:r", "/grant:r", f"{account}:(OI)(CI)F",
+                 "/grant:r", "*S-1-5-18:(OI)(CI)F"],                     # S-1-5-18 = SYSTEM (copias, indexado)
+                capture_output=True, text=True, timeout=30,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            if result.returncode != 0:
+                logger.warning(f"No se pudo restringir {path}: {result.stdout.strip()} {result.stderr.strip()}")
+                return False
+        else:
+            os.chmod(path, 0o700)
+        (path / _PRIVATE_MARK).write_text("Carpeta solo para tu usuario (la crea SENTINEL).\n", encoding="utf-8")
+        return True
+    except (OSError, ValueError) as e:
+        logger.warning(f"No se pudo restringir {path}: {type(e).__name__}: {e}")
+        return False
+
+
+def private_reports_dir() -> Path:
+    """Carpeta de informes, creada y restringida a tu usuario si aún no lo estaba."""
+    folder = reports_dir()
+    make_private(folder)
+    return folder
+
+
+def disk_encryption(path=None) -> str:
+    """"on", "off" o "unknown": si la unidad donde están los datos tiene BitLocker / Cifrado de dispositivo.
+
+    Se consulta sin permisos de administrador (propiedad System.Volume.BitLockerProtection del Explorador).
+    En otros sistemas, "unknown".
+    """
+    if sys.platform != "win32":
+        return "unknown"
+    drive = (Path(path) if path else data_dir()).resolve().drive or "C:"
+    if drive in _disk_encryption_cache:
+        return _disk_encryption_cache[drive]
+    state = "unknown"
+    try:
+        import subprocess
+        script = (f"(New-Object -ComObject Shell.Application).NameSpace('{drive}" + "\\" + "').Self"
+                  ".ExtendedProperty('System.Volume.BitLockerProtection')")
+        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                             capture_output=True, text=True, timeout=15,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.strip()
+        # 1 protegido, 3 cifrando, 6 protegido y bloqueado; 2 sin cifrar, 4 descifrando, 5 suspendido
+        state = {"1": "on", "3": "on", "6": "on", "2": "off", "4": "off", "5": "off"}.get(out, "unknown")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    _disk_encryption_cache[drive] = state
+    return state
+
+
+def disk_encryption_warning(path=None) -> str:
+    """Aviso para el usuario si el disco de los datos no está cifrado; "" si lo está o no se sabe."""
+    if disk_encryption(path) != "off":
+        return ""
+    return ("Tu disco no está cifrado: si pierdes o te roban el equipo, los casos y fichas (datos personales) se "
+            "podrían leer. Activa «Cifrado de dispositivo» o BitLocker en Configuración → Privacidad y seguridad.")

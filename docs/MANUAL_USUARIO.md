@@ -31,7 +31,12 @@ Los casos se guardan en una carpeta **propia de tu usuario, fuera de la carpeta 
 - Otra carpeta: define la variable de entorno `SENTINEL_DATA_DIR`
 
 Si esa carpeta está dentro de OneDrive, Dropbox, Google Drive o iCloud, el programa te lo avisa al abrir, porque
-los datos personales se subirían a la nube. La base **no está cifrada en disco**: activa **BitLocker** en Windows.
+los datos personales se subirían a la nube. La base **no está cifrada por el programa**: si tu disco no está cifrado,
+SENTINEL te avisa al abrir; actívalo en Configuración → Privacidad y seguridad → **Cifrado de dispositivo** (Windows
+Home) o **BitLocker** (Windows Pro).
+
+Las **fichas, PDF y exportaciones** van a la subcarpeta `informes` de esa misma carpeta (antes, a Descargas). Solo
+tu usuario de Windows puede abrirla. Para verla: **Generar Ficha → 📂 Abrir la carpeta de informes**.
 
 ---
 
@@ -80,7 +85,7 @@ los datos personales se subirían a la nube. La base **no está cifrada en disco
 - **🔄 Refinar búsqueda** vuelve a buscar usando lo que aportaron los candidatos confirmados.
 - **🎖️ Generar Ficha** abre un menú: **Ver en el navegador** o **Guardar como PDF**. Si no hay un perfilamiento en
   pantalla, la ficha se rehace con el perfil guardado en el **caso abierto** (ábrelo en Casos y pulsa Generar Ficha).
-- **Exportar** guarda el resultado en tu carpeta de Descargas (JSON/HTML/PDF, **sin cifrar**: trátalo como dato
+- **Exportar** guarda el resultado en tu carpeta privada de informes (JSON/HTML/PDF: trátalo como dato
   personal).
 
 ---

@@ -76,6 +76,13 @@ def main():
         if cloud_warning:
             logging.warning(cloud_warning)
             window.toast.show(cloud_warning, kind="error")
+        # Y si el disco no está cifrado: un equipo perdido o robado expondría los casos (en Windows Home se llama
+        # "Cifrado de dispositivo"; se consulta sin permisos de administrador)
+        from osint_app.utils.data_paths import disk_encryption_warning
+        disk_warning = disk_encryption_warning(DB_PATH.parent)
+        if disk_warning:
+            logging.warning(disk_warning)
+            window.toast.show(disk_warning, kind="warning")
         sys.exit(app.exec())
     except Exception as e:
         logging.critical(f"Error al lanzar GUI: {e}", exc_info=True)

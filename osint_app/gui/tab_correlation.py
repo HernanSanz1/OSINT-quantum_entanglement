@@ -556,7 +556,8 @@ class CorrelationTab(QWidget):
         # Antes volcaba el JSON en el registro y no creaba ningún archivo
         from pathlib import Path
         from PySide6.QtWidgets import QFileDialog
-        default = Path.home() / "Downloads" / f"correlacion_caso_{self.app.active_case_id}.json"
+        from .reports_folder import reports_folder
+        default = reports_folder(self.app) / f"correlacion_caso_{self.app.active_case_id}.json"
         path, _ = QFileDialog.getSaveFileName(self, "Guardar el perfil correlacionado (JSON)", str(default),
                                               "Datos JSON (*.json)")
         if not path:

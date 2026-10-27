@@ -99,7 +99,7 @@ Sin Docker, SENTINEL **sigue funcionando** con los buscadores de respaldo y avis
 | Claves de API | Baúl cifrado con **DPAPI** de Windows en la carpeta personal | Nunca en el proyecto. En Linux/Mac aún no se cifra (pendiente: `keyring`) |
 | Noticias CTI, dossiers y boletines | `%LOCALAPPDATA%\SENTINEL\cti\` (y `cti\boletines\`) | Movido el 14-10-2026; git ya no vigila las carpetas antiguas |
 | Configuración de SearXNG | `%LOCALAPPDATA%\SENTINEL\searxng\` | La plantilla está en `deploy/searxng/settings.yml` |
-| Fichas HTML y exportaciones | Carpeta Descargas | Pendiente: carpeta segura |
+| Fichas, PDF y exportaciones | `%LOCALAPPDATA%\SENTINEL\informes` | Solo el usuario y SYSTEM (icacls; 700 en Linux/Mac). Antes, Descargas |
 
 La app **avisa** si la carpeta de datos está en una carpeta sincronizada con la nube (OneDrive, Dropbox…). Los tests
 usan siempre una carpeta temporal (`conftest.py` de la raíz) y **nunca** tocan los datos reales.
@@ -272,8 +272,9 @@ pausó a mitad. Quedan midudev, Glenda Morejón, Gonzalo Plata, Correlación, Re
    Gentlemen, 16-10-2026); `presidencia.gob.ec` con Tech Detect real → WordPress con 7 CVE explotados (EPSS 98 %).
    Arreglado de paso: la pestaña Datos guarda "DOMAIN"/"IP" en mayúsculas y el motor de correlación no los
    relacionaba con nada.
-4. **Carpeta segura** para fichas e informes (hoy van a Descargas sin cifrar; la base tampoco está cifrada en disco:
-   recomendar BitLocker).
+4. **HECHO (26-10): carpeta segura.** Fichas, PDF y exportaciones van a `informes` (permisos solo del usuario y
+   SYSTEM; `data_paths.make_private`). Al abrir y al guardar el primer informe se avisa si el disco no está cifrado
+   (`disk_encryption`, propiedad BitLockerProtection, sin administrador). Las fichas viejas de Descargas no se tocan.
 5. **Herramientas pesadas:** instalar Go y probar Subfinder y Amass; después TheHarvester, SpiderFoot y Recon-ng.
 6. **Limpieza de código:** importaciones sin uso que ya existían (`ruff check --select F401`), ruta fija de SpiderFoot
    en `binary_map` de `tab_tools`, archivos muy grandes.

@@ -148,6 +148,8 @@ class ProfilingTab(QWidget):
         ficha_menu = QMenu(self.btn_generate_dossier)
         ficha_menu.addAction("🌐  Ver en el navegador", lambda: self._on_generate_dossier("html"))
         ficha_menu.addAction("📄  Guardar como PDF…", lambda: self._on_generate_dossier("pdf"))
+        ficha_menu.addSeparator()
+        ficha_menu.addAction("📂  Abrir la carpeta de informes", self._open_reports_folder)
         self.btn_generate_dossier.setMenu(ficha_menu)
         self.btn_generate_dossier.setToolTip("Ficha legible de la persona: del perfilamiento en pantalla o, si no hay "
                                              "ninguno, del perfil guardado en el caso abierto")
@@ -948,7 +950,8 @@ Fragmento:
 
         from PySide6.QtWidgets import QFileDialog
         name = re.sub(r"[^\w-]+", "_", self.input_name.text())[:30].strip("_") or "persona"
-        default = Path.home() / "Downloads" / f"perfil_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        from .reports_folder import reports_folder
+        default = reports_folder(self.app) / f"perfil_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         path, _ = QFileDialog.getSaveFileName(self, "Guardar los datos del perfil (JSON, para otras herramientas)",
                                               str(default), "Datos JSON (*.json)")
         if not path:
@@ -996,8 +999,9 @@ Fragmento:
         if report is None:
             return
         page = render_person_html(report)
-        output_dir = Path.home() / "Downloads"
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Carpeta privada de informes (antes Descargas): solo la lee tu usuario de Windows
+        from .reports_folder import reports_folder
+        output_dir = reports_folder(self.app)
         name = re.sub(r"[^\w-]+", "_", person)[:30].strip("_") or "persona"
         stem = f"Ficha_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         if fmt == "pdf":
@@ -1016,6 +1020,10 @@ Fragmento:
         webbrowser.open(output_file.as_uri())
         self._log(f"Ficha generada: {output_file}")
         self.app.toast.show("Ficha generada y abierta en el navegador", kind="success")
+
+    def _open_reports_folder(self):
+        from .reports_folder import open_reports_folder
+        self._log(f"Carpeta de informes (solo tu usuario puede leerla): {open_reports_folder()}")
 
     def _save_pdf(self, html: str, target: str):
         from .pdf_export import save_html_as_pdf

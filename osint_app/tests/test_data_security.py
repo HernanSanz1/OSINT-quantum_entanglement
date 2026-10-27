@@ -1,5 +1,6 @@
 """Seguridad de los datos: dónde se guardan los casos, migración sin pérdida y claves cifradas."""
 import json
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -299,3 +300,39 @@ def test_dpapi_refuses_outside_windows(monkeypatch):
     monkeypatch.setattr(dpapi, "AVAILABLE", False)
     with pytest.raises(OSError):
         dpapi.protect(b"x")
+
+
+# ── fichas e informes en una carpeta privada ─────────────────────────────────
+
+def test_reports_go_to_the_user_data_dir_not_to_downloads():
+    assert data_paths.reports_dir() == data_dir() / "informes"
+    assert "Downloads" not in str(data_paths.reports_dir())
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="permisos NTFS (icacls): solo en Windows")
+def test_private_folder_is_readable_only_by_the_user_and_system(tmp_path):
+    import subprocess
+    folder = tmp_path / "informes"
+    assert data_paths.make_private(folder) is True
+    acl = subprocess.run(["icacls", str(folder)], capture_output=True, text=True).stdout
+    entries = [line.strip() for line in acl.splitlines()[:-2] if ":" in line]
+    owners = {e.split(":")[-2].split("\\")[-1].split(" ")[-1].lower() for e in entries}
+    assert owners <= {os.environ["USERNAME"].lower(), "system"}, acl          # ni "Usuarios" ni "Todos"
+    assert (folder / ".carpeta_privada").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="en Linux/Mac se usan permisos 700")
+def test_private_folder_on_unix_is_700(tmp_path):
+    folder = tmp_path / "informes"
+    assert data_paths.make_private(folder) is True
+    assert (folder.stat().st_mode & 0o777) == 0o700
+
+
+@pytest.mark.parametrize("raw,state", [("1", "on"), ("3", "on"), ("2", "off"), ("5", "off"), ("", "unknown")])
+def test_disk_encryption_reads_the_bitlocker_property(monkeypatch, raw, state):
+    monkeypatch.setattr(data_paths.sys, "platform", "win32")
+    monkeypatch.setattr(data_paths, "_disk_encryption_cache", {})
+    import subprocess
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: SimpleNamespace(stdout=raw + "\n"))
+    assert data_paths.disk_encryption("C:/x") == state
+    assert bool(data_paths.disk_encryption_warning("C:/x")) == (state == "off")
