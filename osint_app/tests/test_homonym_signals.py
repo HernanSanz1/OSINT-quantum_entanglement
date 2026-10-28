@@ -202,3 +202,11 @@ def test_alias_must_be_distinctive_to_tie():
     # un alias de una palabra o contenido en el nombre legal no liga: hay homónimos con ese nombre
     assert homonym_signals(text, "", "México", aliases=["Luis"], name="Luis Arturo Villar Sudek") != []
     assert homonym_signals(text, "", "México", aliases=["Luis Villar"], name="Luis Villar Sudek") != []
+
+
+def test_linkedin_country_only_counts_for_profiles_not_articles():
+    # Real (Andersson Boscán): un artículo /pulse/ en es.linkedin.com salía "perfil de LinkedIn de España"
+    article = "https://es.linkedin.com/pulse/ecuavisa-y-las-dos-micaelas-historias-que-cuentan"
+    assert homonym_signals("Ecuavisa y las dos Micaelas", article, "Ecuador") == []
+    profile = "https://ca.linkedin.com/in/jandot-luisito-comunica-7a542a223"
+    assert [s.code for s in homonym_signals("Luisito Comunica", profile, "México")] == ["linkedin_country"]

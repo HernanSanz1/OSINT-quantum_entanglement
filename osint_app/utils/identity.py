@@ -75,6 +75,26 @@ def is_content_url(url: str) -> bool:
     return any(seg.lower() in _CONTENT_SEGMENTS for seg in _segments(parts.path) if not seg.startswith("@"))
 
 
+_SEARCH_PARAMS = {"q", "query", "search", "s", "keyword", "keywords", "term"}   # no "user": member.php?username= ES un perfil
+_SEARCH_SEGMENTS = {"search", "filter", "find", "buscar", "busqueda"}
+
+
+def is_search_page(url: str) -> bool:
+    """True si la URL es una página de búsqueda del sitio, no el perfil de alguien.
+
+    Que una búsqueda de "midudev" responda no demuestra que exista la cuenta. Visto en real: Maigret daba
+    stackoverflow.com/users/filter?search=midudev y Sherlock op.gg/lol/summoners/search?q=luisitocomunica&region=jp,
+    que además acababa en "otra persona" por "menciona Japón".
+    """
+    try:
+        parts = urlsplit(url if re.match(r"^[a-z][a-z0-9+.-]*://", url or "", re.I) else "https://" + (url or ""))
+    except ValueError:
+        return False
+    if any(seg.lower() in _SEARCH_SEGMENTS for seg in _segments(parts.path)):
+        return True
+    return bool(_SEARCH_PARAMS & {k.lower() for k in parse_qs(parts.query)})
+
+
 def parse_profile_url(url: str) -> Optional[Tuple[str, str, str]]:
     """(plataforma, usuario en minúsculas, URL canónica) de un enlace a un perfil, o None.
 

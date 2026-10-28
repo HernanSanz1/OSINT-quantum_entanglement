@@ -68,7 +68,36 @@ _FIELD_WORDS = {
     "company": "empresa", "location": "ubicación", "observable": "indicador a analizar", "hash_value": "hash",
     "role": "nota", "context": "contexto", "subdomain": "subdominios", "dns": "registros DNS",
     "social_profile": "perfiles sociales", "person": "personas", "tech": "tecnologías", "cve": "vulnerabilidades (CVE)",
-    "organization": "organizaciones", "hash": "hash", "name": "nombres",
+    "organization": "organizaciones", "hash": "hash", "name": "nombres", "note": "valoración y notas",
+}
+
+# Guía sin jerga para las herramientas de uso diario: (qué hace, qué obtendrás). La evaluación de usuario
+# (14-10-2026) señaló RDAP, DNSSEC, MX/SPF/DMARC/DKIM, Shodan InternetDB, GreyNoise y "Qué obtendrás: dominio, note".
+_PLAIN_GUIDE = {
+    "Domain WHOIS": ("Consulta el registro público del dominio: quién lo registró, cuándo y hasta cuándo.",
+                     "fecha de creación y de caducidad, registrador, servidores del dominio y si tiene firma de "
+                     "seguridad (DNSSEC)"),
+    "Mail Health": ("Comprueba si el dominio está protegido contra correos falsos que se hagan pasar por él "
+                    "(suplantación o phishing).",
+                    "nivel de riesgo de suplantación (bajo, medio o alto) y qué protecciones le faltan"),
+    "IP Reputation": ("Mira si la dirección IP aparece en listas públicas de amenazas: salidas de Tor, redes de spam, "
+                      "servidores de malware o escáneres de internet.",
+                      "nivel de riesgo de la IP (0 a 100), en qué listas aparece y qué servicios expone"),
+    "Link Shield": ("Analiza un enlace sin abrirlo y busca señales de engaño (dominios recién creados, imitaciones de "
+                    "marcas, acortadores) y si está en listas de phishing o malware.",
+                    "nivel de riesgo del enlace (0 a 100) y los motivos"),
+    "Tech Detect": ("Identifica con qué está hecha una web: servidor, gestor de contenidos (p. ej. WordPress), "
+                    "librerías y sus versiones.",
+                    "tecnologías y versiones; luego Correlación → Cruzar con CTI dice cuáles tienen vulnerabilidades"),
+    "crt.sh": ("Busca subdominios en los certificados de seguridad públicos del dominio.",
+               "subdominios (p. ej. correo.ejemplo.com, vpn.ejemplo.com)"),
+    "dnspython": ("Consulta los registros públicos del dominio (a qué IP apunta, qué servidor de correo usa…).",
+                  "direcciones IP, servidores de correo y textos de verificación del dominio"),
+    "ipwhois": ("Consulta a quién pertenece una dirección IP.", "empresa o proveedor dueño de la IP, país y rango"),
+    "File Metadata": ("Lee los datos ocultos de una foto o documento (de un enlace o de tu equipo).",
+                      "autor, fechas, programa usado, cámara y, si la tiene, la ubicación GPS"),
+    "Wayback Machine": ("Busca versiones antiguas de una web guardadas en archive.org.",
+                        "fechas y enlaces a cómo era la web en el pasado"),
 }
 
 
@@ -415,6 +444,12 @@ class ToolsTab(QWidget):
             item.setData(Qt.UserRole, name)   # store clean name
             self.list_tools.addItem(item)
         self.list_tools.scrollToTop()          # antes se abría desplazada a la mitad
+        # Ancho para el texto más largo ("🔑  Hunter.io  —  Falta clave o sesión"): en portátiles salía cortado
+        # ("Falta clave o s…", evaluación de usuario 14-10-2026). Con tope para no comerse el panel de la derecha.
+        metrics = self.list_tools.fontMetrics()
+        widest = max((metrics.horizontalAdvance(self.list_tools.item(i).text())
+                      for i in range(self.list_tools.count())), default=0)
+        self.list_tools.setMinimumWidth(min(widest + 48, 440))
 
     # ── Selection changed ─────────────────────────────────────────────────────
 
@@ -567,8 +602,9 @@ class ToolsTab(QWidget):
         lay = QVBoxLayout(modal.content)
         lay.setSpacing(10)
         
+        plain = _PLAIN_GUIDE.get(t_name)
         # Backend Description
-        lbl_desc = QLabel(f"<b>Qué hace:</b><br>{tool.description}")
+        lbl_desc = QLabel(f"<b>Qué hace:</b><br>{plain[0] if plain else tool.description}")
         lbl_desc.setWordWrap(True)
         lay.addWidget(lbl_desc)
         
@@ -588,7 +624,9 @@ class ToolsTab(QWidget):
         lay.addWidget(lbl_opt)
         
         # Produces
-        prod_str = ", ".join(_FIELD_WORDS.get(str(f).lower(), str(f)) for f in reqs.produces) if reqs.produces else "Datos sin procesar"
+        prod_str = (plain[1] if plain else
+                    ", ".join(_FIELD_WORDS.get(str(f).lower(), str(f)) for f in reqs.produces) if reqs.produces
+                    else "Datos sin procesar")
         lbl_prod = QLabel(f"<span style='color: #00ff66;'><b>Qué obtendrás:</b></span> {prod_str}")
         lbl_prod.setWordWrap(True)
         lay.addWidget(lbl_prod)

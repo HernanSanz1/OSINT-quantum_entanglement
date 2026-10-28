@@ -203,6 +203,14 @@ def _url_signals(url: str, target: str) -> List[Signal]:
         return []
     match = re.match(r"^([a-z]{2})\.linkedin\.com$", host)
     if match:
+        # Solo en un perfil (/in/…) el subdominio es el país de esa persona. En un artículo o publicación (/pulse/,
+        # /posts/) es desde dónde lo indexó el buscador: es.linkedin.com/pulse/ sobre Ecuavisa salía "de España"
+        try:
+            path = urlsplit(url if "://" in url else "https://" + url).path.lower()
+        except ValueError:
+            path = ""
+        if not path.startswith(("/in/", "/pub/")):
+            return []
         code = match.group(1)
         if code in COUNTRY_BY_CODE and code != target:
             return [Signal("linkedin_country", f"posible homónimo (señal débil): perfil de LinkedIn de {COUNTRY_BY_CODE[code]}", LINKEDIN_PENALTY)]

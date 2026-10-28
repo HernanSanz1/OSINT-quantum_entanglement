@@ -504,3 +504,11 @@ class CTITab(QWidget):
     def refresh(self):
         """Refrescar tab (llamado por la app principal)"""
         self._load_items()
+        self._items_loaded = True
+
+    def showEvent(self, event):
+        """La primera vez que se abre la pestaña se cargan las noticias. Antes la tabla salía vacía hasta cambiar de
+        caso (evaluación de usuario, 14-10-2026); cargarlas al arrancar retrasaría la apertura del programa."""
+        super().showEvent(event)
+        if not getattr(self, "_items_loaded", False):
+            self.refresh()

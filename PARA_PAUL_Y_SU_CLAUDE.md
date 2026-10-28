@@ -255,11 +255,13 @@ pausó a mitad. Quedan midudev, Glenda Morejón, Gonzalo Plata, Correlación, Re
      ya solo recoge la búsqueda web (el aviso de DNS de Maigret salía en todos los perfiles).
   6. **CORREGIDO (26-10):** Forbes Colombia sobre Luisito iba a "otra persona" por "menciona Colombia": un alias
      distintivo (2+ palabras, fuera del nombre legal) liga el texto a la persona (`homonyms._mentions_alias`).
-     Pendiente: Maigret avisa en todos los perfiles de "muchos sitios fallaron por red o DNS"; es.linkedin.com se
-     toma como "de España".
-  7. Menores: la barra de estado inferior no se actualiza al cambiar de caso; la columna de estado de Herramientas
-     corta el texto; jerga en las guías (RDAP, DKIM, "note"); faltan tildes en "busqueda" y "Ejecucion"; tooltip de
-     Hunter con un comando de consola; la tabla CTI sale vacía hasta refrescar.
+  7. **CORREGIDO (28-10):** el aviso de Maigret "muchos sitios fallaron por red o DNS" era falso: medido, eran ~10 %
+     anti-bots y ~3 % acceso denegado (lo habitual); ahora dice el porcentaje y el motivo, y solo es aviso si pasa del
+     25 % (`maigret_unchecked_sites`). es.linkedin.com en un artículo (/pulse/) ya no es "de España": el país solo
+     cuenta en perfiles (/in/). Las páginas de búsqueda (stackoverflow.com/users/filter?search=…,
+     op.gg/…/search?q=…) ya no son perfiles (`identity.is_search_page`). Interfaz: barra de estado al cambiar de caso,
+     lista de Herramientas sin cortar, guía sin jerga en 10 herramientas, tabla CTI cargada al abrir la pestaña.
+     Queda: el tooltip de Hunter muestra el comando `--set-key` (a propósito: las claves las pone cada persona).
 
 ## 11. Lo que falta (orden de trabajo acordado)
 

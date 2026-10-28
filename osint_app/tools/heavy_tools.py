@@ -8,11 +8,12 @@ SECURITY:
 - Output is hard-capped at MAX_OUTPUT_BYTES to prevent RAM exhaustion.
 - All calls have explicit timeout values.
 """
-import subprocess, json, shutil, logging, shlex, sys, threading
-from typing import List
+import subprocess, json, shutil, logging, re, shlex, sys, threading
+from typing import Dict, List
 from pathlib import Path
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
 from ..core.base_tool import OSINTTool
+from ..utils.identity import is_search_page
 from ..utils.python_cli import blocked_by_windows, pip_tool_command
 from ..utils.sanitizer import (
     sanitize_shell_arg, sanitize_snippet, validate_domain, validate_ip,
@@ -453,6 +454,37 @@ class ReconNgTool(OSINTTool):
         return results
 
 
+# Resumen de Maigret: [!] Too many errors of type "Bot protection" (9.97%). Try to switch to another ip address
+_MAIGRET_ERROR_RE = re.compile(r'too many errors of type "([^"]+)" \((\d+(?:\.\d+)?)%\)', re.I)
+_MAIGRET_ERROR_NAMES = (("bot", "protección anti-bots"), ("captcha", "captcha"), ("access denied", "acceso denegado"),
+                        ("too many requests", "límite de consultas"), ("timeout", "tiempo agotado"),
+                        ("connect", "conexión"), ("dns", "DNS"), ("ssl", "certificado"), ("server", "error del sitio"))
+MAIGRET_WARN_PERCENT = 25        # por debajo es lo habitual (medido: ~13 % anti-bots y acceso denegado)
+
+
+def maigret_unchecked_sites(out: str) -> str:
+    """Qué parte de los sitios no pudo comprobar Maigret y por qué; "" si ninguna.
+
+    Antes cualquier "Too many errors" se anunciaba como "muchos sitios fallaron por red o DNS" en todos los perfiles.
+    Medido en real (2026-10-28, midudev): eran ~10 % protección anti-bots, ~3 % acceso denegado y ~13 % "Unsupported
+    username format", que no es un fallo (el sitio no admite usuarios así). Solo es aviso (⚠️) si pasa del 25 %.
+    """
+    worst: Dict[str, float] = {}
+    for kind, percent in _MAIGRET_ERROR_RE.findall(out or ""):
+        if "username format" in kind.lower():
+            continue
+        name = next((label for key, label in _MAIGRET_ERROR_NAMES if key in kind.lower()), kind)
+        worst[name] = max(worst.get(name, 0.0), float(percent))
+    total = sum(worst.values())
+    if not worst:
+        return ""
+    detail = ", ".join(f"{name} {pct:.0f} %" for name, pct in sorted(worst.items(), key=lambda x: -x[1]))
+    if total >= MAIGRET_WARN_PERCENT:
+        return (f"⚠️ Maigret: no pudo comprobar el {total:.0f} % de los sitios ({detail}); en esos sitios la cuenta "
+                f"podría existir aunque no salga.")
+    return f"ℹ️ Maigret: {total:.0f} % de los sitios no se pudieron comprobar ({detail}); es lo habitual."
+
+
 class MaigretTool(OSINTTool):
     def __init__(self):
         super().__init__(
@@ -518,14 +550,15 @@ class MaigretTool(OSINTTool):
                     source_tool=self.name, category="Error", relevance_score=100,
                 )]
 
-        if "too many errors" in out.lower():
-            # Fallo de red/DNS de maigret: "0 perfiles" no significaría que no existan (visto en real 2026-10-12)
-            self._report_progress("⚠️ Maigret: muchos sitios fallaron por red o DNS; el resultado puede estar incompleto.")
+        unchecked = maigret_unchecked_sites(out)
+        if unchecked:
+            self._report_progress(unchecked)
         results = []
         for site, info in list(data.items())[:MAX_RESULTS]:
             status = info.get("status") or {}
             url = info.get("url_user") or status.get("url") or ""
-            if status.get("status") != "Claimed" or not url or url in self._NOT_A_PROFILE:
+            # Una página de búsqueda (stackoverflow.com/users/filter?search=…) no prueba que la cuenta exista
+            if status.get("status") != "Claimed" or not url or url in self._NOT_A_PROFILE or is_search_page(url):
                 continue
             ids = {k: v for k, v in (status.get("ids") or {}).items() if isinstance(v, (str, int, float)) and str(v).strip()}
             details = " · ".join(f"{k}: {v}" for k, v in ids.items() if k in ("fullname", "name", "location", "created_at", "bio"))

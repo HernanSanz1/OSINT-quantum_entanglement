@@ -198,3 +198,10 @@ def test_ghunt_edge_cases(program):
 def test_snscrape_is_reported_as_deprecated():
     (result,) = SnscrapeYoutubeTool().execute(QueryParameters(username="x"))
     assert result.category == "Error / Deprecado" and "Obsoleta" in result.title and result.relevance_score == 100
+
+
+def test_sherlock_skips_search_pages(program):
+    # Real (Luisito Comunica): op.gg devolvía su página de búsqueda, y acababa en "otra persona" por "Japón"
+    program(SHERLOCK_OUTPUT + "[+] op.gg [LeagueOfLegends] Japan: https://op.gg/lol/summoners/search?q=jperez&region=jp\n")
+    urls = [r.url for r in SherlockTool().execute(QueryParameters(username="jperez"))]
+    assert urls == ["https://github.com/jperez", "https://www.reddit.com/user/jperez"]

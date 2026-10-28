@@ -349,6 +349,6 @@ def test_only_web_search_warnings_reach_the_ficha_banner():
     eng = _engine_with_results([])
     eng.warnings = {}
     eng._tool_message_forwarder("WebSearch")("⚠️ WebSearch: búsqueda web INCOMPLETA — 2 de 6 consultas no se pudieron hacer")
-    eng._tool_message_forwarder("Maigret")("⚠️ Maigret: muchos sitios fallaron por red o DNS; el resultado puede estar incompleto.")
+    eng._tool_message_forwarder("Maigret")("⚠️ Maigret: no pudo comprobar el 36 % de los sitios (conexión 22 %); en esos sitios la cuenta podría existir aunque no salga.")
     eng._tool_message_forwarder("Wikidata")("⚠️ Wikidata: 2 personas con ese nombre")
     assert list(eng.warnings) == ["WebSearch"]

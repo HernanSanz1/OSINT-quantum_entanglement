@@ -219,3 +219,15 @@ def test_title_containing_the_handle_is_not_a_name():
 def test_username_is_not_truncated_at_a_hyphen():
     found = {e.value for e in EntityExtractor.extract("Empresa: @epicweb-dev | contacto @juanito y (@maria_99)", "t") if e.entity_type == "username"}
     assert found == {"@juanito", "@maria_99"}
+
+
+@pytest.mark.parametrize("url,search", [
+    ("https://stackoverflow.com/users/filter?search=midudev", True),          # real, de Maigret
+    ("https://op.gg/lol/summoners/search?q=luisitocomunica&region=jp", True),  # real, de Sherlock
+    ("https://x.com/search?q=midudev", True),
+    ("https://forum.ejemplo.com/member.php?username=midudev", False),          # perfil por parámetro
+    ("https://github.com/midudev", False), ("https://www.reddit.com/user/midudev", False),
+])
+def test_search_pages_are_not_profiles(url, search):
+    from osint_app.utils.identity import is_search_page
+    assert is_search_page(url) is search

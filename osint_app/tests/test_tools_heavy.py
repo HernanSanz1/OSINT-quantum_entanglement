@@ -200,3 +200,26 @@ def test_maigret_never_gets_an_option_as_username_and_reports_timeouts(fake_run)
     tool = MaigretTool()
     seen = progress_of(tool)
     assert tool.execute(QueryParameters(username="jperez")) == [] and any("se agotó el tiempo" in m for m in seen)   # antes: "Maigret no devolvió un JSON válido"
+
+
+# ── Maigret: sitios que no pudo comprobar ────────────────────────────────────
+
+MAIGRET_SUMMARY = (  # salida real (midudev, 2026-10-28)
+    '[!] Too many errors of type "Bot protection" (9.97%). Try to switch to another ip address\n'
+    '[!] Too many errors of type "Access denied" (3.22%). It\'s recommended to use --cloudflare-bypass\n'
+    '[!] Too many errors of type "Unsupported username format" (12.86%)\n'
+    '[!] Too many errors of type "Bot protection" (8.36%). Try to switch to another ip address\n')
+
+
+def test_maigret_usual_bot_protection_is_information_not_a_network_warning():
+    from osint_app.tools.heavy_tools import maigret_unchecked_sites
+    msg = maigret_unchecked_sites(MAIGRET_SUMMARY)
+    assert msg.startswith("ℹ️") and "protección anti-bots 10 %" in msg and "DNS" not in msg
+    assert "formato" not in msg                     # "Unsupported username format" no es un fallo
+
+
+def test_maigret_many_unchecked_sites_is_a_warning():
+    from osint_app.tools.heavy_tools import maigret_unchecked_sites
+    msg = maigret_unchecked_sites(MAIGRET_SUMMARY + '[!] Too many errors of type "Connecting failure" (22.1%)\n')
+    assert msg.startswith("⚠️") and "conexión 22 %" in msg
+    assert maigret_unchecked_sites("") == ""

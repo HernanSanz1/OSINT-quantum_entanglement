@@ -382,6 +382,9 @@ class OSINTGUI(QMainWindow):
         width = self.case_badge.width() - 36            # margen interior del recuadro
         self.case_badge.setText(QFontMetrics(self.case_badge.font()).elidedText(full, Qt.ElideRight, width))
         self.case_badge.setToolTip(full)
+        # La barra de abajo también: antes solo cambiaba al abrir desde Casos y seguía diciendo el caso anterior al
+        # crear, borrar o guardar un perfil en un caso nuevo (evaluación de usuario, 14-10-2026)
+        self.set_status(f"✔  Caso abierto: {name}" if case_id else "Ningún caso abierto", "success" if case_id else "info")
 
     def _action_toggle_tor(self):
         """Tor para la terminal avanzada. Antes decía "Herramientas rutearán vía Tor" sin que fuera cierto (solo

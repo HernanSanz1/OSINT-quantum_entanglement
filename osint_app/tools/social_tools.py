@@ -7,6 +7,7 @@ from typing import List
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
 from ..core.base_tool import OSINTTool
 from ..utils.python_cli import blocked_by_windows, pip_tool_command
+from ..utils.identity import is_search_page
 from ..utils.sanitizer import sanitize_snippet
 
 logger = logging.getLogger(__name__)
@@ -108,6 +109,8 @@ class SherlockTool(OSINTTool):
                 parts = line[3:].split(":", 1)
                 if len(parts) == 2:
                     site, url = parts[0].strip(), parts[1].strip()
+                    if is_search_page(url):          # una búsqueda que responde no prueba que la cuenta exista
+                        continue
                     results.append(SearchResult(
                         title=f"Perfil en {site}: {username}",
                         url=url, snippet=f"Username {username} encontrado en {site}",
