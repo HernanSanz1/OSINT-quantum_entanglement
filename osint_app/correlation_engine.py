@@ -19,7 +19,7 @@ import re
 from urllib.parse import urlsplit
 import json
 import hashlib
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Set
 from dataclasses import dataclass, field
 from collections import defaultdict
 from itertools import combinations, product
@@ -523,13 +523,18 @@ class CorrelationEngine:
             for c in ordered
         ]
 
-    def suggest_tools(self) -> List[Tuple[str, str]]:
-        """Sugiere herramientas a ejecutar según los datos disponibles"""
+    def suggest_tools(self, available: Optional[Set[str]] = None) -> List[Tuple[str, str]]:
+        """Sugiere herramientas a ejecutar según los datos disponibles.
+
+        `available`: nombres de las herramientas instaladas; si se pasa, solo se sugieren esas (antes recomendaba
+        Subfinder, TheHarvester o Censys sin tenerlas, y con nombres que no existían: "Wayback", "IPWhois").
+        """
         suggestions = []
         types_present = set(e.entity_type for e in self.entities.values())
 
         if "email" in types_present:
             suggestions.append(("Holehe", "Verificar email en servicios"))
+            suggestions.append(("Mail Health", "Seguridad del correo del dominio (SPF, DMARC)"))
             suggestions.append(("Hunter.io", "Buscar emails relacionados"))
 
         if "username" in types_present:
@@ -537,17 +542,23 @@ class CorrelationEngine:
             suggestions.append(("Maigret", "Búsqueda profunda de username"))
 
         if "domain" in types_present:
+            suggestions.append(("Domain WHOIS", "Dueño y fechas del dominio"))
+            suggestions.append(("crt.sh", "Subdominios por sus certificados"))
+            suggestions.append(("Tech Detect", "Tecnologías de la web (para cruzarlas con el CTI)"))
             suggestions.append(("Subfinder", "Enumerar subdominios"))
             suggestions.append(("TheHarvester", "Recolectar emails y hosts"))
-            suggestions.append(("Wayback", "Histórico del dominio"))
+            suggestions.append(("Wayback Machine", "Histórico del dominio"))
 
         if "ip" in types_present:
-            suggestions.append(("IPWhois", "Información de IP/ASN"))
-            suggestions.append(("Censys", "Certificados y servicios"))
+            suggestions.append(("IP Reputation", "Reputación y puertos abiertos de la IP"))
+            suggestions.append(("ipwhois", "Información de IP/ASN"))
+            suggestions.append(("CENSYS", "Certificados y servicios"))
 
         if not types_present:
             suggestions.append(("Google Dorks", "Búsqueda inicial"))
 
+        if available is not None:
+            suggestions = [s for s in suggestions if s[0] in available]
         return suggestions
 
     def correlate_with_cti(self, store=None, tech_terms: List[str] = None) -> Dict:

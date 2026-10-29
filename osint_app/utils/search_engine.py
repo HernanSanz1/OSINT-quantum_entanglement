@@ -52,6 +52,30 @@ class EngineBlocked(Exception):
     """El motor respondió con captcha, límite o error: hay que apartarlo un rato."""
 
 
+# Nombres de los buscadores y de los fallos en palabras de usuario (antes "ddgs-auto (bloqueado: captcha anti-bots)")
+ENGINE_NAMES = {"brave": "Brave", "searxng": "tu buscador propio (SearXNG)", "ddgs-auto": "DuckDuckGo y otros",
+                "yahoo": "Yahoo", "duckduckgo": "DuckDuckGo"}
+
+
+def readable_attempts(attempts: List[Tuple[str, str]]) -> str:
+    """Qué buscador falló y por qué, en palabras ("Yahoo: no respondió a tiempo; DuckDuckGo: pidió un captcha")."""
+    parts = []
+    for engine, state in attempts:
+        if state in ("ok", "vacío"):
+            continue
+        reason = state.split(": ", 1)[1] if ": " in state else state
+        if state == "en pausa":
+            reason = "en pausa unos minutos porque antes nos bloqueó"
+        elif "captcha" in reason:
+            reason = "nos tomó por un robot y pidió un captcha"
+        elif reason == "tiempo agotado":
+            reason = "no respondió a tiempo"
+        elif state.startswith("error"):
+            reason = "falló"
+        parts.append(f"{ENGINE_NAMES.get(engine, engine.capitalize())}: {reason}")
+    return "; ".join(parts)
+
+
 @dataclass
 class SearchOutcome:
     hits: List[Dict[str, str]] = field(default_factory=list)
@@ -73,7 +97,7 @@ class SearchOutcome:
         if self.hits:
             return f"{len(self.hits)} resultados vía {self.engine}"
         if self.all_blocked:
-            detail = ", ".join(f"{e} ({s})" for e, s in self.attempts)
+            detail = readable_attempts(self.attempts)
             return ("los buscadores bloquearon o no respondieron: " + detail +
                     ". Esto NO significa que no haya información. Espera unos minutos o añade una clave de "
                     "Brave Search (python -m osint_app.main --set-key BraveSearch).")
@@ -356,7 +380,7 @@ class SearchTracker:
         self.total += 1
         if outcome.incomplete:
             self.failed += 1
-            self.last_detail = ", ".join(f"{e} ({s})" for e, s in outcome.attempts if s not in ("vacío", "ok"))
+            self.last_detail = readable_attempts(outcome.attempts)
 
     def warning(self, tool: str, skipped: int = 0) -> str:
         """Aviso para el usuario, o "" si todas las consultas se hicieron."""

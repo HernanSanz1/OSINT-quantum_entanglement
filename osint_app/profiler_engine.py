@@ -26,7 +26,7 @@ import re
 import concurrent.futures
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Callable, Tuple
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 from dataclasses import asdict, dataclass, field
 
 from .tools import build_tool_registry
@@ -143,6 +143,19 @@ def _host_of(url: str) -> str:
     except ValueError:
         return ""
     return host[4:] if host.startswith("www.") else host
+
+
+def _wiki_key(url: str) -> str:
+    """Artículo de Wikipedia comparable ("pt.wikipedia.org/wiki/gonzalo_plata"), sin móvil, tildes codificadas ni
+    mayúsculas; vacío si no es un artículo de Wikipedia."""
+    try:
+        parts = urlsplit(url or "")
+    except ValueError:
+        return ""
+    host = (parts.hostname or "").lower().replace(".m.wikipedia.org", ".wikipedia.org")
+    if not host.endswith(".wikipedia.org") or not parts.path.startswith("/wiki/"):
+        return ""
+    return f"{host}{unquote(parts.path)}".lower()
 
 
 # "Username Generation": la lista de variantes que se generan para probar no es un hallazgo (salía en el top 10)
@@ -577,6 +590,21 @@ class ProfilerEngine:
                     places.extend(str(v) for v in (raw.get(key) or []))
         return " · ".join(places)
 
+    def _public_card_links(self):
+        """De la ficha de Wikidata del objetivo: códigos de los países ligados (nacionalidad, equipos, empleadores)
+        y sus artículos en todas las Wikipedias. Gonzalo Plata jugó en Portugal, España y Catar: sus noticias de esos
+        países y su Wikipedia en portugués iban a "otra persona" (evaluación 2026-10-28)."""
+        codes, wikis = set(), set()
+        for tr in self.results:
+            for sr in tr.results:
+                extra = sr.extra_data if isinstance(sr.extra_data, dict) else {}
+                if not (sr.category or "").startswith("Persona pública") or extra.get("ambiguous") or extra.get("discarded"):
+                    continue
+                raw = sr.raw_data if isinstance(sr.raw_data, dict) else {}
+                codes |= {str(c) for c in raw.get("Países ligados") or []}
+                wikis |= {_wiki_key(u) for u in raw.get("wikipedias") or []}
+        return codes, wikis - {""}
+
     def extract_candidates(self, seed: SeedData, min_confidence: float = 30.0) -> List[Candidate]:
         """
         Extrae candidatos de los resultados de las herramientas.
@@ -587,6 +615,7 @@ class ProfilerEngine:
         all_candidates = []
         self.skipped_listings: Dict[str, int] = {}
         known_places = self._public_card_places()
+        known_codes, own_wikis = self._public_card_links()
         own_hosts, name_keys, own_profiles = self._own_sites(seed)
 
         for tool_result in self.results:
@@ -613,10 +642,11 @@ class ProfilerEngine:
                     host = _host_of(sr.url)
                     own_site = bool(host) and (host in own_hosts or any(k in host.replace("-", "") for k in name_keys))
                     profile = parse_profile_url(sr.url) if sr.url else None
-                    own_site = own_site or (profile is not None and profile[:2] in own_profiles)
+                    own_site = (own_site or (profile is not None and profile[:2] in own_profiles)
+                                or _wiki_key(sr.url) in own_wikis)
                     signals = homonyms.homonym_signals(text, sr.url, seed.country, f"{seed.context} {seed.city}",
                                                        known_places=known_places, own_site=own_site,
-                                                       aliases=seed.aliases, name=seed.name)
+                                                       aliases=seed.aliases, name=seed.name, known_codes=known_codes)
                     warning = homonyms.warning_text(signals)
                     if signals:
                         confidence = max(0.0, confidence - homonyms.total_penalty(signals))

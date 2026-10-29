@@ -1,8 +1,7 @@
 """Búsqueda encadenada migrada de profiler.py (4.6): descubrir usernames y
 lanzar la segunda ronda."""
-import pytest
 
-from osint_app.core.models import QueryParameters, SearchResult
+from osint_app.core.models import SearchResult
 from osint_app.profiler_engine import (
     ProfilerEngine, SeedData, ToolResult, extract_usernames_from_results,
 )

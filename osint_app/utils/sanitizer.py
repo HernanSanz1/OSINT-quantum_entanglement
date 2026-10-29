@@ -5,7 +5,6 @@ IMPORTANT: Every piece of user input that reaches a subprocess or network call
 must go through one of these functions first.
 """
 import re
-import shlex
 import ipaddress
 from urllib.parse import urlparse
 

@@ -47,8 +47,13 @@ SOCIAL = {
 ENTITY_FIELDS = {
     "P27": "Nacionalidad", "P19": "Lugar de nacimiento", "P39": "Cargos", "P106": "Ocupación",
     "P69": "Estudios", "P108": "Empleadores", "P102": "Partido", "P26": "Cónyuge", "P22": "Padre",
-    "P25": "Madre", "P40": "Hijos", "P3373": "Hermanos",
+    "P25": "Madre", "P40": "Hijos", "P3373": "Hermanos", "P54": "Equipos",
 }
+# Países ligados a la persona: su nacionalidad y los de sus equipos y empleadores. Un futbolista que jugó en Portugal,
+# España y Catar sale en medios de esos países: sin esto sus noticias iban a "otra persona" (Gonzalo Plata,
+# evaluación 2026-10-28: Transfermarkt.es, Wikipedia en portugués, "menciona Portugal").
+LINKED_ORG_PROPS = ("P54", "P108")
+MAX_LINKED_ORGS = 50
 TEXT_FIELDS = {"P1559": "Nombre nativo", "P1477": "Nombre de nacimiento"}
 MAX_CANDIDATES = 8
 TYPO_RATIO = 0.85          # "Sommerferld" (errata real en Wikidata) ≈ "Sommerfeld"
@@ -180,6 +185,7 @@ class WikidataTool(OSINTTool):
             return []
         context = " ".join(x for x in (query_params.context, query_params.location, query_params.company) if x)
         self._report_progress(f"🔍 Wikidata: buscando a {name}…")
+        self._country_codes: Dict[str, List[str]] = {}
         try:
             ids = self._search_ids(name)
             if not ids:
@@ -193,6 +199,7 @@ class WikidataTool(OSINTTool):
             ref_ids = sorted({v["id"] for e in humans for p in ENTITY_FIELDS
                               for v in self._values(e, p) if isinstance(v, dict) and "id" in v})[:200]
             labels = {qid: self._label(e) for qid, e in self._entities(ref_ids, "labels").items()} if ref_ids else {}
+            self._country_codes = self._linked_country_codes(humans)
         except requests.RequestException as e:
             self._report_progress(f"❌ Wikidata: no se pudo consultar ({type(e).__name__}).")
             return []
@@ -235,6 +242,34 @@ class WikidataTool(OSINTTool):
                                   f"elegir; se listan todas sin dar ninguna por buena. Añade país, cargo o ciudad.")
         return results
 
+    def _linked_country_codes(self, humans: List[dict]) -> Dict[str, List[str]]:
+        """Código ISO ("pt", "es"…) de los países ligados a cada persona: nacionalidad y país de sus equipos y
+        empleadores. Es un dato de apoyo: si la consulta falla, no se pierde la ficha."""
+        try:
+            org_ids = sorted({v["id"] for e in humans for p in LINKED_ORG_PROPS for v in self._values(e, p)
+                              if isinstance(v, dict) and "id" in v})[:MAX_LINKED_ORGS]
+            org_country = {}
+            for qid, org in (self._entities(org_ids, "claims").items() if org_ids else []):
+                # Solo el primero: algunos clubes arrastran países históricos (Rusia, Unión Soviética)
+                org_country[qid] = [v["id"] for v in self._values(org, "P17") if isinstance(v, dict) and "id" in v][:1]
+            per_person = {}
+            for e in humans:
+                countries = [v["id"] for v in self._values(e, "P27") if isinstance(v, dict) and "id" in v]
+                for p in LINKED_ORG_PROPS:
+                    for v in self._values(e, p):
+                        if isinstance(v, dict) and "id" in v:
+                            countries += org_country.get(v["id"], [])
+                per_person[e.get("id", "")] = list(dict.fromkeys(countries))
+            country_ids = sorted({c for cs in per_person.values() for c in cs})
+            iso = {}
+            for qid, country in (self._entities(country_ids, "claims").items() if country_ids else []):
+                codes = [v for v in self._values(country, "P297") if isinstance(v, str)]
+                if codes:
+                    iso[qid] = "uk" if codes[0].lower() == "gb" else codes[0].lower()   # LinkedIn usa uk.linkedin.com
+            return {pid: list(dict.fromkeys(iso[c] for c in cs if c in iso)) for pid, cs in per_person.items()}
+        except (requests.RequestException, ValueError, KeyError, TypeError):
+            return {}
+
     def _person_result(self, e: dict, labels: Dict[str, str], points: float, ctx_words: List[str],
                        ambiguous: bool, total: int, discarded: bool = False) -> SearchResult:
         qid = e.get("id", "")
@@ -246,7 +281,8 @@ class WikidataTool(OSINTTool):
         if death:
             fields["death_date"] = death
         for prop, label in ENTITY_FIELDS.items():
-            vals = [labels.get(v["id"], v["id"]) for v in self._values(e, prop) if isinstance(v, dict) and "id" in v]
+            vals = list(dict.fromkeys(labels.get(v["id"], v["id"]) for v in self._values(e, prop)
+                                      if isinstance(v, dict) and "id" in v))
             if vals:
                 fields[label] = vals[:6]
         for prop, label in TEXT_FIELDS.items():
@@ -263,6 +299,16 @@ class WikidataTool(OSINTTool):
         for wiki, lang in (("eswiki", "es"), ("enwiki", "en")):
             if wiki in sitelinks:
                 fields[f"wikipedia_{lang}"] = f"https://{lang}.wikipedia.org/wiki/{sitelinks[wiki]['title'].replace(' ', '_')}"
+        # Su artículo en todas las Wikipedias (la portuguesa de un futbolista que jugó en Portugal también es suya)
+        wikis = [f"https://{key[:-4].replace('_', '-')}.wikipedia.org/wiki/{link['title'].replace(' ', '_')}"
+                 for key, link in sitelinks.items()
+                 if re.fullmatch(r"[a-z_]+wiki", key) and key not in ("commonswiki", "specieswiki", "metawiki")
+                 and isinstance(link, dict) and link.get("title")]
+        if wikis:
+            fields["wikipedias"] = wikis
+        codes = getattr(self, "_country_codes", {}).get(qid)
+        if codes:
+            fields["Países ligados"] = codes
 
         aliases = [a["value"] for lang in ("es", "en") for a in e.get("aliases", {}).get(lang, [])]
         if aliases:
@@ -272,7 +318,7 @@ class WikidataTool(OSINTTool):
             parts.append("También conocido como: " + ", ".join(fields["aliases"]))
         if birth:
             parts.append(f"Nacimiento: {birth}" + (f" en {fields['Lugar de nacimiento'][0]}" if fields.get("Lugar de nacimiento") else ""))
-        for label in ("Nacionalidad", "Cargos", "Ocupación", "Estudios", "Empleadores", "Partido"):
+        for label in ("Nacionalidad", "Cargos", "Ocupación", "Equipos", "Estudios", "Empleadores", "Partido"):
             if fields.get(label):
                 parts.append(f"{label}: {', '.join(fields[label][:3])}")
         if socials:

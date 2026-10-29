@@ -232,21 +232,27 @@ class ToolsTab(QWidget):
         self.btn_guide.setObjectName("btnVerify") # Usar estilo secundario
         self.btn_guide.setCursor(Qt.PointingHandCursor)
         self.btn_guide.clicked.connect(self._show_guide)
-        self.btn_guide.setEnabled(False)
         bot_lay.addWidget(self.btn_guide)
+
+        # Guardar la clave de API desde aquí (antes solo con un comando de consola). La escribe el usuario en un
+        # campo oculto y va al baúl cifrado, igual que --set-key; no se muestra ni se guarda en el caso.
+        self.btn_key = QPushButton("🔑  Guardar clave")
+        self.btn_key.setObjectName("btnVerify")
+        self.btn_key.setCursor(Qt.PointingHandCursor)
+        self.btn_key.clicked.connect(self._ask_key)
+        self.btn_key.hide()
+        bot_lay.addWidget(self.btn_key)
 
         self.btn_check = QPushButton("🔍  Verificar Estado")
         self.btn_check.setObjectName("btnVerify")
         self.btn_check.setCursor(Qt.PointingHandCursor)
         self.btn_check.clicked.connect(self._verify_status)
-        self.btn_check.setEnabled(False)
         bot_lay.addWidget(self.btn_check)
 
         self.btn_run = QPushButton("▶  Ejecutar")
         self.btn_run.setObjectName("btnPrimary")
         self.btn_run.setCursor(Qt.PointingHandCursor)
         self.btn_run.clicked.connect(self._run_tool)
-        self.btn_run.setEnabled(False)
         bot_lay.addWidget(self.btn_run)
 
         self.btn_stop = QPushButton("🛑  Detener")
@@ -455,10 +461,8 @@ class ToolsTab(QWidget):
 
     def _on_select(self):
         items = self.list_tools.selectedItems()
-        if not items:
-            self.btn_check.setEnabled(False)
-            self.btn_run.setEnabled(False)
-            self.btn_guide.setEnabled(False)
+        self.btn_key.hide()
+        if not items:   # los botones siguen activos: al pulsarlos avisan de que falta elegir herramienta
             return
 
         t_name = items[0].data(Qt.UserRole)
@@ -535,7 +539,8 @@ class ToolsTab(QWidget):
 
     def _verify_status(self):
         items = self.list_tools.selectedItems()
-        if not items:
+        if not items:   # antes no pasaba nada y no se sabía por qué
+            self.app.toast.show("Elige primero una herramienta de la lista de la izquierda", kind="warning")
             return
 
         t_name = items[0].data(Qt.UserRole)
@@ -552,6 +557,9 @@ class ToolsTab(QWidget):
         message  = st.reason
         inst_cmd = st.fix
         color    = st.color
+
+        from ..utils.key_cli import resolve_name
+        self.btn_key.setVisible(status == "needs_key" and resolve_name(t_name) is not None)
 
         # Update status banner
         self.lbl_status_icon.setText(icon)
@@ -586,11 +594,49 @@ class ToolsTab(QWidget):
 
         self.btn_run.setEnabled(not self._running)
 
+    def _ask_key(self):
+        """Pide la clave de la herramienta elegida en un campo oculto y la guarda en el baúl cifrado."""
+        from PySide6.QtWidgets import QLineEdit
+        from ..utils.key_cli import resolve_name
+        from ..utils.secret_vault import vault
+        items = self.list_tools.selectedItems()
+        canonical = resolve_name(items[0].data(Qt.UserRole)) if items else None
+        if not canonical:
+            return
+        modal = SentinelModal(self.window(), f"🔑  Clave de {canonical}", 460, 220)
+        lay = QVBoxLayout(modal.content)
+        info = QLabel(f"Pega tu clave de {canonical}. No se mostrará en pantalla: se guarda cifrada en este equipo "
+                      "y nunca en el caso ni en los informes.", modal.content)
+        info.setWordWrap(True)
+        lay.addWidget(info)
+        field = QLineEdit(modal.content)
+        field.setEchoMode(QLineEdit.Password)
+        lay.addWidget(field)
+
+        def _save():
+            value = field.text().strip()
+            field.clear()
+            if not value:
+                self.app.toast.show("No escribiste ninguna clave: no se guardó nada.", kind="warning")
+                return
+            vault.set(canonical, value)
+            tool = self.app.framework.tools.get(items[0].data(Qt.UserRole))
+            if tool is not None and hasattr(tool, "set_api_key"):
+                tool.set_api_key(value)
+            modal.accept()
+            self.app.toast.show(f"Clave de {canonical} guardada.", kind="success")
+            self._verify_status()
+
+        modal.add_button("Cancelar", modal.reject)
+        modal.add_button("Guardar", _save, variant="primary")
+        modal.exec()
+
     # ── Show tool guide ───────────────────────────────────────────────────────
 
     def _show_guide(self):
         items = self.list_tools.selectedItems()
         if not items:
+            self.app.toast.show("Elige primero una herramienta de la lista de la izquierda", kind="warning")
             return
             
         t_name = items[0].data(Qt.UserRole)
@@ -657,7 +703,11 @@ class ToolsTab(QWidget):
         from ..utils.tool_status import tool_status
         st = tool_status(tool)
         if not st.usable:
-            self.app.toast.show(f"{t_name}: {st.label}. Pulsa «Verificar Estado» para ver cómo activarla.", kind="warning")
+            # "En desarrollo" no se puede activar: antes mandaba a «Verificar Estado» a buscar algo que no existe
+            hint = ("Todavía no se puede usar desde SENTINEL." if st.code in ("pending", "deprecated")
+                    else "Pulsa «Verificar Estado» y luego «Guardar clave»." if st.code == "needs_key"
+                    else "Pulsa «Verificar Estado» para ver cómo instalarla.")
+            self.app.toast.show(f"{t_name}: {st.label}. {hint}", kind="warning")
             return
 
         def _execute(selected_ids, extra_args=""):
@@ -745,10 +795,21 @@ class ToolsTab(QWidget):
             content = QWidget()
             lay = QVBoxLayout(content)
             
+            # Marcados solo los datos que usa la herramienta, con su tipo en español (antes todo marcado, con
+            # [DOMAIN]/[URL]/[IP], y WHOIS o Tech Detect recibían también IP y URL)
+            from ..utils.data_validation import TYPE_LABELS
+            reqs = getattr(tool, "requirements", None)
+            to_field = self.app.framework._PARAM_TO_FIELD
+            wanted = {to_field.get(p, p) for p in (list(reqs.mandatory) + list(reqs.optional))} if reqs else set()
+            used = [td for td in target_data if td.field_type.lower() in wanted]
             checkboxes = {}
             for td in target_data:
-                chk = QCheckBox(f"[{td.field_type}] {td.value}")
-                chk.setChecked(True)
+                kind = td.field_type.upper()
+                label = (f"{TYPE_LABELS.get(kind[6:], kind[6:].lower())} hallado" if kind.startswith("FOUND_")
+                         else TYPE_LABELS.get(kind, td.field_type))
+                use = td in used or not used
+                chk = QCheckBox(f"[{label}] {td.value}" + ("" if use else "   (esta herramienta no lo usa)"))
+                chk.setChecked(use)
                 lay.addWidget(chk)
                 checkboxes[chk] = td.id
                 

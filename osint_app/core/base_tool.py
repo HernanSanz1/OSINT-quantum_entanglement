@@ -113,8 +113,8 @@ class OSINTTool(ABC):
                 "status": "needs_key",
                 "icon": "🔑",
                 "message": (
-                    f"API key no configurada para '{self.name}'.\n"
-                    f"Guárdala con el comando de abajo (la pide sin mostrarla)."
+                    f"Falta la clave de API de '{self.name}'.\n"
+                    f"Pulsa «🔑 Guardar clave» y pégala (no se mostrará), o usa el comando de abajo."
                 ),
                 "install_cmd": f"python -m osint_app.main --set-key {self.name}",
             }

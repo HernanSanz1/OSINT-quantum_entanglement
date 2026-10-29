@@ -22,6 +22,7 @@ from typing import Dict, Iterable, List, Optional
 import unicodedata
 from urllib.parse import unquote, urlsplit
 
+from ..utils.homonyms import context_matches
 from ..utils.identity import is_content_url, parse_profile_url
 
 PLATFORM_NAMES = {
@@ -32,6 +33,10 @@ PLATFORM_NAMES = {
 _SKIP_CATEGORIES = {"Aviso", "Error", "Config Error", "Alerta", "Sin resultado", "Username Generation"}
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _PHONE_RE = re.compile(r"\+\d[\d\s().-]{7,}\d")
+# Una biografía sin saltos de línea pega la palabra anterior al correo: "El canal más chido de YouTube" + salto +
+# "luisito…@" llegaba como "YouTubeluisitocomunica@wearedw.com" (evaluación 2026-10-28)
+_GLUED_PREFIX = re.compile(r"^(?:YouTube|Instagram|Facebook|TikTok|Twitter|Twitch|LinkedIn|GitHub|Email|E-mail|Mail|"
+                           r"Correo|Contacto|Contact|Web)(?=[a-z0-9])")
 MAX_MENTIONS = 15
 # Sitios que no se listan en la ficha aunque exista el mismo usuario: una coincidencia de nombre de usuario en un sitio
 # para adultos, de citas o de pagos no prueba nada y atribuirla a alguien puede dañarle (visto en real 2026-10-13:
@@ -80,6 +85,10 @@ def _handle_key(handle: str) -> str:
     return _fold(handle)
 
 
+def _clean_email(email: str) -> str:
+    return _GLUED_PREFIX.sub("", email)
+
+
 def _status(url: str, confirmed: set, rejected: set) -> str:
     return "confirmada" if url in confirmed else "descartada" if url in rejected else "por revisar"
 
@@ -117,7 +126,7 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
                 "source": str(c.get("source") or "").split(":")[0], "warning": c.get("warning") or ""}
 
         text = f"{item['title']} {item['snippet']}"
-        for email in _EMAIL_RE.findall(text):
+        for email in map(_clean_email, _EMAIL_RE.findall(text)):
             contacts.setdefault(email.lower(), {"kind": "Correo", "value": email, "source": item["source"], "url": url})
         for phone in _PHONE_RE.findall(text):
             contacts.setdefault(re.sub(r"\D", "", phone), {"kind": "Teléfono", "value": phone.strip(), "source": item["source"], "url": url})
@@ -198,6 +207,28 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
     }
 
 
+# Titular de un perfil de LinkedIn: "Gonzalo Plata - Cedar Fair Entertainment Company | LinkedIn"
+_LINKEDIN_HEADLINE = re.compile(r"^[^|]*?\s[-–]\s(.+?)\s*\|\s*LinkedIn", re.I)
+
+
+def _other_job(acc: Dict, context: str, name: str = "") -> str:
+    """Lo que dice hacer un perfil de LinkedIn si no tiene nada que ver con el contexto del objetivo; si no, vacío.
+
+    No se aplica si el usuario lleva el nombre completo (3+ palabras): "luis-arturo-villar-sudek" con "Ciencias de la
+    Comunicación" es muy probablemente Luisito Comunica aunque el contexto diga "youtuber".
+    """
+    if acc["platform"] != "LinkedIn" or not context.strip():
+        return ""
+    words = [_fold(w) for w in (name or "").split() if _fold(w)]
+    if len(words) >= 3 and all(w in acc["hkey"] for w in words):
+        return ""
+    match = _LINKEDIN_HEADLINE.match(acc["item"]["title"])
+    if not match:
+        return ""
+    text = f"{acc['item']['title']} {acc['item']['snippet']}"
+    return "" if context_matches(text, context) else match.group(1).strip()
+
+
 def _sort_accounts(account_list: List[Dict], seed: Dict, homonyms: List[Dict], mentions: List[Dict]) -> None:
     """Decide qué cuentas son de la persona, cuáles de otra y cuáles solo hablan de ella (enfoque A: se marcan y se
     separan con su motivo, nunca se borran). Reglas medidas con perfiles reales (Jefferson Pérez, Andersson Boscán y
@@ -210,6 +241,8 @@ def _sort_accounts(account_list: List[Dict], seed: Dict, homonyms: List[Dict], m
     4. Un perfil cuyo usuario no tiene nada del nombre ni del alias (LinkedIn "net-worth-fever", "agustín-domínguez-
        prieto") es de otra persona que HABLA de ella: pasa a menciones.
     5. Con confianza < 40 y solo coincidencias de nombre (GitHub "jefferson-quezada" de un desarrollador): otra persona.
+    6. Un LinkedIn cuyo titular habla de otra profesión que el contexto ("Cedar Fair Entertainment", "técnico en obra
+       seca" para el futbolista Gonzalo Plata, evaluación 2026-10-28): otra persona.
     """
     words, users = _identity_keys(seed)
 
@@ -238,6 +271,9 @@ def _sort_accounts(account_list: List[Dict], seed: Dict, homonyms: List[Dict], m
             mentions.append({**acc["item"], "warning": ""})
             mentions.extend(acc["posts"])
             continue
+        elif _other_job(acc, seed.get("context") or "", seed.get("name") or ""):                # regla 6
+            job = _other_job(acc, seed.get("context") or "", seed.get("name") or "")
+            reason = f"Posiblemente otra persona: su LinkedIn dice «{job}» y buscas a «{seed.get('context')}»."
         elif acc["score"] < 40:                                                                 # regla 5
             reason = ("Posiblemente otra persona: solo coincide el nombre y nada más la liga a esta persona "
                       "(ni su usuario ni sus cuentas verificadas). Ábrela antes de atribuírsela.")

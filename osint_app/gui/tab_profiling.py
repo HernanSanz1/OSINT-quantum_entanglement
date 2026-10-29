@@ -33,6 +33,19 @@ from osint_app.profiler_engine import ProfilerEngine, SeedData, parse_list
 from osint_app.tools import build_tool_registry
 
 
+
+# Lo que coincide entre el resultado y los datos del objetivo, en palabras
+MATCH_LABELS = {
+    "name": "nombre", "name_partial": "nombre parcial", "alias": "alias", "alias_partial": "alias parcial",
+    "email": "correo", "mention": "lo menciona", "username": "usuario", "username_chained": "usuario hallado",
+    "country": "país", "context": "contexto", "company": "empresa", "university": "universidad", "city": "ciudad",
+    "domain": "dominio", "phone": "teléfono",
+}
+CATEGORY_HELP = ("Tipo de resultado. En los de Google Dorks, la letra dice cuánto se parece a la persona:\n"
+                 "CONFIRMADO (A) = la página contiene su correo, usuario o teléfono;\n"
+                 "PROBABLE (B) = nombre completo y algo de su contexto (profesión, ciudad…);\n"
+                 "POSIBLE (C) = solo coincide el nombre. Ábrelo antes de dárselo por bueno.")
+
 class ProfilerThread(QThread):
     """Thread para ejecutar el motor de perfilamiento sin bloquear la GUI"""
     progress = Signal(str)
@@ -454,6 +467,8 @@ class ProfilingTab(QWidget):
         cand_header.addWidget(self.btn_reject_selected)
 
         self.btn_refine = QPushButton("🔄 Refinar búsqueda")
+        self.btn_refine.setToolTip("Vuelve a buscar en el MISMO caso usando lo que confirmaste (usuarios, webs, "
+                                   "correos) como datos nuevos. Lo confirmado y lo descartado se conservan.")
         self.btn_refine.clicked.connect(self._on_refine)
         cand_header.addWidget(self.btn_refine)
 
@@ -467,8 +482,12 @@ class ProfilingTab(QWidget):
         ])
         # El título ocupa el espacio libre; el resto, lo justo (antes todas iguales y el título salía cortado)
         cand_header_view = self.candidates_table.horizontalHeader()
-        cand_header_view.setSectionResizeMode(QHeaderView.ResizeToContents)
+        cand_header_view.setSectionResizeMode(QHeaderView.Interactive)
         cand_header_view.setSectionResizeMode(1, QHeaderView.Stretch)
+        # Anchos fijos que el analista puede cambiar: antes "Fuente" y "Coincidencias" se ajustaban a su texto más
+        # largo y Confianza, Categoría y Estado quedaban fuera de la vista (evaluación 2026-10-28)
+        for col, width in ((0, 110), (2, 150), (3, 75), (4, 130), (5, 110)):
+            self.candidates_table.setColumnWidth(col, width)
         self.candidates_table.verticalHeader().setVisible(False)
         self.candidates_table.setSelectionBehavior(QTableWidget.SelectRows)
         # Doble clic abre el enlace: sin esto, también ponía la celda en modo edición
@@ -715,9 +734,11 @@ class ProfilingTab(QWidget):
                 title_item.setForeground(QColor("#ffaa00"))
             self.candidates_table.setItem(row, 1, title_item)
 
-            # Coincidencias
-            matched = ", ".join(c['matched'][:3]) if c['matched'] else "-"
-            self.candidates_table.setItem(row, 2, QTableWidgetItem(matched))
+            # Coincidencias, en palabras (antes "name_partial, username_chained")
+            matched = ", ".join(MATCH_LABELS.get(m, m) for m in c['matched'][:3]) if c['matched'] else "-"
+            matched_item = QTableWidgetItem(matched)
+            matched_item.setToolTip("Coincide con: " + ", ".join(MATCH_LABELS.get(m, m) for m in c['matched']))
+            self.candidates_table.setItem(row, 2, matched_item)
 
             # Confianza con color
             conf = c['confidence']
@@ -731,8 +752,9 @@ class ProfilingTab(QWidget):
             self.candidates_table.setItem(row, 3, conf_item)
 
             # Categoria
-            cat = c.get('category', '-')[:20]
-            self.candidates_table.setItem(row, 4, QTableWidgetItem(cat))
+            cat_item = QTableWidgetItem(c.get('category', '-')[:20])
+            cat_item.setToolTip(CATEGORY_HELP)
+            self.candidates_table.setItem(row, 4, cat_item)
 
             # Estado
             url = c['url']

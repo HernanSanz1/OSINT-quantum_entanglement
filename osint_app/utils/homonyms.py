@@ -83,7 +83,8 @@ _OTHER_COUNTRY_CODES = {
 # Profesiones del contexto en inglés: muchas fuentes (Wikipedia en inglés, ProCyclingStats…) no usan la palabra
 # española. Clave: inicio de la palabra española normalizada.
 _CONTEXT_EQUIVALENTS = {
-    "futbo": ("football", "soccer"), "ciclis": ("cyclist", "cycling"), "period": ("journalist",),
+    "futbo": ("football", "soccer", "futebol", "futebolista", "jugador", "player", "gol", "goles", "golazo",
+              "delantero", "extremo", "mediocampista", "volante", "fichaje"), "ciclis": ("cyclist", "cycling"), "period": ("journalist",),
     "politi": ("politician", "political"), "presid": ("president",), "atleta": ("athlete", "athletics"),
     "march": ("race walk", "racewalk"), "progra": ("programmer", "developer"), "actor": ("actor",),
     "actriz": ("actress",), "cantan": ("singer",), "music": ("musician",), "escrit": ("writer", "author"),
@@ -106,6 +107,11 @@ def _context_matches(norm_text: str, seed_context: str) -> bool:
             if word.startswith(key) and any(_phrase_in(norm_text, e) for e in english):
                 return True
     return False
+
+
+def context_matches(text: str, seed_context: str) -> bool:
+    """True si el texto habla de lo mismo que el contexto del objetivo (profesión, medio, club…), en español o inglés."""
+    return _context_matches(normalize_text(text), seed_context)
 
 
 def homonym_warning(text: str, seed_country: str) -> Optional[str]:
@@ -248,12 +254,14 @@ def _mentions_alias(norm_text: str, aliases, name: str = "") -> bool:
 
 
 def homonym_signals(text: str, url: str, seed_country: str, seed_context: str = "",
-                    known_places: str = "", own_site: bool = False, aliases=(), name: str = "") -> List[Signal]:
+                    known_places: str = "", own_site: bool = False, aliases=(), name: str = "",
+                    known_codes=()) -> List[Signal]:
     """Indicios de que un resultado habla de otra persona con el mismo nombre. Lista vacía = ninguno.
 
     Si el resultado está ligado al objetivo (menciona su país, una de sus ciudades, su gentilicio, su profesión o
     contexto, o es un sitio de su país) no se aplica ninguna señal de país. `known_places` es texto de su ficha
-    pública (nacionalidad, lugar de nacimiento): esos países tampoco cuentan como ajenos. `own_site`: el resultado
+    pública (nacionalidad, lugar de nacimiento): esos países tampoco cuentan como ajenos, igual que `known_codes`
+    (códigos de los países de sus equipos y empleadores, según Wikidata). `own_site`: el resultado
     es de una web del propio objetivo (su web oficial o un dominio con su nombre), que habla de él aunque cite otros
     países (jeffersonperez.com y "Londres").
 
@@ -263,7 +271,8 @@ def homonym_signals(text: str, url: str, seed_country: str, seed_context: str = 
     if _no_country(seed_country) or own_site:
         return []
     target = country_code(seed_country)
-    own_codes = _own_codes(target, known_places)
+    home_codes = _own_codes(target, known_places)
+    own_codes = home_codes | {str(c).lower() for c in known_codes or ()}
 
     norm = normalize_text(text)
     countries = _countries_in(norm)
@@ -309,8 +318,11 @@ def homonym_signals(text: str, url: str, seed_country: str, seed_context: str = 
 
     # El dominio de otro país (transfermarkt.es) es una señal débil: si el texto ya liga el resultado al objetivo
     # (menciona su país o ciudad), no se aplica. Prueba real: Moisés Caicedo en Transfermarkt salía como "otra persona"
+    # El país de un perfil de LinkedIn es donde vive esa persona: ahí solo cuentan su nacionalidad y su lugar de
+    # nacimiento, no los países de sus equipos (los "Gonzalo Plata" de es.linkedin.com siguen siendo otros)
     if not tied_to_target:
-        signals.extend(s for s in _url_signals(url, target) if not _url_country_is_own(url, own_codes))
+        signals.extend(s for s in _url_signals(url, target)
+                       if not _url_country_is_own(url, home_codes if s.code == "linkedin_country" else own_codes))
     return signals
 
 

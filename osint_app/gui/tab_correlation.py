@@ -13,6 +13,36 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
 
 from ..correlation_engine import CorrelationEngine, CrossCaseCorrelator
+from ..cti_match import CTI_REPORT_TOOL, cti_report_items, cti_rows, rows_from_report
+
+# Relación entre dos datos, en palabras (antes salía "profile_of", "same_name")
+RELATION_LABELS = {
+    "same_entity": "≡ mismo dato",
+    "same_person": "👤 misma persona",
+    "owns": "→ pertenece a",
+    "subdomain_of": "⊂ subdominio de",
+    "linked": "↔ vinculado con",
+    "same_handle": "🔁 mismo usuario",
+    "profile_of": "🔗 es un perfil de",
+    "named_in": "📛 nombrado en",
+    "same_name": "📛 mismo nombre",
+    "name_in_handle": "🧩 nombre dentro del usuario",
+}
+
+
+def available_tools(framework) -> set:
+    """Nombres de las herramientas instaladas y listas para usar."""
+    tools = getattr(framework, "tools", None) or {}
+    return {name for name, tool in tools.items() if getattr(tool, "is_available", False)}
+
+
+def latest_cti_rows(case_id: int) -> list:
+    """Las filas del último cruce con el CTI guardado en el caso (vacía si nunca se cruzó)."""
+    from ..db.feedback_db import db
+    saved = [r for r in db.get_reports(case_id) if r.tool_name == CTI_REPORT_TOOL]
+    if not saved:
+        return []
+    return rows_from_report(max(saved, key=lambda r: (str(r.run_at), r.id or 0)).raw_json)
 
 
 class AutoEnrichThread(QThread):
@@ -30,7 +60,7 @@ class AutoEnrichThread(QThread):
     def run(self):
         try:
             engine = CorrelationEngine(self.case_id)
-            suggestions = engine.suggest_tools()
+            suggestions = engine.suggest_tools(available=available_tools(self.framework))
 
             if not suggestions:
                 self.progress.emit("No hay datos para enriquecer. Agrega datos primero.")
@@ -74,6 +104,7 @@ class CorrelationTab(QWidget):
         super().__init__()
         self.app = app
         self.engine = None
+        self._case_rows = 0     # filas de la tabla que son correlaciones del caso; las demás son del CTI
         self.setObjectName("panelMain")
         self._setup_ui()
 
@@ -189,10 +220,24 @@ class CorrelationTab(QWidget):
         self.table_correlations = QTableWidget()
         self.table_correlations.setColumnCount(5)
         self.table_correlations.setHorizontalHeaderLabels(["Entidad A", "Relación", "Entidad B", "Confianza", "Evidencia"])
-        self.table_correlations.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # Columnas que el analista puede ensanchar (antes fijas y cortadas: "VÍCTIMA DE …")
+        header = self.table_correlations.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setStretchLastSection(True)
+        for col, width in enumerate((150, 230, 220, 80)):
+            self.table_correlations.setColumnWidth(col, width)
         self.table_correlations.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table_correlations.setSelectionMode(QTableWidget.SingleSelection)
         self.table_correlations.setEditTriggers(QTableWidget.NoEditTriggers)
-        corr_layout.addWidget(self.table_correlations)
+        self.table_correlations.currentCellChanged.connect(lambda row, *_: self._show_detail(row))
+        corr_layout.addWidget(self.table_correlations, 3)
+
+        # Explicación completa de la fila elegida
+        self.detail = QPlainTextEdit()
+        self.detail.setReadOnly(True)
+        self.detail.setPlaceholderText("Haz clic en una fila para leer el detalle completo (grupo, fecha, fuente, "
+                                       "qué significa y qué hacer).")
+        corr_layout.addWidget(self.detail, 2)
 
         right_splitter.addWidget(corr_frame)
 
@@ -257,18 +302,18 @@ class CorrelationTab(QWidget):
             self.engine = CorrelationEngine(self.app.active_case_id)
             summary = self.engine.get_profile_summary()
 
-            # Actualizar stats
-            self.lbl_entities.setText(f"Entidades: {summary['total_entities']}")
-            self.lbl_correlations.setText(f"Correlaciones: {summary['total_correlations']}")
-
             # Poblar árbol de entidades
             self._populate_entities_tree(summary['entities_by_type'])
 
-            # Poblar tabla de correlaciones
+            # Correlaciones del caso y, debajo, el último cruce con el CTI guardado (antes "Analizar" lo borraba)
             self._populate_correlations_table(summary['correlations'])
+            self._append_cti_rows(latest_cti_rows(self.app.active_case_id))
+            self._update_counters()
 
-            # Mostrar sugerencias
-            suggestions = self.engine.suggest_tools()
+            # Mostrar sugerencias (solo herramientas instaladas: antes recomendaba Subfinder sin tenerlo)
+            from ..db.feedback_db import db
+            already_run = {r.tool_name for r in db.get_reports(self.app.active_case_id)}
+            suggestions = self.engine.suggest_tools(available=available_tools(self.app.framework) - already_run)
             if suggestions:
                 sugg_text = "\n".join([f"• {tool}: {reason}" for tool, reason in suggestions])
                 self.lbl_suggestions.setText(sugg_text)
@@ -327,41 +372,49 @@ class CorrelationTab(QWidget):
 
             self.tree_entities.addTopLevelItem(parent)
 
+    def _add_row(self, values, color=None, url="", detail=""):
+        """Una fila de la tabla: el texto completo va en el aviso al pasar el ratón y en el panel de detalle."""
+        row = self.table_correlations.rowCount()
+        self.table_correlations.insertRow(row)
+        for col, val in enumerate(values):
+            item = QTableWidgetItem(str(val))
+            item.setToolTip(f"{val}\n{url}" if url else str(val))
+            if color:
+                item.setForeground(QColor(color))
+            self.table_correlations.setItem(row, col, item)
+        self.table_correlations.item(row, 0).setData(Qt.UserRole, detail or " · ".join(str(v) for v in values))
+
+    def _show_detail(self, row: int):
+        item = self.table_correlations.item(row, 0) if row >= 0 else None
+        self.detail.setPlainText(item.data(Qt.UserRole) if item else "")
+
+    def _update_counters(self):
+        """Contadores de la cabecera según lo que se ve (antes "Correlaciones: 0" con 4 filas de CTI en la tabla)."""
+        n_case = len(self.engine.correlations) if self.engine else 0
+        n_cti = self.table_correlations.rowCount() - self._case_rows
+        self.lbl_entities.setText(f"Entidades: {len(self.engine.entities) if self.engine else 0}")
+        self.lbl_correlations.setText(f"Correlaciones: {n_case}" + (f" · CTI: {n_cti}" if n_cti else ""))
+
     def _populate_correlations_table(self, correlations: list):
         """Pobla la tabla de correlaciones"""
-        self.table_correlations.setRowCount(len(correlations))
+        self.table_correlations.setRowCount(0)
+        self.detail.clear()
+        self._case_rows = len(correlations)
 
-        relation_icons = {
-            "same_entity": "≡",
-            "same_person": "👤",
-            "owns": "→",
-            "subdomain_of": "⊂",
-            "linked": "↔",
-            "same_handle": "🔁",
-            "profile_of": "🔗",
-            "named_in": "📛",
-            "same_name": "📛",
-            "name_in_handle": "🧩",
-        }
+        for corr in correlations:
+            relation = RELATION_LABELS.get(corr["type"], corr["type"])
+            conf = corr["confidence"]
+            self._add_row((corr["a"], relation, corr["b"], f"{conf}%", corr["evidence"]),
+                          detail=f"{corr['a']}  {relation}  {corr['b']}\nConfianza: {conf} %\n"
+                                 f"Por qué: {corr['evidence']}")
+            color = "#00ff66" if conf >= 80 else "#ffaa00" if conf >= 50 else "#ff3333"
+            self.table_correlations.item(self.table_correlations.rowCount() - 1, 3).setForeground(QColor(color))
 
-        for i, corr in enumerate(correlations):
-            icon = relation_icons.get(corr["type"], "—")
-
-            self.table_correlations.setItem(i, 0, QTableWidgetItem(corr["a"]))
-            self.table_correlations.setItem(i, 1, QTableWidgetItem(f"{icon} {corr['type']}")
-            )
-            self.table_correlations.setItem(i, 2, QTableWidgetItem(corr["b"]))
-
-            conf_item = QTableWidgetItem(f"{corr['confidence']}%")
-            if corr["confidence"] >= 80:
-                conf_item.setForeground(QColor("#00ff66"))
-            elif corr["confidence"] >= 50:
-                conf_item.setForeground(QColor("#ffaa00"))
-            else:
-                conf_item.setForeground(QColor("#ff3333"))
-            self.table_correlations.setItem(i, 3, conf_item)
-
-            self.table_correlations.setItem(i, 4, QTableWidgetItem(corr["evidence"]))
+    def _append_cti_rows(self, rows: list):
+        """Las coincidencias con el CTI, debajo de las correlaciones del caso."""
+        for r in rows:
+            self._add_row((r["a"], r["relation"], r["b"], r["level"], r["evidence"]), r.get("color"), r.get("url", ""),
+                          r.get("detail", ""))
 
     def _on_entity_clicked(self, item, column):
         """Al hacer clic en una entidad"""
@@ -448,9 +501,12 @@ class CorrelationTab(QWidget):
 
             from ..cti_link import collect_tech_terms_from_reports
 
-            engine = CorrelationEngine(self.app.active_case_id)
-            reports = db.get_reports(self.app.active_case_id)
-            # Extrae entidades (incl. CVEs) de los reportes del caso
+            from ..core.models import ToolReport
+
+            case_id = self.app.active_case_id
+            engine = CorrelationEngine(case_id)
+            # Extrae entidades (incl. CVEs) de los reportes de las herramientas (los cruces anteriores no cuentan)
+            reports = [r for r in db.get_reports(case_id) if r.tool_name != CTI_REPORT_TOOL]
             for report in reports:
                 engine.process_tool_results(report.tool_name, report.raw_json)
 
@@ -463,10 +519,25 @@ class CorrelationTab(QWidget):
             ]
 
             result = engine.correlate_with_cti(tech_terms=tech_terms)
-            self._populate_cti_matches(result)
-
             targets = result.get("targets") or {}
             ids = targets.get("identifiers") or {}
+            rows = cti_rows(result)
+
+            # Se guarda en el caso: queda en Reportes, en la exportación y en la tabla al volver a analizar
+            items = cti_report_items(rows, ids)
+            db.save_report(ToolReport(case_id=case_id, tool_name=CTI_REPORT_TOOL,
+                                      raw_json=json.dumps(items, ensure_ascii=False),
+                                      summary=f"{len(rows)} coincidencia(s) con el CTI", results_count=len(rows)))
+            self.engine = engine
+            self._populate_correlations_table(engine.get_profile_summary()["correlations"])
+            self._append_cti_rows(rows)
+            self._update_counters()
+            if rows:   # la primera fila es la más grave: su detalle a la vista
+                self.table_correlations.setCurrentCell(self._case_rows, 0)
+            for name, widget in getattr(self.app, "pages", []):
+                if name == "Reportes":
+                    widget.refresh()
+
             n_rw, n_ioc = len(targets.get("ransomware", [])), len(targets.get("iocs", []))
             n_ment = targets.get("mentions_total", 0)
             n_cve, n_exp = result["total_cve_matches"], result["actively_exploited"]
@@ -494,65 +565,17 @@ class CorrelationTab(QWidget):
         finally:
             self._set_busy(False)
 
-    def _populate_cti_matches(self, result: dict):
-        """Muestra las coincidencias con el CTI en la tabla de correlaciones."""
-        self.table_correlations.setRowCount(0)
-
-        def _add_row(a, rel, b, conf, ev, color=None, url=""):
-            row = self.table_correlations.rowCount()
-            self.table_correlations.insertRow(row)
-            for col, val in enumerate((a, rel, b, conf, ev)):
-                item = QTableWidgetItem(str(val))
-                if color:
-                    item.setForeground(QColor(color))
-                if url:
-                    item.setToolTip(url)
-                self.table_correlations.setItem(row, col, item)
-
-        def _epss(value):
-            return f"EPSS {value * 100:.0f} %" if isinstance(value, (int, float)) else "—"
-
-        # Lo más grave primero: el objetivo como víctima de ransomware o sus IP como indicadores
-        targets = result.get("targets") or {}
-        for v in targets.get("ransomware", []):
-            _add_row(v["website"] or v["name"], f"🚨 VÍCTIMA DE RANSOMWARE ({v['group'] or 'grupo sin identificar'})",
-                     f"{v['name']} · coincide {v['matched']}", "Crítica", f"{v['date']} · {v['source']}",
-                     "#ff3333", v["url"])
-        for i in targets.get("iocs", []):
-            _add_row(i["matched"], "🚨 IP en un aviso de seguridad", i["title"][:90], "Crítica",
-                     f"{i['date']} · {i['source']}", "#ff3333", i["url"])
-        for m in targets.get("mentions", []):
-            _add_row(m["matched"], "📰 citado en una noticia de seguridad", m["title"][:90], "Revisar",
-                     f"{m['date']} · {m['source']}", "#ffaa00", m["url"])
-
-        for m in result["cve_matches"]:
-            h = m["hits"][0]
-            if m["actively_exploited"]:
-                rel, color = "⚠️ en CTI · EXPLOTADO", "#ff3333"
-            else:
-                rel, color = "en CTI", "#ffaa00"
-            if m["ransomware"]:
-                rel += " · ransomware"
-            tech = f"{h['vendor']} {h['product']}".strip() or "—"
-            extra = " · exploit público" if any(x.get("poc") for x in m["hits"]) else ""
-            _add_row(m["cve"], rel, tech, _epss(h.get("epss")), (h.get("source") or "") + extra, color, h.get("url", ""))
-
-        # Tecnologías: el aviso más peligroso de cada una (explotado, con exploit público, mayor EPSS)
-        for t in result["tech_matches"]:
-            h = t["hits"][0]
-            color = "#ff6b6b" if t["actively_exploited"] else "#ffaa00"
-            extra = " · exploit público" if h.get("poc") else ""
-            _add_row(t["term"], f"tecnología · {t['count']} aviso(s), {t['actively_exploited']} explotado(s)",
-                     f"{h['cve'] or '—'} {h['vendor']} {h['product']}".strip()[:90], _epss(h.get("epss")),
-                     f"{h['date']} · {h['source']}{extra} · comprueba versión y plugins", color, h.get("url", ""))
-
     def _on_export(self):
-        """Exporta el perfil correlacionado"""
-        if not self.engine:
-            self.app.toast.show("Analiza el caso primero", kind="warning")
+        """Exporta el perfil correlacionado, con el último cruce con el CTI (antes salía "correlations: []")."""
+        if not self.app.active_case_id:
+            self.app.toast.show("Abre un caso primero", kind="warning")
             return
+        if not self.engine or self.engine.case_id != self.app.active_case_id:
+            self.engine = CorrelationEngine(self.app.active_case_id)
 
         summary = self.engine.get_profile_summary()
+        summary["cti"] = [{k: v for k, v in r.items() if k not in ("color", "score")}
+                          for r in latest_cti_rows(self.app.active_case_id)]
         # Antes volcaba el JSON en el registro y no creaba ningún archivo
         from pathlib import Path
         from PySide6.QtWidgets import QFileDialog
@@ -563,10 +586,16 @@ class CorrelationTab(QWidget):
         if not path:
             return
         Path(path).write_text(json.dumps(summary, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
-        self._log(f"Perfil exportado: {path}")
+        self._log(f"Perfil exportado en: {path}  (se abre desde Perfilamiento → Generar Ficha → Abrir la carpeta de informes)")
         self.app.toast.show(f"Perfil exportado a {Path(path).name}", kind="success")
 
     def refresh(self):
         """Refrescar tab"""
         if self.app.active_case_id:
+            self._on_analyze(quiet=True)
+
+    def showEvent(self, event):
+        """Al entrar en la pestaña, los datos al día (antes "0 entidades" en un caso con un dominio recién añadido)."""
+        super().showEvent(event)
+        if self.app.active_case_id and self.btn_analyze.isEnabled():
             self._on_analyze(quiet=True)

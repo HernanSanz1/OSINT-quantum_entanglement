@@ -14,7 +14,7 @@ COUNTRY_BY_CODE: Dict[str, str] = {
     "ec": "ecuador", "co": "colombia", "pe": "peru", "mx": "mexico", "cl": "chile", "ar": "argentina",
     "bo": "bolivia", "ve": "venezuela", "uy": "uruguay", "py": "paraguay", "es": "espana", "br": "brasil",
     "us": "estados unidos", "uk": "reino unido", "de": "alemania", "fr": "francia", "it": "italia",
-    "pt": "portugal", "ca": "canada", "au": "australia", "in": "india", "cn": "china", "jp": "japon", "ru": "rusia",
+    "pt": "portugal", "qa": "catar", "ca": "canada", "au": "australia", "in": "india", "cn": "china", "jp": "japon", "ru": "rusia",
 }
 
 # países latinoamericanos hispanohablantes: nombre normalizado → código
@@ -26,7 +26,9 @@ LATAM_COUNTRIES: Dict[str, str] = {
 # nombres alternativos de un país → su código
 COUNTRY_ALIASES: Dict[str, str] = {
     "espana": "es", "spain": "es", "estados unidos": "us", "united states": "us", "usa": "us",
-    "brasil": "br", "brazil": "br",
+    "brasil": "br", "brazil": "br", "portugal": "pt", "catar": "qa", "qatar": "qa",
+    # Portugués: "futebolista equatoriano" (Wikipedia en portugués)
+    "equador": "ec", "equatoriano": "ec", "equatoriana": "ec",
     # Gentilicios: "el ciclista ecuatoriano gana el Giro" liga el texto a Ecuador aunque no diga "Ecuador"
     "ecuatoriano": "ec", "ecuatoriana": "ec", "ecuadorian": "ec", "colombiano": "co", "colombiana": "co",
     "colombian": "co", "peruano": "pe", "peruana": "pe", "peruvian": "pe", "mexicano": "mx", "mexicana": "mx",

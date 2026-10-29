@@ -1,6 +1,5 @@
 from PySide6.QtWidgets import QPushButton, QDialog, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QTreeWidget, QFrame
-from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QTimer
 
 class Toast(QFrame):
     def __init__(self, parent, text, kind):

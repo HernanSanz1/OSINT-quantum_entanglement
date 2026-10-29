@@ -1,6 +1,5 @@
 """Puente CTI ↔ casos: lector e índice del almacén CTI (2a)."""
 import json
-from pathlib import Path
 
 import pytest
 

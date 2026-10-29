@@ -1,7 +1,5 @@
 """Búsqueda en DuckDuckGo: parseo robusto + respaldo a lite (sin red)."""
-import pytest
 
-from osint_app.tools import web_search
 from osint_app.tools.web_search import _ddg_unwrap, duckduckgo_search
 
 HTML_OK = """

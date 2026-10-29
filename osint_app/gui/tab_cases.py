@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, 
+    QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, 
     QHeaderView, QLabel, QAbstractItemView, QLineEdit
 )
 from PySide6.QtCore import Qt

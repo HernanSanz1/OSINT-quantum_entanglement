@@ -6,7 +6,6 @@ import os
 import sys
 import json
 import subprocess
-import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -18,8 +17,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
 
-from .components import DevNotice, SentinelModal
+from .components import DevNotice
 from ..utils.data_paths import active_cti_store, cti_reports_dir
+from ..cti_link import _truthy, normalize_cves
 
 
 # Código del módulo CTI (los datos van aparte, en la carpeta del usuario: ver active_cti_store)
@@ -285,7 +285,12 @@ class CTITab(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(["Fuente", "Título", "CVE", "Fecha", "Producto"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # El título ocupa lo que sobra; las demás columnas se pueden ensanchar con el ratón
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        for col, width in ((0, 150), (2, 150), (3, 90), (4, 180)):
+            self.table.setColumnWidth(col, width)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -312,7 +317,9 @@ class CTITab(QWidget):
         log_layout.addWidget(self.log_area)
 
         splitter.addWidget(log_frame)
-        splitter.setSizes([400, 200])
+        splitter.setStretchFactor(0, 3)     # antes la tabla dejaba ver solo 5 filas
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([520, 140])
 
         # Status
         self.lbl_status = QLabel("Estado: Listo")
@@ -484,17 +491,29 @@ class CTITab(QWidget):
                 except ValueError:
                     continue
         items.sort(key=lambda it: str(it.get("fecha") or ""), reverse=True)
+        # Una noticia ("CISA Adds Two Known Exploited Vulnerabilities…") no trae la marca KEV ni el producto: se
+        # sacan de sus CVE en el catálogo (antes salía en blanco y con la columna Producto vacía)
+        exploited_cves, products = set(), {}
+        for it in items:
+            product = " ".join(str(it.get(k) or "") for k in ("vendor", "product")).strip()
+            for cve in normalize_cves(it.get("cves")):
+                if _truthy(it.get("kev")) or _truthy(it.get("exploited")):
+                    exploited_cves.add(cve)
+                if product:
+                    products.setdefault(cve, product)
         shown = items[:self.MAX_ROWS]
         self.table.setRowCount(len(shown))
         for row, it in enumerate(shown):
+            cves = normalize_cves(it.get("cves"))
             product = " ".join(str(it.get(k) or "") for k in ("vendor", "product")).strip()
-            values = (it.get("fuente", ""), it.get("titulo", ""), ", ".join((it.get("cves") or [])[:3]),
+            product = product or ", ".join(dict.fromkeys(products[c] for c in cves if c in products))
+            exploited = _truthy(it.get("kev")) or _truthy(it.get("exploited")) or any(c in exploited_cves for c in cves)
+            values = (it.get("fuente", ""), it.get("titulo", ""), ", ".join(cves[:3]),
                       str(it.get("fecha") or "")[:10], product)
             for col, val in enumerate(values):
                 cell = QTableWidgetItem(str(val))
-                if col == 1:
-                    cell.setToolTip(str(it.get("resumen") or "")[:500])
-                if it.get("kev") or it.get("exploited"):
+                cell.setToolTip(str(it.get("resumen") or "")[:500] if col == 1 else str(val))
+                if exploited:
                     cell.setForeground(QColor("#ff6b6b"))     # explotada activamente
                 self.table.setItem(row, col, cell)
         latest = str(shown[0].get("fecha") or "")[:10] if shown else "—"
