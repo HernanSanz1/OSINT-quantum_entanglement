@@ -84,6 +84,7 @@ def test_relevancia_para_el_cliente(cti):
 
 
 def test_resumen_del_dossier_sin_jerga():
+    pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)     # Linux sin entorno gráfico (CI)
     from osint_app.gui.tab_cti import dossier_summary_lines
     lines = dossier_summary_lines({"semana": "2026-10-28", "totales": {"items_store": 7800, "items_ventana": 206,
                                                                        "explotados": 14},

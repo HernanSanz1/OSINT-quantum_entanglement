@@ -25,6 +25,11 @@ defusedxml>=0.7.1     # lectura segura de XML de documentos Office
 # ── System resource monitoring ────────────────────────────────────────────────
 psutil>=5.9.0
 
+# ── Zonas horarias ────────────────────────────────────────────────────────────
+# El boletín CTI fecha las noticias en la hora de Ecuador (America/Guayaquil). Windows no trae la base de zonas
+# horarias: sin este paquete, generar el dossier falla con "No time zone found" (Apache-2.0)
+tzdata>=2024.1
+
 # ── Social scraping ───────────────────────────────────────────────────────────
 # snscrape is installed via: pip install git+https://github.com/JustAnotherArchivist/snscrape.git
 
