@@ -93,3 +93,40 @@ def test_resumen_del_dossier_sin_jerga():
     text = "\n".join(lines)
     assert "items store" not in text and "candidatos" not in text
     assert "7800 noticias" in text and "Seguridad Ecuador (1 de 3)" in text
+
+
+# ── Clase del producto (evaluación 4) ────────────────────────────────────────
+
+SIX_KEV = {"titulo": "CISA Adds Six Known Exploited Vulnerabilities to Catalog",
+           "resumen": "CVE-2026-96656 Plex Media Server SSRF · CVE-2026-110936 Siemens Software Center …",
+           "cves": ["CVE-2026-96652", "CVE-2026-96656", "CVE-2026-110936", "CVE-2026-106931"]}
+
+
+@pytest.mark.parametrize("cve,product,expected", [
+    # la noticia compartida nombra a Siemens: antes los cuatro salían "Tecnología OT / industrial"
+    ("CVE-2026-96656", "Plex Media Server", "Software / componente empresarial"),
+    ("CVE-2026-110936", "Siemens Software Center", "Software / componente empresarial"),
+    ("CVE-2026-106931", "EG Secure Solutions SiteGuard Server Edition", "Software / componente empresarial"),
+    # un PLC con Linux dentro sigue siendo OT (antes "Sistema operativo / servicio base")
+    ("CVE-2026-64560", "Siemens SIMATIC S7-1500 TM MFP", "Tecnología OT / industrial"),
+    ("CVE-2026-53362", "Linux Kernel", "Sistema operativo / servicio base"),
+    ("CVE-2026-20000", "Google Chromium", "Navegador / cliente web"),
+])
+def test_class_comes_from_this_cve_not_from_a_shared_news_item(cti, cve, product, expected):
+    render, _ = cti
+    item = {"cve": cve, "producto": product, "titulo": f"{cve} - {product}", "impacto": ""}
+    assert render.cve_class_text(cve, product, SIX_KEV, item) == expected
+
+
+def test_class_matches_whole_words_only(cti):
+    render, _ = cti
+    item = {"producto": "Acme Analytics Graphics Knowledge Base", "titulo": "", "impacto": ""}
+    assert render.cve_class_text("CVE-2026-1", item["producto"], {}, item) == "Software / componente empresarial"
+
+
+def test_single_cve_source_still_gives_the_class(cti):
+    render, _ = cti
+    first = {"titulo": "Hitachi Energy TRO600 series products", "resumen": "RTU used in substations",
+             "cves": ["CVE-2026-10756"]}
+    item = {"producto": "", "titulo": "", "impacto": ""}
+    assert render.cve_class_text("CVE-2026-10756", "", first, item) == "Tecnología OT / industrial"

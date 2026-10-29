@@ -1489,34 +1489,59 @@ def cve_network_vector(item: dict, first: dict) -> str:
     return "No confirmado"
 
 
+def _class_pattern(*terms: str) -> re.Pattern:
+    # Palabras enteras: antes "ics" coincidía dentro de "analytics" o "graphics" y "edge" dentro de "knowledge"
+    return re.compile(r"(?<![a-z0-9])(?:" + "|".join(map(re.escape, terms)) + r")(?![a-z0-9])")
+
+
+# En orden: la primera clase que coincide gana. OT va primero: un PLC o una pasarela industrial con Linux o con
+# "gateway" en el nombre sigue siendo OT. "Siemens" a secas no basta (Mendix o Software Center son software de TI).
+CVE_CLASSES = (
+    ("Tecnología OT / industrial", _class_pattern(
+        "plc", "simatic", "scada", "ics", "hmi", "rtu", "dcs", "modbus", "profinet", "industrial", "wincc", "ruggedcom",
+        "scalance", "sinec", "sicam", "siprotec", "s7-1200", "s7-1500", "abb", "schneider electric", "rockwell",
+        "allen-bradley", "mitsubishi electric", "hitachi energy", "ge vernova", "honeywell", "yokogawa", "emerson",
+        "iconics", "genesis64", "delta electronics", "moxa", "phoenix contact", "open62541", "codesys", "opc ua")),
+    ("Tecnología de frontera / acceso remoto", _class_pattern(
+        "fortinet", "fortigate", "fortios", "fortiproxy", "fortimanager", "fortiweb", "cisco asa", "firepower",
+        "netscaler", "gateway", "vpn", "firewall", "mikrotik", "routeros")),
+    ("Sistema operativo / servicio base", _class_pattern(
+        "windows", "windows server", "macos", "linux", "kernel", "kvm", "winsock", "internet key exchange", "ike",
+        "dhcp server", "deployment services", "screen sharing")),
+    ("SaaS corporativo / identidad", _class_pattern(
+        "entra id", "azure active directory", "microsoft 365", "office 365", "google workspace", "gmail",
+        "google drive", "sharepoint online", "exchange online")),
+    ("Aplicación / servicio empresarial", _class_pattern(
+        "wordpress", "elementor", "forminator", "zimbra", "gitlab", "trueconf", "oracle http server", "weblogic",
+        "sharepoint", "sap commerce", "adobe commerce", "cpanel", "whm", "tomcat")),
+    ("Navegador / cliente web", _class_pattern(
+        "chrome", "chromium", "microsoft edge", "firefox", "safari", "webkit", "browser", "webgl", "dawn")),
+    ("Base de datos", _class_pattern(
+        "sql server", "mysql", "mariadb", "postgresql", "oracle database", "database")),
+)
+DEFAULT_CVE_CLASS = "Software / componente empresarial"
+
+
 def cve_class_text(cve: str, product: str, first: dict, item: dict) -> str:
-    text = " ".join(
-        str(value or "")
-        for value in (
-            cve,
-            product,
-            item.get("producto"),
-            item.get("titulo"),
-            item.get("impacto"),
-            first.get("titulo"),
-            first.get("resumen"),
-        )
-    ).lower()
-    if any(term in text for term in ("fortinet", "fortigate", "fortios", "fortiproxy", "fortimanager", "fortiweb", "cisco asa", "firepower", "netscaler", "gateway", "vpn", "firewall", "mikrotik", "routeros")):
-        return "Tecnología de frontera / acceso remoto"
-    if any(term in text for term in ("windows", "windows server", "macos", "linux", "kernel", "kvm", "winsock", "internet key exchange", " ike", "dhcp server", "deployment services", "screen sharing")):
-        return "Sistema operativo / servicio base"
-    if any(term in text for term in ("entra id", "azure active directory", "microsoft 365", "office 365", "google workspace", "gmail", "google drive", "sharepoint online", "exchange online")):
-        return "SaaS corporativo / identidad"
-    if any(term in text for term in ("wordpress", "elementor", "forminator", "zimbra", "gitlab", "trueconf", "oracle http server", "weblogic", "sharepoint", "sap commerce", "adobe commerce", "cpanel", "whm", "tomcat")):
-        return "Aplicación / servicio empresarial"
-    if any(term in text for term in ("plc", "siemens", "simatic", "scada", "ics")):
-        return "Tecnología OT / industrial"
-    if any(term in text for term in ("chrome", "edge", "firefox", "browser", "webgl", "dawn")):
-        return "Navegador / cliente web"
-    if any(term in text for term in ("sql server", "mysql", "mariadb", "postgresql", "oracle database", "database")):
-        return "Base de datos"
-    return "Software / componente empresarial"
+    """Clase del producto afectado, buscando primero en lo propio de este CVE.
+
+    Evaluación 4: Plex Media Server y SiteGuard salían "Tecnología OT / industrial" porque se leía también el resumen
+    de "CISA Adds Six Known Exploited Vulnerabilities", que nombraba a Siemens. Por eso: primero el producto, luego
+    el título y el impacto de este CVE y, solo si la fuente trata únicamente de este CVE, su título y su resumen.
+    """
+    source_cves = {str(c).upper() for c in first.get("cves") or []}
+    own_source = not source_cves or source_cves == {str(cve).upper()}
+    layers = (
+        (product, item.get("producto")),
+        (item.get("titulo"), item.get("impacto")),
+        (first.get("titulo"), first.get("resumen")) if own_source else (),
+    )
+    for values in layers:
+        text = " ".join(str(value or "") for value in values).lower()
+        for label, pattern in CVE_CLASSES:
+            if text and pattern.search(text):
+                return label
+    return DEFAULT_CVE_CLASS
 
 
 def cve_section(items: list[dict]) -> str:
