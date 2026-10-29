@@ -23,7 +23,7 @@ import unicodedata
 from urllib.parse import unquote, urlsplit
 
 from ..utils.contact_privacy import mask_contacts
-from ..utils.homonyms import context_matches
+from ..utils.homonyms import other_job
 from ..utils.identity import is_content_url, parse_profile_url
 
 PLATFORM_NAMES = {
@@ -86,6 +86,15 @@ def _handle_key(handle: str) -> str:
     return _fold(handle)
 
 
+def _account_key(url: str) -> str:
+    """"plataforma:usuario" de un perfil (no de una publicación), o "" si la URL no es un perfil."""
+    parsed = parse_profile_url(url) if url else None
+    if not parsed or is_content_url(url):
+        return ""
+    platform, handle, _ = parsed
+    return f"{platform}:{_fold(handle) if handle.lower().startswith('channel/') else _handle_key(handle)}"
+
+
 def _clean_email(email: str) -> str:
     return _GLUED_PREFIX.sub("", email)
 
@@ -114,10 +123,14 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
     hidden_sensitive = 0
     seen_other_hosts = set()
 
+    # Un descarte vale para la cuenta, no solo para esa dirección: descartado ec.linkedin.com/in/x, su copia
+    # www.linkedin.com/in/x reaparecía en "Posiblemente otra persona" con un motivo automático (evaluación 4)
+    rejected_accounts = {key for key in map(_account_key, rejected) if key}
+
     for c in sorted(candidates, key=lambda x: -float(x.get("confidence") or 0)):
         url = c.get("url") or ""
         category = str(c.get("category") or "")
-        if category.split(" /")[0] in _SKIP_CATEGORIES or url in rejected:
+        if category.split(" /")[0] in _SKIP_CATEGORIES or url in rejected or _account_key(url) in rejected_accounts:
             continue
         sources.add(str(c.get("source") or "").split(":")[0])
         score = float(c.get("confidence") or 0)
@@ -147,8 +160,8 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
         parsed = parse_profile_url(url) if url else None
         if parsed and not is_content_url(url):
             platform, handle, canonical = parsed
-            hkey = _handle_key(handle) if not handle.lower().startswith("channel/") else _fold(handle)
-            key = f"{platform}:{hkey}"
+            key = _account_key(url)
+            hkey = key.split(":", 1)[1]
             # Enlace con la URL ORIGINAL: el analizador pasa el usuario a minúsculas y los canales de YouTube
             # (UCECJDeK0…) distinguen mayúsculas: con la canónica el enlace quedaba roto (visto en real).
             # El nombre del canal sale de la ruta, no del final de la URL ("channels?app=desktop…", visto en real)
@@ -208,26 +221,21 @@ def build_person_report(seed: Dict, candidates: Iterable[Dict], confirmed_urls: 
     }
 
 
-# Titular de un perfil de LinkedIn: "Gonzalo Plata - Cedar Fair Entertainment Company | LinkedIn"
-_LINKEDIN_HEADLINE = re.compile(r"^[^|]*?\s[-–]\s(.+?)\s*\|\s*LinkedIn", re.I)
-
-
 def _other_job(acc: Dict, context: str, name: str = "") -> str:
-    """Lo que dice hacer un perfil de LinkedIn si no tiene nada que ver con el contexto del objetivo; si no, vacío.
+    """Lo que dice hacer un perfil de LinkedIn si no tiene nada que ver con el contexto del objetivo; si no, vacío
+    (la regla, compartida con la tabla de candidatos, está en homonyms.other_job)."""
+    if acc["platform"] != "LinkedIn":
+        return ""
+    return other_job(acc["item"]["title"], acc["item"]["snippet"], context, acc["hkey"], name)
 
-    No se aplica si el usuario lleva el nombre completo (3+ palabras): "luis-arturo-villar-sudek" con "Ciencias de la
-    Comunicación" es muy probablemente Luisito Comunica aunque el contexto diga "youtuber".
-    """
-    if acc["platform"] != "LinkedIn" or not context.strip():
-        return ""
-    words = [_fold(w) for w in (name or "").split() if _fold(w)]
-    if len(words) >= 3 and all(w in acc["hkey"] for w in words):
-        return ""
-    match = _LINKEDIN_HEADLINE.match(acc["item"]["title"])
-    if not match:
-        return ""
-    text = f"{acc['item']['title']} {acc['item']['snippet']}"
-    return "" if context_matches(text, context) else match.group(1).strip()
+
+def _links_to_known_account(acc: Dict, handles: set) -> str:
+    """El usuario conocido al que enlaza la cuenta ("github.com/midudev" en la descripción de @midulive), o ""."""
+    text = f"{acc['item']['title']} {acc['item']['snippet']}".lower()
+    for handle in sorted(handles):
+        if len(handle) >= 4 and handle != acc["hkey"] and re.search(rf"[/@]{re.escape(handle)}(?![a-z0-9_])", text):
+            return handle
+    return ""
 
 
 def _sort_accounts(account_list: List[Dict], seed: Dict, homonyms: List[Dict], mentions: List[Dict]) -> None:
@@ -237,6 +245,7 @@ def _sort_accounts(account_list: List[Dict], seed: Dict, homonyms: List[Dict], m
 
     1. Suya: oficial (Wikidata), confirmada por el analista o con confianza ≥ 70.
     2. Mismo usuario que una cuenta suya (reypalomo_, alias oficial de Luisito): se queda, con una nota.
+       2b. Enlaza en su descripción a una cuenta suya (@midulive → github.com/midudev): se queda, con una nota.
     3. En una plataforma con una cuenta claramente suya, las demás de confianza < 70 son otra persona (midudev:
        cuatro "Miguel Ángel Durán" ajenos en LinkedIn).
     4. Un perfil cuyo usuario no tiene nada del nombre ni del alias (LinkedIn "net-worth-fever", "agustín-domínguez-
@@ -261,6 +270,11 @@ def _sort_accounts(account_list: List[Dict], seed: Dict, homonyms: List[Dict], m
             continue
         if acc["hkey"] in sure_handles:                                                         # regla 2
             acc["note"] = "Mismo usuario que una de sus cuentas verificadas: probablemente suya, sin confirmar."
+            continue
+        linked = _links_to_known_account(acc, sure_handles)
+        if linked:                                                                              # regla 2b
+            acc["note"] = (f"Su descripción enlaza a @{linked}, una de sus cuentas: puede ser otra cuenta suya "
+                           f"(un segundo canal, por ejemplo). Sin confirmar.")
             continue
         best = best_by_platform.get(acc["platform"])
         reason = ""

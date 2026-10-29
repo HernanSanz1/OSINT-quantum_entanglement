@@ -677,6 +677,16 @@ class ProfilerEngine:
                     signals = homonyms.homonym_signals(text, sr.url, seed.country, f"{seed.context} {seed.city}",
                                                        known_places=known_places, own_site=own_site,
                                                        aliases=seed.aliases, name=seed.name, known_codes=known_codes)
+                    # LinkedIn de otra profesión (evaluación 4: "Médico en Ministerio de Salud" al 50 % y "Cedar
+                    # Fair" al 40 % sin aviso en el perfil de dos futbolistas). La ficha ya los separaba (regla 6)
+                    # (no con su propio usuario: linkedin.com/in/midudev dice "Inteligencia Artificial…")
+                    own_handles = {u.lower().lstrip("@") for u in seed.all_usernames()}
+                    if profile and profile[0] == "linkedin" and not own_site and profile[1].lower() not in own_handles:
+                        job = homonyms.other_job(sr.title, sr.snippet, seed.context, profile[1], seed.name)
+                        if job:
+                            signals.append(homonyms.Signal(
+                                "other_job", f"posible homónimo: su LinkedIn dice «{job}» y buscas a «{seed.context}»",
+                                homonyms.OTHER_JOB_PENALTY))
                     warning = homonyms.warning_text(signals)
                     if signals:
                         confidence = max(0.0, confidence - homonyms.total_penalty(signals))

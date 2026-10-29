@@ -1504,7 +1504,13 @@ CVE_CLASSES = (
         "iconics", "genesis64", "delta electronics", "moxa", "phoenix contact", "open62541", "codesys", "opc ua")),
     ("Tecnología de frontera / acceso remoto", _class_pattern(
         "fortinet", "fortigate", "fortios", "fortiproxy", "fortimanager", "fortiweb", "cisco asa", "firepower",
-        "netscaler", "gateway", "vpn", "firewall", "mikrotik", "routeros")),
+        "netscaler", "gateway", "vpn", "firewall", "mikrotik", "routeros", "sd-wan", "velocloud", "secure firewall",
+        "adaptive security appliance", "anyconnect", "globalprotect", "pan-os", "connect secure", "pulse secure",
+        "big-ip", "sonicwall", "zyxel", "remote support", "beyondtrust", "bomgar", "remote access")),
+    # Librerías que llevan dentro muchos programas: antes Google Brotli salía "Sistema operativo"
+    ("Librería / componente de software", _class_pattern(
+        "brotli", "libwebp", "webp", "openssl", "zlib", "libxml2", "libarchive", "libssh", "libcurl", "log4j",
+        "expat", "freetype", "libpng", "libtiff", "sqlite", "protobuf", "jackson-databind", "library", "librería")),
     ("Sistema operativo / servicio base", _class_pattern(
         "windows", "windows server", "macos", "linux", "kernel", "kvm", "winsock", "internet key exchange", "ike",
         "dhcp server", "deployment services", "screen sharing")),

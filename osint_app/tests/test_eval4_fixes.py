@@ -236,3 +236,79 @@ def test_catalog_prefers_kev_and_ignores_unclear_msrc(productos):
     assert productos.catalog_products(items) == {"CVE-2026-98432": "Linux kernel", "CVE-2026-111497": "Google Brotli"}
     assert productos.item_product({"fuente_id": "cisa_kev", "vendor": "Broadcom", "product": "VMware ESX"}) == \
         "Broadcom VMware ESX"
+
+
+# ── Homónimos sueltos de la evaluación 4 ─────────────────────────────────────
+
+def _li(title, url, snippet=""):
+    from osint_app.core.models import SearchResult
+    return SearchResult(title=title, url=url, snippet=snippet, source_tool="WebSearch", category="Web",
+                        relevance_score=70)
+
+
+def _candidates(seed, results):
+    from osint_app.profiler_engine import ProfilerEngine, ToolResult
+    eng = ProfilerEngine()
+    eng.results = [ToolResult("WebSearch", "ok", results)]
+    return {c.url: c for c in eng.extract_candidates(seed, min_confidence=0)}
+
+
+def test_linkedin_of_another_profession_is_flagged_in_the_table():
+    from osint_app.profiler_engine import SeedData
+    doctor = "https://ec.linkedin.com/in/moises-caicedo-bautin-591642161"
+    cedar = "https://www.linkedin.com/in/gonzalo-plata-221605266"
+    cands = _candidates(SeedData(name="Moisés Caicedo", context="futbolista Chelsea", country="Ecuador"), [
+        _li("Moises Caicedo Bautin - Médico en Ministerio de Salud - Ecuador", doctor)])
+    assert "Médico en Ministerio de Salud" in cands[doctor].warning
+    cands = _candidates(SeedData(name="Gonzalo Plata", context="futbolista", country="Ecuador"), [
+        _li("Gonzalo Plata - Cedar Fair Entertainment Company | LinkedIn", cedar,
+            "Experience: Cedar Fair Entertainment Company · Location: Charlotte")])
+    assert "Cedar Fair" in cands[cedar].warning
+
+
+def test_own_linkedin_is_not_flagged_for_its_headline():
+    from osint_app.profiler_engine import SeedData
+    url = "https://es.linkedin.com/in/midudev"
+    cands = _candidates(SeedData(name="Miguel Ángel Durán", context="programador divulgador", username="midudev"), [
+        _li("Miguel Ángel Durán García - Inteligencia Artificial ... | LinkedIn", url, "Experiencia: midudev")])
+    assert "LinkedIn dice" not in cands[url].warning
+
+
+def test_sports_job_matches_an_athlete_and_empty_headline_uses_experience():
+    from osint_app.utils.homonyms import other_job, readable_linkedin_title
+    title, snippet = "Glenda Morejón - -- | LinkedIn", "-- · Experiencia: Ministerio de deporte Ecuador · Ubicación: Cuenca"
+    assert other_job(title, snippet, "marchista atleta") == ""
+    assert readable_linkedin_title(title, snippet) == "Glenda Morejón - Ministerio de deporte Ecuador"
+    assert readable_linkedin_title("Juan - Abogado | LinkedIn", "") == "Juan - Abogado | LinkedIn"
+
+
+def test_olympic_venue_with_year_is_not_where_the_person_lives():
+    from osint_app.utils.homonyms import homonym_signals
+    text = "la medallista olímpica inicia su ciclo hacia Los Ángeles 2028"
+    assert homonym_signals(text, "https://x.com/Primicias/status/1", "Ecuador", "marchista atleta") == []
+    assert homonym_signals("Glenda Morejón vive en Los Ángeles", "https://x.com/a", "Ecuador", "marchista")
+
+
+def test_second_channel_that_links_to_the_known_account_is_not_another_person():
+    seed = {"name": "Miguel Ángel Durán", "context": "programador divulgador", "username": "midudev"}
+    cands = [
+        {"source": "GitHubOSINT", "url": "https://youtube.com/@midudev", "title": "Youtube de midudev",
+         "snippet": "", "confidence": 70, "category": "Web"},
+        {"source": "Google Dorks", "url": "https://www.youtube.com/@midulive", "title": "midulive - YouTube",
+         "snippet": "Repositorio de código: https://github.com/midudev/aprendiendo", "confidence": 50,
+         "category": "Web"},
+    ]
+    report = build_person_report(seed, cands)
+    assert not any("midulive" in h["url"] for h in report["homonyms"])
+    live = [a for a in report["accounts"] if "midulive" in a["url"]][0]
+    assert "enlaza a @midudev" in live["note"]
+
+
+def test_a_rejected_account_stays_out_under_any_of_its_addresses():
+    seed = {"name": "Glenda Morejón", "context": "marchista atleta", "country": "Ecuador"}
+    cands = [{"source": s, "url": u, "title": "Glenda Morejon - OMEGA Boutique | LinkedIn", "snippet": "",
+              "confidence": 30, "category": "Web", "warning": "posible homónimo"}
+             for s, u in (("WebSearch", "https://ec.linkedin.com/in/glenda-x"),
+                          ("Google Dorks", "https://www.linkedin.com/in/glenda-x"))]
+    report = build_person_report(seed, cands, rejected_urls=["https://ec.linkedin.com/in/glenda-x"])
+    assert report["homonyms"] == [] and report["accounts"] == []

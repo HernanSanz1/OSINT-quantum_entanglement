@@ -111,6 +111,9 @@ SIX_KEV = {"titulo": "CISA Adds Six Known Exploited Vulnerabilities to Catalog",
     ("CVE-2026-64560", "Siemens SIMATIC S7-1500 TM MFP", "Tecnología OT / industrial"),
     ("CVE-2026-53362", "Linux Kernel", "Sistema operativo / servicio base"),
     ("CVE-2026-20000", "Google Chromium", "Navegador / cliente web"),
+    ("CVE-2026-111497", "Google Brotli", "Librería / componente de software"),
+    ("CVE-2026-20127", "Cisco Catalyst SD-WAN Controller and Manager", "Tecnología de frontera / acceso remoto"),
+    ("CVE-2026-102764", "BeyondTrust Remote Support", "Tecnología de frontera / acceso remoto"),
 ])
 def test_class_comes_from_this_cve_not_from_a_shared_news_item(cti, cve, product, expected):
     render, _ = cti

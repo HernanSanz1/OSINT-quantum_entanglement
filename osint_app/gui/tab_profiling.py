@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from osint_app.profiler_engine import ProfilerEngine, SeedData, parse_list
 from osint_app.tools import build_tool_registry
 from osint_app.utils.contact_privacy import mask_contacts
+from osint_app.utils.homonyms import readable_linkedin_title
 
 
 
@@ -761,7 +762,10 @@ class ProfilingTab(QWidget):
             self.candidates_table.setItem(row, 0, QTableWidgetItem(c['source']))
 
             # Titulo (truncado); marca ⚠️ si hay aviso de homónimo
-            title = c['title'][:60] + "..." if len(c['title']) > 60 else c['title']
+            title = c['title']
+            if "linkedin.com/in/" in (c['url'] or ""):
+                title = readable_linkedin_title(title, c['snippet'])
+            title = title[:60] + "..." if len(title) > 60 else title
             if c.get('warning'):
                 title = f"⚠️ {title}"
             title_item = QTableWidgetItem(title)

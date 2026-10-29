@@ -9,7 +9,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from .geo_data import COUNTRY_ALIASES, COUNTRY_BY_CODE, LATAM_CITIES, LATAM_COUNTRIES, OTHER_CITIES
 from .person_match import normalize_text
@@ -91,6 +91,12 @@ _CONTEXT_EQUIVALENTS = {
     "empres": ("businessman", "businesswoman", "entrepreneur"), "pesis": ("weightlifter", "weightlifting"),
     "levant": ("weightlifter", "weightlifting"), "tenis": ("tennis",), "boxea": ("boxer", "boxing"),
 }
+# Un deportista trabaja a menudo para el deporte (evaluación 4: el LinkedIn de Glenda Morejón, "Ministerio de deporte
+# Ecuador", pasaba a "otra persona" porque no decía "marchista")
+_SPORT_WORDS = ("deporte", "deportes", "deportista", "deportivo", "deportiva", "sport", "sports", "olimpico",
+                "olimpica", "olympic", "seleccion")
+for _key in ("futbo", "ciclis", "atleta", "march", "pesis", "levant", "tenis", "boxea"):
+    _CONTEXT_EQUIVALENTS[_key] += _SPORT_WORDS
 _CONTEXT_STOPWORDS = {"desde", "sobre", "entre", "hasta", "nacido", "nacida", "ciudad", "pais", "ecuador",
                       "colombia", "mexico", "peru", "chile", "argentina", "venezuela", "bolivia", "uruguay", "paraguay"}
 
@@ -112,6 +118,52 @@ def _context_matches(norm_text: str, seed_context: str) -> bool:
 def context_matches(text: str, seed_context: str) -> bool:
     """True si el texto habla de lo mismo que el contexto del objetivo (profesión, medio, club…), en español o inglés."""
     return _context_matches(normalize_text(text), seed_context)
+
+
+# Titular de un perfil de LinkedIn: "Gonzalo Plata - Cedar Fair Entertainment Company | LinkedIn"; a veces el
+# buscador corta el "| LinkedIn" ("Moises Caicedo Bautin - Médico en Ministerio de Salud - Ecuador")
+_LINKEDIN_HEADLINE = re.compile(r"^[^|]*?\s[-–]\s(.+?)\s*(?:\|\s*LinkedIn.*)?$", re.I)
+_LINKEDIN_EXPERIENCE = re.compile(r"(?:Experiencia|Experience)\s*:\s*([^·|]+)", re.I)
+OTHER_JOB_PENALTY = 20.0
+
+
+def linkedin_headline(title: str, snippet: str = "") -> str:
+    """Lo que dice hacer un perfil de LinkedIn. Con un titular vacío ("Glenda Morejón - --"), su experiencia."""
+    match = _LINKEDIN_HEADLINE.match(title or "")
+    head = match.group(1).strip() if match else ""
+    if not re.search(r"[^\W\d_]", head):
+        found = _LINKEDIN_EXPERIENCE.search(snippet or "")
+        head = found.group(1).strip() if found else ""
+    return head
+
+
+def readable_linkedin_title(title: str, snippet: str = "") -> str:
+    """"Glenda Morejón - -- | LinkedIn" → "Glenda Morejón - Ministerio de deporte Ecuador": con el titular vacío, el
+    analista descartaba por error el LinkedIn de la persona (evaluación 4). Cualquier otro título, igual."""
+    match = _LINKEDIN_HEADLINE.match(title or "")
+    if match and not re.search(r"[^\W\d_]", match.group(1)):
+        head = linkedin_headline(title, snippet)
+        if head:
+            return f"{title[:match.start(1)]}{head}"
+    return title
+
+
+def other_job(title: str, snippet: str, seed_context: str, handle: str = "", name: str = "") -> str:
+    """El titular de un LinkedIn si habla de otra profesión que el contexto del objetivo; si no, "".
+
+    No se aplica si el usuario lleva el nombre completo (3+ palabras): "luis-arturo-villar-sudek" con "Ciencias de la
+    Comunicación" es muy probablemente Luisito Comunica aunque el contexto diga "youtuber".
+    """
+    if not (seed_context or "").strip():
+        return ""
+    words = [w for w in re.findall(r"[a-z0-9]+", normalize_text(name or ""))]
+    folded = re.sub(r"[^a-z0-9]", "", normalize_text(unquote(handle or "")))
+    if len(words) >= 3 and all(w in folded for w in words):
+        return ""
+    head = linkedin_headline(title, snippet)
+    if not head:
+        return ""
+    return "" if context_matches(f"{title} {snippet}", seed_context) else head
 
 
 def homonym_warning(text: str, seed_country: str) -> Optional[str]:
@@ -194,7 +246,10 @@ def _cities_in(text: str) -> Dict[str, Set[str]]:
     for table in (LATAM_CITIES, OTHER_CITIES):
         for code, cities in table.items():
             for city in cities:
-                pattern = r"(?<![A-Za-z0-9])" + r"\s+".join(re.escape(w) for w in city.split()) + r"(?![A-Za-z0-9])"
+                # Seguida de un año es una sede, no donde vive la persona: "Los Ángeles 2028", "París 2024"
+                # (evaluación 4: un tuit sobre Glenda Morejón se penalizaba por su ciclo olímpico)
+                pattern = (r"(?<![A-Za-z0-9])" + r"\s+".join(re.escape(w) for w in city.split())
+                           + r"(?![A-Za-z0-9])(?!\s+(?:19|20)\d\d(?![0-9]))")
                 if any(m.group(0)[:1].isupper() for m in re.finditer(pattern, plain, re.I)):
                     found.setdefault(code, set()).add(city)
     return found
