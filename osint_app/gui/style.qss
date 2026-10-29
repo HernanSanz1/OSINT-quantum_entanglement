@@ -210,7 +210,8 @@ QTableWidget, QTreeWidget {
 QTableWidget::item, QTreeWidget::item {
     padding: 8px;
     border-bottom: 1px solid rgba(30, 45, 74, 0.5);
-    color: #E0E6ED;
+    /* Sin "color" aquí: anulaba el de cada celda (rojo de lo explotado en CTI, confianza en Perfilamiento,
+       gravedad en Correlación). El color por defecto ya lo da la regla QTableWidget, QTreeWidget de arriba. */
 }
 QTableWidget::item:hover, QTreeWidget::item:hover {
     background-color: rgba(0, 212, 255, 0.05);

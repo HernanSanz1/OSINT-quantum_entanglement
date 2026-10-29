@@ -176,3 +176,63 @@ def test_gui_uses_system_dpi_awareness_on_windows():
     source = (Path(__file__).parents[1] / "main.py").read_text(encoding="utf-8")
     start = source.index('os.environ.setdefault("QT_QPA_PLATFORM", "windows:dpiawareness=1")')
     assert start < source.index("app = QApplication(sys.argv)")      # antes de crear la aplicación
+
+
+# ── Colores de las tablas y columna Producto ─────────────────────────────────
+
+def test_stylesheet_does_not_override_cell_colours():
+    # "color" en QTableWidget::item tapaba setForeground: ni el rojo de lo explotado en CTI ni la confianza se veían
+    import re
+    from pathlib import Path
+    qss = (Path(__file__).parents[1] / "gui" / "style.qss").read_text(encoding="utf-8")
+    for rule in re.findall(r"QTableWidget::item, QTreeWidget::item \{([^}]*)\}", qss):
+        assert not re.search(r"(?<![-\w])color\s*:", rule)
+
+
+@pytest.fixture(scope="module")
+def productos():
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[2] / "sentinel_unified" / "modules" / "cti" / "productos.py"
+    spec = importlib.util.spec_from_file_location("productos_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("title,product", [
+    # títulos reales de avisos de Microsoft (MSRC)
+    ("ipv4: free inet_opt and ireq_opt after an RCU grace period", "Linux kernel"),
+    ("net/sched: act_ct: don't WARN on benign flow_offload_alloc() failure", "Linux kernel"),
+    ("SUNRPC: Reject short RFC 4121 MIC tokens in gss_krb5_verify_mic_v2", "Linux kernel"),
+    ("Chromium CVE-2026-113005: Memory corruption", "Google Chromium"),
+    ("Apache HTTP Server: mod_dav_fs namespace overflow", "Apache HTTP Server"),
+    ("Integer Overflow or Wraparound in GitLab", ""),
+    ("Authorization: Negotiate sent to foreign origin", ""),
+    ("Windows Resilient File System (ReFS) Elevation of Privilege", "Microsoft Windows Resilient File System (ReFS)"),
+    ("Microsoft Office Outlook Remote Code Execution Vulnerability", "Microsoft Office Outlook"),
+    ("Remote Desktop Client Remote Code Execution", "Microsoft Remote Desktop Client"),
+    ("Role: Windows Fax Service Elevation of Privilege", "Microsoft Windows Fax Service"),
+    ("Desktop Window Manager Elevation of Privilege", "Microsoft Desktop Window Manager"),
+    ("Linux Kernel Elevation of Privilege", "Linux kernel"),
+    ("SQLite Elevation of Privilege", "SQLite"),
+    ("BlueZ A2DP Stack-based Buffer Overflow Remote Code Execution", ""),
+    ("Uncontrolled Resource Consumption in Elasticsearch Leading to Denial of Service", ""),
+])
+def test_msrc_product_is_not_always_microsoft(productos, title, product):
+    assert productos.msrc_product(title) == product
+
+
+def test_catalog_prefers_kev_and_ignores_unclear_msrc(productos):
+    items = [
+        {"fuente_id": "microsoft_msrc", "vendor": "Microsoft", "product": "ipv4: free inet_opt and ireq_opt",
+         "cves": ["CVE-2026-98432"]},
+        {"fuente_id": "microsoft_msrc", "vendor": "Microsoft", "product": "Integer Overflow or Wraparound in GitLab",
+         "cves": ["CVE-2026-110264"]},
+        {"fuente_id": "microsoft_msrc", "vendor": "Microsoft", "product": "Google:  Buffer overflow in the Brotli decoder",
+         "cves": ["CVE-2026-111497"]},
+        {"fuente_id": "cisa_kev", "vendor": "Google", "product": "Brotli", "cves": ["CVE-2026-111497"]},
+    ]
+    assert productos.catalog_products(items) == {"CVE-2026-98432": "Linux kernel", "CVE-2026-111497": "Google Brotli"}
+    assert productos.item_product({"fuente_id": "cisa_kev", "vendor": "Broadcom", "product": "VMware ESX"}) == \
+        "Broadcom VMware ESX"

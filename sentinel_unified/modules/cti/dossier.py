@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from clientes import boost_cliente, cliente_choices, get_cliente, match_tecnologias, preferred_specs
 from exposicion_cve import build_exposure_matrix, extract_cvss
 from fuentes import FUENTES
+from productos import catalog_products, item_product
 from seleccion_cliente import internal_client_selection
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -685,19 +686,6 @@ CVE_PRODUCTS: dict[str, str] = {}
 KEV_CVES: set[str] = set()
 
 
-def catalog_products(items: list[dict]) -> dict[str, str]:
-    """CVE → "fabricante producto" de los avisos que lo dicen (KEV de CISA, Microsoft MSRC)."""
-    out: dict[str, str] = {}
-    # Primero el catálogo KEV; Microsoft lista también CVE de otros ("Google: Buffer overflow… in the Brotli decoder")
-    for item in sorted(items, key=lambda x: x.get("fuente_id") != "cisa_kev"):
-        product = " ".join(str(item.get(k) or "").strip() for k in ("vendor", "product")).strip()
-        if not product or len(product) > 60 or ":" in product:
-            continue
-        for cve in item.get("cves", []) or []:
-            out.setdefault(str(cve).upper(), product)
-    return out
-
-
 def cve_product(item: dict, cve: str) -> str:
     if cve.upper() in CVE_EDITORIAL:
         return CVE_EDITORIAL[cve.upper()]["producto"]
@@ -706,10 +694,10 @@ def cve_product(item: dict, cve: str) -> str:
     text = f"{item.get('titulo','')} {item.get('resumen','')}".lower()
     if "zapscape" in text or "kvm" in text:
         return "Linux kernel KVM"
-    vendor = str(item.get("vendor") or "").strip()
-    product = str(item.get("product") or "").strip()
-    if vendor or product:
-        return " ".join(part for part in (vendor, product) if part)
+    # Antes "fabricante + producto" tal cual: "Microsoft Integer Overflow or Wraparound in GitLab" (evaluación 4)
+    product = item_product(item)
+    if product:
+        return product
     title = re.sub(rf"\b{re.escape(cve)}\b", "", item.get("titulo") or "", flags=re.I)
     title = re.sub(r"\s+", " ", title).strip(" -:|")
     return title[:140] or "producto afectado no especificado por la fuente"

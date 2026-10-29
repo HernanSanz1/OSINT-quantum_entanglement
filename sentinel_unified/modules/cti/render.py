@@ -14,6 +14,7 @@ import urllib.request
 from pathlib import Path
 
 from exposicion_cve import extract_cvss, severity_from_cvss
+from productos import msrc_product
 
 BASE_DIR = Path(__file__).resolve().parent
 # SENTINEL pasa la carpeta de datos del usuario (fuera del proyecto); sin ella, la de siempre.
@@ -358,6 +359,9 @@ def msrc_type(title: str, item: dict | None = None) -> tuple[str, str, str]:
 
 
 def msrc_product_name(title: str) -> str:
+    known = msrc_product(title)      # "Linux kernel" en vez de "ipv4: free inet_opt…"
+    if known:
+        return known
     product = str(title or "").strip()
     product = re.sub(r"\bVulnerability\b", "", product, flags=re.I).strip(" -:")
     for english, _, _ in MSRC_TYPES:
@@ -1240,7 +1244,8 @@ def cve_product_text(cve: str, first: dict, item: dict) -> str:
     if cve in overrides:
         return overrides[cve]
     if first.get("fuente_id") == "microsoft_msrc":
-        return msrc_product_name(first.get("titulo") or item.get("producto") or "")
+        # Microsoft publica también fallos de otros (kernel de Linux, Chromium, GitLab): "" omite "Afecta a …"
+        return msrc_product(first.get("product") or first.get("titulo") or "")
     product = str(item.get("producto") or "").strip()
     if len(product) > 120 or product.lower().startswith(("boletín threat intelligence", "se reporta ")):
         product = title_text(first)

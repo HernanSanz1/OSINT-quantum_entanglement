@@ -2,11 +2,13 @@
 CTI Tab — Threat Intelligence integrado.
 Recoleccion de feeds, dossiers por cliente, boletines HTML.
 """
+import importlib.util
 import os
 import sys
 import json
 import subprocess
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -24,6 +26,19 @@ from ..cti_link import _truthy, normalize_cves
 
 # Código del módulo CTI (los datos van aparte, en la carpeta del usuario: ver active_cti_store)
 CTI_BASE = Path(__file__).parent.parent.parent / "sentinel_unified" / "modules" / "cti"
+
+
+@lru_cache(maxsize=1)
+def cti_products():
+    """productos.py del módulo CTI (sin dependencias): la misma regla de producto que usa el boletín.
+
+    Se carga desde su archivo para no meter la carpeta del CTI en la ruta de Python (sus scripts tienen nombres
+    genéricos como clientes.py o fuentes.py).
+    """
+    spec = importlib.util.spec_from_file_location("sentinel_cti_productos", CTI_BASE / "productos.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _run_cti_script(cti_path: Path, script: str, args: list, timeout: int,
@@ -521,19 +536,19 @@ class CTITab(QWidget):
         items.sort(key=lambda it: str(it.get("fecha") or ""), reverse=True)
         # Una noticia ("CISA Adds Two Known Exploited Vulnerabilities…") no trae la marca KEV ni el producto: se
         # sacan de sus CVE en el catálogo (antes salía en blanco y con la columna Producto vacía)
-        exploited_cves, products = set(), {}
+        exploited_cves = set()
         for it in items:
-            product = " ".join(str(it.get(k) or "") for k in ("vendor", "product")).strip()
-            for cve in normalize_cves(it.get("cves")):
-                if _truthy(it.get("kev")) or _truthy(it.get("exploited")):
-                    exploited_cves.add(cve)
-                if product:
-                    products.setdefault(cve, product)
+            if _truthy(it.get("kev")) or _truthy(it.get("exploited")):
+                exploited_cves.update(normalize_cves(it.get("cves")))
+        # El producto con la regla del boletín (evaluación 4): antes "Microsoft ipv4: free inet_opt…" en un fallo del
+        # kernel de Linux, porque Microsoft también publica fallos de otros
+        productos = cti_products()
+        products = productos.catalog_products(items)
         shown = items[:self.MAX_ROWS]
         self.table.setRowCount(len(shown))
         for row, it in enumerate(shown):
             cves = normalize_cves(it.get("cves"))
-            product = " ".join(str(it.get(k) or "") for k in ("vendor", "product")).strip()
+            product = productos.item_product(it)
             product = product or ", ".join(dict.fromkeys(products[c] for c in cves if c in products))
             exploited = _truthy(it.get("kev")) or _truthy(it.get("exploited")) or any(c in exploited_cves for c in cves)
             values = (it.get("fuente", ""), it.get("titulo", ""), ", ".join(cves[:3]),

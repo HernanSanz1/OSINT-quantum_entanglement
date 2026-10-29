@@ -23,7 +23,7 @@ def cti(tmp_path_factory):
         sys.modules.pop(name, None)
     render, dossier = importlib.import_module("render"), importlib.import_module("dossier")
     yield render, dossier
-    for name in ("render", "dossier", "clientes", "exposicion_cve", "seleccion_cliente", "fuentes"):
+    for name in ("render", "dossier", "clientes", "exposicion_cve", "seleccion_cliente", "fuentes", "productos"):
         sys.modules.pop(name, None)
     mp.undo()
 
