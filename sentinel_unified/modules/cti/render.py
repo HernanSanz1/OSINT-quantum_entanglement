@@ -100,7 +100,14 @@ def title_label(dossier: dict) -> str:
 
 
 def client_label(dossier: dict) -> str:
-    return ""
+    """Para quién es el boletín y qué se tuvo en cuenta (antes no se veía nada del cliente elegido)."""
+    cliente = dossier.get("cliente") or {}
+    if not cliente.get("nombre"):
+        return ""
+    techs = [t.get("nombre", "") for t in cliente.get("tecnologias", []) if isinstance(t, dict)][:6]
+    detail = f" Se priorizan las noticias que afectan a: {esc(', '.join(techs))}." if techs else ""
+    return (f'<p style="font-size: 10pt; background: #eef6fb; padding: 8px 12px; border-radius: 6px;">'
+            f"Boletín preparado para <strong>{esc(cliente['nombre'])}</strong>.{detail}</p>")
 
 
 def safe_url(url: str) -> str:
@@ -133,9 +140,19 @@ def sentence_limit(text: str, limit: int = 3) -> str:
     text = text.replace("[...]", " ")
     text = re.sub(r"View CSAF Summary\s*", "", text, flags=re.I)
     if len(text) > 900:
-        text = text[:900].rsplit(" ", 1)[0] + "."
-    parts = re.split(r"(?<=[.!?])\s+", text)
-    return " ".join(parts[:limit]).strip()
+        text = text[:900].rsplit(" ", 1)[0]
+    parts = [part for part in re.split(r"(?<=[.!?])\s+", text) if part][:limit]
+    # Un resumen que la fuente cortó a media frase ("…desde una ruta de") no se publica así: se quita esa frase
+    # (o, si es la única, se marca con "…"). Antes se le pegaba la frase siguiente: "una ruta de Deben aplicarse…"
+    if len(parts) > 1 and not complete_sentence(parts[-1]):
+        parts = parts[:-1]
+    elif parts and not complete_sentence(parts[-1]):
+        parts[-1] = parts[-1].rstrip(" ,;:-") + "…"
+    return " ".join(parts).strip()
+
+
+def complete_sentence(text: str) -> bool:
+    return str(text or "").rstrip().endswith((".", "!", "?", "…", '"', "»", "”"))
 
 
 RAW_ENGLISH_PUBLIC = (
@@ -155,8 +172,85 @@ RAW_ENGLISH_PUBLIC = (
 )
 
 
+# Palabras que solo aparecen en un texto en inglés (y las españolas equivalentes, para comparar)
+ENGLISH_WORDS = {
+    "the", "and", "of", "to", "with", "on", "by", "is", "was", "that", "from", "have", "has", "an", "its", "this",
+    "which", "be", "are", "were", "can", "could", "after", "before", "into", "for", "using", "via", "over", "under",
+    "against", "new", "warns", "fixes", "patches", "patched", "disclosed", "adds", "issues", "released", "researchers",
+    "hackers", "attackers", "flaw", "flaws", "bug", "bugs", "vulnerability", "exploited", "exploit", "more", "two",
+    "three", "while", "now", "still", "their", "they", "it", "as", "at", "or", "but", "not", "than",
+}
+SPANISH_WORDS = {
+    "el", "la", "los", "las", "de", "del", "y", "que", "en", "con", "por", "para", "una", "un", "es", "se", "su",
+    "sus", "al", "como", "más", "fue", "ha", "han", "sin", "sobre", "entre", "este", "esta", "corrige", "falla",
+}
+
+
+def is_english(text: str, short: bool = False) -> bool:
+    """True si el texto está en inglés. `short`: un titular, con menos palabras de apoyo."""
+    words = re.findall(r"[a-záéíóúñü]+", str(text or "").lower())
+    en = sum(w in ENGLISH_WORDS for w in words)
+    es = sum(w in SPANISH_WORDS for w in words)
+    if short:
+        return en >= 2 and es == 0
+    return en >= 3 and en > es
+
+
 def has_raw_english(text: str) -> bool:
-    return any(re.search(pattern, str(text or ""), flags=re.I) for pattern in RAW_ENGLISH_PUBLIC)
+    return (any(re.search(pattern, str(text or ""), flags=re.I) for pattern in RAW_ENGLISH_PUBLIC)
+            or is_english(text) or is_english(text, short=True))
+
+
+# Tema de una noticia en inglés, para darle un titular en español (sin servicio de traducción)
+ENGLISH_TOPICS = [
+    ((r"remote code execution", r"\brce\b", r"code execution"), "Ejecución remota de código"),
+    ((r"privilege escalation", r"elevation of privilege", r"\broot\b"), "Elevación de privilegios"),
+    ((r"authentication bypass", r"auth bypass"), "Omisión de autenticación"),
+    ((r"zero-day", r"0-day"), "Vulnerabilidad de día cero"),
+    ((r"ransomware",), "Ransomware"),
+    ((r"data breach", r"\bbreach", r"\bleak"), "Filtración de datos"),
+    ((r"phishing",), "Campaña de phishing"),
+    ((r"supply chain", r"\bnpm\b", r"\bpypi\b"), "Ataque a la cadena de suministro"),
+    ((r"malware", r"trojan", r"stealer", r"backdoor", r"botnet"), "Campaña de malware"),
+    ((r"\bpatch", r"\bupdate", r"\bfix"), "Actualización de seguridad"),
+]
+
+
+def spanish_heading(item: dict) -> str:
+    """Titular en español para una noticia publicada en inglés: tema, producto (si se conoce) y CVE."""
+    text = f"{item.get('titulo', '')} {item.get('resumen', '')}".lower()
+    topics = [label for patterns, label in ENGLISH_TOPICS if any(re.search(p, text) for p in patterns)]
+    cves = item.get("cves", [])[:2]
+    if len(topics) > 2 and not cves:      # resumen semanal de varias noticias ("ThreatsDay: … + 21 More")
+        topic = "Resumen de varias amenazas de la semana"
+    else:
+        topic = topics[0] if topics else "Vulnerabilidad o amenaza"
+    products = [p for p in item.get("productos_cve", []) if p][:2]
+    heading = topic + (f" en {' y '.join(products)}" if products else "")
+    if cves:
+        heading += f" ({', '.join(cves)})"
+    return heading + (f", según {item['fuente']}" if item.get("fuente") else "")
+
+
+def english_item_text(item: dict) -> str:
+    """Resumen en español, con los datos comprobables de una noticia publicada en inglés."""
+    facts = []
+    cves = item.get("cves", [])[:5]
+    products = [p for p in item.get("productos_cve", []) if p][:3]
+    if cves:
+        facts.append(f"{item.get('fuente') or 'La fuente'} informa sobre {', '.join(cves)}"
+                     + (f", que afecta a {' y '.join(products)}." if products else "."))
+    labels = set(item.get("etiquetas", []))
+    if labels & {"EXPLOTADO ACTIVAMENTE", "EXPLOTACION REPORTADA"}:
+        facts.append("Se reporta explotación activa.")
+    if "PoC PUBLICO" in labels or item.get("poc_github"):
+        facts.append("Existe un exploit público.")
+    facts.append("Se debe validar si el producto está en el inventario, aplicar la corrección del fabricante y "
+                 "revisar los registros del servicio afectado.")
+    title = re.sub(r"\s+", " ", str(item.get("titulo") or "")).strip()
+    if title:
+        facts.append(f"Titular original (en inglés): «{title}».")
+    return " ".join(facts)
 
 
 def cve_phrase(item: dict) -> str:
@@ -234,7 +328,14 @@ def cve_display_suffix(cve: str, item: dict, first: dict) -> str:
 
 
 def client_relevance_phrase(item: dict) -> str:
-    return ""
+    """Por qué le importa al cliente del boletín: sus tecnologías que nombra la noticia."""
+    matches = item.get("cliente_matches") or []
+    names = list(dict.fromkeys(m.get("nombre", "") for m in matches if m.get("nombre")))[:3]
+    if not names:
+        return ""
+    pending = all(not m.get("confirmado", True) for m in matches)
+    note = " (pendiente de confirmar en su inventario)" if pending else ""
+    return f" <em>Relevante para su entorno: {esc(', '.join(names))}{note}.</em>"
 
 
 MSRC_TYPES = [
@@ -311,7 +412,55 @@ def ransomware_live_text(item: dict) -> str:
     )
 
 
+# Siglas y palabras que aparecen en muchos textos escritos a mano y no identifican una noticia concreta
+GENERIC_ANCHORS = {
+    "cisa", "kev", "cve", "edr", "ot", "it", "ot/it", "vpn", "mfa", "ee", "uu", "ee.", "uu.", "ia", "rce", "ssrf", "api",
+    "json", "dns", "smtp", "ci", "cd", "ci/cd", "mdm", "ti", "pam", "waf", "xdr", "plc", "poc", "ssh", "ip", "url",
+}
+
+
+def canned_anchors(text: str) -> set[str]:
+    """Nombres propios de un texto escrito a mano (productos, grupos, fabricantes): lo que lo liga a UNA noticia."""
+    anchors = set()
+    for sentence in re.split(r"(?<=[.!?:])\s+", text):
+        for n, token in enumerate(re.findall(r"[\w][\w./+-]*", sentence)):
+            token = token.strip("./-")
+            if n == 0 or len(token) < 3 or token.lower() in GENERIC_ANCHORS or re.fullmatch(r"\d+", token):
+                continue
+            if any(c.isupper() for c in token) or "/" in token:
+                anchors.add(token)
+    return anchors
+
+
+def canned_fits(canned: str, item: dict) -> bool:
+    """Un texto escrito a mano para una noticia concreta solo vale para esa noticia.
+
+    Antes bastaban palabras sueltas: cualquier noticia con "linux" y "kernel" recibía el texto de una vulnerabilidad
+    antigua de net/sched (boletín de la evaluación 2026-10-28, con el titular de otra noticia de KSMBD).
+    Con CVE en el texto, la noticia debe tener alguno; sin CVE, debe citar al menos dos de sus nombres propios.
+    """
+    item_text = f"{item.get('titulo', '')} {item.get('resumen', '')}"
+    canned_cves = set(re.findall(r"CVE-\d{4}-\d{4,7}", canned.upper()))
+    if canned_cves:
+        item_cves = {str(c).upper() for c in item.get("cves", [])} | set(re.findall(r"CVE-\d{4}-\d{4,7}", item_text.upper()))
+        return bool(canned_cves & item_cves)
+    anchors = canned_anchors(canned)
+    low = item_text.lower()
+    hits = {a for a in anchors if a.lower() in low}
+    return bool(anchors) and len(hits) >= min(2, len(anchors))
+
+
 def editorial_text(item: dict) -> str:
+    text = _editorial_text(item)
+    if item.get("fuente_id") in ("ransomware_ec", "microsoft_msrc"):
+        return text
+    generic = generic_editorial(item)
+    if text != generic and not canned_fits(text, item):
+        return generic
+    return text
+
+
+def _editorial_text(item: dict) -> str:
     text = f"{item.get('titulo','')} {item.get('resumen','')}".lower()
     cves = set(item.get("cves", []))
     if item.get("fuente_id") == "ransomware_ec":
@@ -821,14 +970,16 @@ def editorial_text(item: dict) -> str:
             "La cadena de explotación permite crear cuentas con privilegios, cargar archivos y ejecutar código en escenarios vulnerables. "
             "Los administradores deben actualizar Joomla y sus extensiones, revisar cuentas creadas recientemente y monitorear cambios no autorizados en páginas públicas."
         )
+    return generic_editorial(item)
+
+
+def generic_editorial(item: dict) -> str:
+    """Resumen de la propia noticia (el de la fuente, o uno en español con sus datos si está en inglés)."""
     summary = sentence_limit(item.get("resumen") or item.get("titulo"), 3)
+    if has_raw_english(summary):
+        summary = english_item_text(item)
     if not summary or summary == item.get("titulo"):
         summary = "El riesgo debe evaluarse según presencia del producto, exposición del servicio e impacto potencial sobre activos corporativos."
-    if has_raw_english(summary):
-        summary = (
-            "El riesgo debe evaluarse según presencia del producto, exposición del servicio e impacto potencial sobre activos corporativos. "
-            "Se debe validar inventario, aplicar la corrección del fabricante y revisar registros del servicio afectado."
-        )
     if item.get("fuente_id") == "cisa_ics":
         summary += " En entornos OT/industriales, se debe identificar activos con el producto afectado y aplicar las mitigaciones del fabricante."
     elif any(label in item.get("etiquetas", []) for label in ("EXPLOTADO ACTIVAMENTE", "EXPLOTACION REPORTADA")):
@@ -1002,7 +1153,7 @@ def title_text(item: dict) -> str:
     if len(title) > 160:
         title = title[:160].rsplit(" ", 1)[0]
     if has_raw_english(title):
-        return "Hallazgo crítico priorizado por exposición y acción requerida"
+        return spanish_heading(item)
     return title.rstrip(":")
 
 
@@ -1023,6 +1174,16 @@ def list_section(title: str, items: list[dict], icon_html: str = "") -> str:
       <ul>{body}</ul>
     </div>
     """
+
+
+def ecuador_title(items: list[dict]) -> str:
+    """Antes la sección se llamaba "Seguridad Ecuador" aunque trajera Siemens, GitLab o Chrome (avisos globales que
+    reenvían EcuCERT o CSIRT Telconet)."""
+    about_ecuador = [i for i in items if i.get("fuente_id") == "ransomware_ec"
+                     or "ecuador" in f"{i.get('titulo', '')} {i.get('resumen', '')}".lower()]
+    if items and not about_ecuador:
+        return "Avisos difundidos en Ecuador (EcuCERT, CSIRT Telconet)"
+    return "Seguridad Ecuador"
 
 
 def highlight_section(title: str, items: list[dict]) -> str:
@@ -1083,9 +1244,14 @@ def cve_product_text(cve: str, first: dict, item: dict) -> str:
     product = str(item.get("producto") or "").strip()
     if len(product) > 120 or product.lower().startswith(("boletín threat intelligence", "se reporta ")):
         product = title_text(first)
-    if has_raw_english(product):
-        product = "producto afectado según la fuente"
-    return product or title_text(first) or "producto afectado"
+    if has_raw_english(product) or len(product) > 120:
+        return ""          # sin producto claro se omite la frase "Afecta a …"
+    return product
+
+
+# Sin detalle en español: solo la acción (antes "vulnerabilidad de alta prioridad" también en las de CVSS 2.7)
+GENERIC_CVE_ACTION = ("Acción: comprobar si el producto está en el inventario, aplicar la actualización del fabricante "
+                      "y revisar los registros en busca de intentos de explotación.")
 
 
 def cve_impact_text(cve: str, first: dict, item: dict) -> str:
@@ -1239,19 +1405,13 @@ def cve_impact_text(cve: str, first: dict, item: dict) -> str:
     dossier_impact = str(item.get("impacto") or "").strip()
     if dossier_impact:
         if has_raw_english(dossier_impact):
-            return (
-                "La fuente primaria reporta una vulnerabilidad de alta prioridad con impacto operativo sobre el producto afectado. "
-                "Se debe validar presencia del componente, aplicar la actualización del fabricante y revisar registros por intentos de explotación."
-            )
+            return GENERIC_CVE_ACTION
         return dossier_impact
     if first.get("fuente_id") == "microsoft_msrc":
         return msrc_editorial_text(first)
     impact = editorial_text(first) if first else str(item.get("impacto") or "").strip()
     if has_raw_english(impact):
-        return (
-            "La fuente primaria reporta una vulnerabilidad de alta prioridad con impacto operativo sobre el producto afectado. "
-            "Se debe validar presencia del componente, aplicar la actualización del fabricante y revisar registros por intentos de explotación."
-        )
+        return GENERIC_CVE_ACTION
     return impact
 
 
@@ -1383,7 +1543,7 @@ def cve_section(items: list[dict]) -> str:
             f"PoC público: {esc('Sí' if poc else 'No confirmado')}. "
             f"Vector de ataque: {esc(vector)}. "
             f"Clase: {esc(clase)}. "
-            f"Afecta a {esc(producto)}. {esc(impacto)} "
+            f"{'Afecta a ' + esc(producto) + '. ' if producto else ''}{esc(impacto)} "
             f"Fuente principal: {esc(fuente)}.{relevance}</li>"
         )
     return f"""
@@ -1542,13 +1702,17 @@ def render(dossier: dict) -> str:
     }}
     header {{
       position: relative;
-      display: inline-flex;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: space-between;
       flex-direction: row;
       align-items: center;
       text-align: left;
       margin-bottom: 10px;
       padding: 10px 20px;
       color: rgb(255, 255, 255);
+      background-color: #0b2a3d;   /* si la imagen de fondo no carga, el título blanco sigue legible */
       overflow: hidden;
       border-radius: 8px;
     }}
@@ -1564,8 +1728,8 @@ def render(dossier: dict) -> str:
       z-index: 0;
     }}
     header * {{ position: relative; z-index: 1; }}
-    header img {{ max-width: 230px; border-radius: 8px; }}
-    h1 {{ color: #ffffff; font-size: 28px; letter-spacing: 0; }}
+    header img {{ max-width: 230px; border-radius: 8px; flex: 0 0 auto; }}
+    h1 {{ color: #ffffff; font-size: 28px; letter-spacing: 0; margin: 0; flex: 1 1 280px; }}
     h2 {{ color: #0074a6; font-size: 20px; }}
     ul {{ padding-left: 20px; }}
     li {{ margin-bottom: 12px; }}
@@ -1598,7 +1762,7 @@ def render(dossier: dict) -> str:
       <p style="font-size: 10pt;"><em>{period_label(dossier)}</em></p>
       {client_label(dossier)}
       {highlight_section('Amenaza de la Semana', sec.get('amenaza_semana', []))}
-      {list_section('Seguridad Ecuador', sec.get('seguridad_ecuador', []), '<img src="https://upload.wikimedia.org/wikipedia/commons/e/e8/Flag_of_Ecuador.svg" alt="Bandera Ecuador" width="35" style="vertical-align: middle; margin-right: 10px;">')}
+      {list_section(ecuador_title(sec.get('seguridad_ecuador', [])), sec.get('seguridad_ecuador', []), '<img src="https://upload.wikimedia.org/wikipedia/commons/e/e8/Flag_of_Ecuador.svg" alt="Bandera Ecuador" width="35" style="vertical-align: middle; margin-right: 10px;">')}
       {list_section('Noticias Principales', sec.get('noticias_principales', []), '&#128276; ')}
       {cve_section(sec.get('principales_cves', []))}
       {list_section('Alrededor del Mundo Cibernético', sec.get('alrededor_mundo', []), '&#128240; ')}

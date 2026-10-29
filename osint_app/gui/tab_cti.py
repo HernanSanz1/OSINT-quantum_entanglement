@@ -96,6 +96,35 @@ class HarvestThread(QThread):
             self.error.emit(str(e))
 
 
+# Secciones del boletín, en palabras (antes "items store: 7800 · items ventana: 110 · cves previas excluidas: 0")
+SECTION_NAMES = {"amenaza_semana": "amenaza de la semana", "seguridad_ecuador": "de Ecuador",
+                 "noticias_principales": "noticias principales", "principales_cves": "vulnerabilidades (CVE)",
+                 "alrededor_mundo": "del mundo", "referencias": "fuentes citadas"}
+
+
+def dossier_summary_lines(data: dict) -> list:
+    """Resumen del dossier para una persona no técnica."""
+    totals = data.get("totales") or {}
+    sections = data.get("secciones") or {}
+    lines = [f"✅ Boletín preparado (periodo {data.get('semana', '?')})."]
+    if totals:
+        lines.append(f"   Se revisaron {totals.get('items_store', 0)} noticias guardadas: {totals.get('items_ventana', 0)} "
+                     f"son de este periodo y {totals.get('explotados', 0)} hablan de vulnerabilidades explotadas.")
+    if sections:
+        lines.append("   Contenido: " + " · ".join(f"{v} {SECTION_NAMES.get(k, k.replace('_', ' '))}"
+                                                  for k, v in sections.items()))
+    missing = []
+    for note in data.get("brechas") or []:          # "Seguridad Ecuador: 1/3 candidatos."
+        name, _, counts = str(note).partition(":")
+        got, _, want = counts.strip().split(" ")[0].partition("/")
+        missing.append(f"{name} ({got} de {want})" if want else str(note))
+    if missing:
+        lines.append("   ⚠ Hay pocas noticias para completar: " + ", ".join(missing) + ". El boletín sale igual, "
+                     "más corto. Pulsa «Actualizar noticias» o genera el boletín más adelante.")
+    lines.append("   Pulsa «Ver boletín» para verlo en el navegador.")
+    return lines
+
+
 class DossierThread(QThread):
     """Thread para ejecutar dossier.py"""
     progress = Signal(str)
@@ -127,8 +156,7 @@ class DossierThread(QThread):
             result = _run_cti_script(self.cti_path, "dossier.py", args, timeout=180,
                                      store=self.store, reports=self.reports)
 
-            if result.returncode == 0:
-                self.progress.emit(result.stdout)
+            if result.returncode == 0:      # el resumen lo explica _on_dossier_done (antes se volcaba el JSON)
                 self.finished_ok.emit(result.stdout)
             else:
                 self.error.emit(result.stderr or "Error generando dossier")
@@ -218,6 +246,9 @@ class CTITab(QWidget):
         self.combo_client = QComboBox()
         self.combo_client.addItems(["GLOBAL", "CER", "MAVESA", "XTRIM", "SERVIANDINA"])
         self.combo_client.setMinimumWidth(150)
+        self.combo_client.setToolTip("Para quién es el boletín. Con un cliente, se priorizan las noticias que afectan "
+                                     "a sus tecnologías (su inventario) y cada una lo indica con «Relevante para su "
+                                     "entorno». GLOBAL: boletín general, sin cliente.")
         header.addWidget(self.combo_client)
 
         layout.addLayout(header)
@@ -411,17 +442,8 @@ class CTITab(QWidget):
         self._set_busy(False)
         # Antes se volcaba el JSON tal cual en el registro
         try:
-            data = json.loads(output or "{}")
-            self._log(f"✅ Dossier de la semana {data.get('semana', '?')} generado.")
-            totals = data.get("totales") or {}
-            if isinstance(totals, dict) and totals:
-                self._log("   Totales: " + " · ".join(f"{k.replace('_', ' ')}: {v}" for k, v in totals.items()))
-            sections = data.get("secciones") or {}
-            if sections:
-                self._log("   Secciones: " + " · ".join(f"{k.replace('_', ' ')}: {v}" for k, v in sections.items()))
-            if data.get("brechas"):
-                self._log(f"   Datos que faltan: {data['brechas']}")
-            self._log("   Pulsa «Ver boletín» para verlo en el navegador.")
+            for line in dossier_summary_lines(json.loads(output or "{}")):
+                self._log(line)
         except ValueError:
             self._log("✅ Dossier generado")
             self._log(output)

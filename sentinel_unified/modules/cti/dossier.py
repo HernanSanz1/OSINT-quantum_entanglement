@@ -679,9 +679,30 @@ def internal_control_log(cliente: dict | None, start: dt.datetime, end: dt.datet
     }
 
 
+CVE_PRODUCTS: dict[str, str] = {}
+# CVE del catálogo KEV de CISA (explotación activa confirmada), aunque el aviso KEV sea de otra semana: antes un CVE
+# explotado salía "Explotación en campo: No confirmada" si esta semana solo lo citaba un aviso de Siemens
+KEV_CVES: set[str] = set()
+
+
+def catalog_products(items: list[dict]) -> dict[str, str]:
+    """CVE → "fabricante producto" de los avisos que lo dicen (KEV de CISA, Microsoft MSRC)."""
+    out: dict[str, str] = {}
+    # Primero el catálogo KEV; Microsoft lista también CVE de otros ("Google: Buffer overflow… in the Brotli decoder")
+    for item in sorted(items, key=lambda x: x.get("fuente_id") != "cisa_kev"):
+        product = " ".join(str(item.get(k) or "").strip() for k in ("vendor", "product")).strip()
+        if not product or len(product) > 60 or ":" in product:
+            continue
+        for cve in item.get("cves", []) or []:
+            out.setdefault(str(cve).upper(), product)
+    return out
+
+
 def cve_product(item: dict, cve: str) -> str:
     if cve.upper() in CVE_EDITORIAL:
         return CVE_EDITORIAL[cve.upper()]["producto"]
+    if cve.upper() in CVE_PRODUCTS:
+        return CVE_PRODUCTS[cve.upper()]
     text = f"{item.get('titulo','')} {item.get('resumen','')}".lower()
     if "zapscape" in text or "kvm" in text:
         return "Linux kernel KVM"
@@ -811,6 +832,7 @@ def build_cve_priorities(items: list[dict], count: int = 6) -> list[dict]:
             "fuentes": refs[:5],
             "etiquetas": top.get("etiquetas", []),
             "cliente_matches": top.get("cliente_matches", []),
+            "kev": cve in KEV_CVES,
         })
     out.sort(key=lambda x: (x["score"], x["cve"]), reverse=True)
     selected = []
@@ -1001,7 +1023,7 @@ def force_local_ecuador_item(items: list[dict], used: set[str], prior: list[dict
         return []
     seen_cves = set().union(*(cve_set(item) for item in prior)) if prior else set()
     seen_topics = {topic_key(item) for item in prior}
-    ordered = sorted(candidates, key=threat_rank, reverse=True)
+    ordered = sorted(candidates, key=lambda x: (about_ecuador(x), threat_rank(x)), reverse=True)
     for item in ordered:
         cves = cve_set(item)
         topic = topic_key(item)
@@ -1014,6 +1036,14 @@ def force_local_ecuador_item(items: list[dict], used: set[str], prior: list[dict
     chosen = ordered[0]
     used.add(chosen["id"])
     return [chosen]
+
+
+def spanish_item(item: dict) -> bool:
+    return str(item.get("idioma") or "").lower().startswith("es")
+
+
+def about_ecuador(item: dict) -> bool:
+    return item.get("fuente_id") == "ransomware_ec" or "ecuador" in text_of(item)
 
 
 def threat_rank(item: dict) -> tuple:
@@ -1190,12 +1220,21 @@ def build(week: str | None = None, day: str | None = None, until: str | None = N
         period_id, start, end = week_window(week)
         period_type = "semanal"
     raw = load_items()
+    CVE_PRODUCTS.clear()
+    CVE_PRODUCTS.update(catalog_products(raw))
+    KEV_CVES.clear()
+    KEV_CVES.update(str(c).upper() for x in raw if x.get("fuente_id") == "cisa_kev" or str(x.get("kev")).lower() == "true"
+                    for c in x.get("cves", []) or [])
     enrich = load_enrich()
     sources_by_cve: dict[str, set[str]] = {}
     for item in raw:
         for cve in item.get("cves", []):
             sources_by_cve.setdefault(cve.upper(), set()).add(item.get("fuente_id", ""))
     scored = [score_item(item, start, end, enrich, sources_by_cve) for item in raw]
+    for item in scored:
+        products = [CVE_PRODUCTS[c.upper()] for c in item.get("cves", []) if c.upper() in CVE_PRODUCTS]
+        if products:
+            item["productos_cve"] = list(dict.fromkeys(products))
     if cliente_profile:
         scored = [boost_cliente(item, cliente_profile) for item in scored]
     previous_keys = previous_report_keys(period_id, start, end)
@@ -1266,7 +1305,8 @@ def build(week: str | None = None, day: str | None = None, until: str | None = N
             ("velocloud",),
         ], 1, used)
     else:
-        amenaza = sorted(threat_candidates, key=threat_rank, reverse=True)[:1]
+        ranked = sorted(threat_candidates, key=threat_rank, reverse=True)
+        amenaza = next(([x] for x in ranked[:3] if spanish_item(x)), ranked[:1])
         used.update(x["id"] for x in amenaza)
     ecuador = force_local_ecuador_item(weekly_public, used, amenaza)
     ecuador += choose_preferred(weekly_public, [
