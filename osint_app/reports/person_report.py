@@ -22,6 +22,7 @@ from typing import Dict, Iterable, List, Optional
 import unicodedata
 from urllib.parse import unquote, urlsplit
 
+from ..utils.contact_privacy import mask_contacts
 from ..utils.homonyms import context_matches
 from ..utils.identity import is_content_url, parse_profile_url
 
@@ -324,11 +325,14 @@ def _summary_sentence(r: Dict) -> str:
     return "Sobre esta persona " + "; ".join(parts) + "." + incomplete
 
 
-def render_person_html(r: Dict) -> str:
+def render_person_html(r: Dict, show_contacts: bool = False) -> str:
+    """Ficha en HTML. Correos y teléfonos salen enmascarados salvo con `show_contacts` (evaluación 4: ocultos por
+    defecto; el analista pide la versión completa a propósito desde «Generar Ficha»)."""
+    t = (lambda s: s) if show_contacts else mask_contacts
     seed = r["seed"]
     name = seed.get("name") or "Sin nombre"
     when = r["generated"].strftime("%Y-%m-%d %H:%M (UTC%z)")
-    seed_rows = "".join(f"<tr><th>{_e(label)}</th><td>{_e(seed.get(key))}</td></tr>"
+    seed_rows = "".join(f"<tr><th>{_e(label)}</th><td>{_e(t(seed.get(key)))}</td></tr>"
                         for key, label in (("name", "Nombre"), ("context", "Contexto"), ("country", "País"),
                                            ("city", "Ciudad"), ("username", "Usuario"), ("email", "Correo"),
                                            ("phone", "Teléfono"), ("domain", "Dominio")) if seed.get(key))
@@ -341,7 +345,7 @@ def render_person_html(r: Dict) -> str:
     card = ""
     if r["public_card"]:
         pc = r["public_card"]
-        facts = "".join(f"<li>{_e(f.strip())}</li>" for f in pc["facts"].split(" · ") if f.strip())
+        facts = "".join(f"<li>{_e(t(f.strip()))}</li>" for f in pc["facts"].split(" · ") if f.strip())
         card = (f'<section><h2>Ficha pública</h2><p class="hint">Datos estructurados de Wikidata, base abierta '
                 f'mantenida por la comunidad. {_link(pc["url"], "Ver la ficha original")}</p><ul>{facts}</ul></section>')
 
@@ -350,13 +354,13 @@ def render_person_html(r: Dict) -> str:
         posts = ""
         if a["posts"]:
             posts = "<details><summary>{} publicación(es) de esta cuenta</summary><ul>{}</ul></details>".format(
-                len(a["posts"]), "".join(f"<li>{_link(p['url'], p['title'][:110])}</li>" for p in a["posts"][:10]))
+                len(a["posts"]), "".join(f"<li>{_link(p['url'], t(p['title'][:110]))}</li>" for p in a["posts"][:10]))
         status = ("✔ Confirmada por el analista" if a["status"] == "confirmada"
                   else "✔ Oficial (Wikidata)" if a.get("official") else "Por revisar")
         if a.get("note"):
             posts = f"<br><small>{_e(a['note'])}</small>" + posts
         acc_rows += (f"<tr><td>{_e(a['platform'])}</td><td>{_link(a['url'], a['handle'] if a['handle'].startswith('canal ') else '@' + a['handle'])}"
-                     f"{('<br><small>' + _e(a['name']) + '</small>') if a['name'] else ''}{posts}</td>"
+                     f"{('<br><small>' + _e(t(a['name'])) + '</small>') if a['name'] else ''}{posts}</td>"
                      f"<td>{_badge(a['level'])}</td><td>{_e(status)}</td><td>{_e(', '.join(a['sources']))}</td></tr>")
     accounts = (f'<section><h2>Cuentas en redes sociales</h2><p class="hint">Confianza <b>Alta</b>: varias pistas '
                 f'coinciden (nombre, usuario, país…). <b>Media</b>: algunas. <b>Baja</b>: solo una; revísala antes '
@@ -378,22 +382,25 @@ def render_person_html(r: Dict) -> str:
 
     contacts = ""
     if r["contacts"]:
-        rows = "".join(f"<tr><td>{_e(c['kind'])}</td><td>{_e(c['value'])}</td><td>{_link(c['url'], c['source'])}</td></tr>"
+        rows = "".join(f"<tr><td>{_e(c['kind'])}</td><td>{_e(t(c['value']))}</td><td>{_link(c['url'], c['source'])}</td></tr>"
                        for c in r["contacts"])
+        hidden = ("" if show_contacts else
+                  " <b>Ocultos por protección de datos (LOPDP)</b>: para verlos completos, en SENTINEL usa Generar "
+                  "Ficha → «Ver con datos de contacto».")
         contacts = (f'<section><h2>Datos de contacto públicos</h2><p class="hint">Aparecen publicados en la fuente '
-                    f'indicada. Úsalos solo con una finalidad legítima.</p><table><tr><th>Tipo</th><th>Dato</th>'
+                    f'indicada. Úsalos solo con una finalidad legítima.{hidden}</p><table><tr><th>Tipo</th><th>Dato</th>'
                     f'<th>Dónde aparece</th></tr>{rows}</table></section>')
 
     mentions = ""
     if r["mentions"]:
-        items = "".join(f"<li>{_link(m['url'], m['title'][:120])} {_badge(m['level'])}<br><small>{_e(m['snippet'][:220])}"
+        items = "".join(f"<li>{_link(m['url'], t(m['title'][:120]))} {_badge(m['level'])}<br><small>{_e(t(m['snippet'][:220]))}"
                         f"</small></li>" for m in r["mentions"])
         more = f"<p class='hint'>Se muestran {len(r['mentions'])} de {r['mentions_total']}.</p>" if r["mentions_total"] > len(r["mentions"]) else ""
         mentions = f"<section><h2>Menciones en webs y medios</h2><ul>{items}</ul>{more}</section>"
 
     homonyms = ""
     if r["homonyms"]:
-        items = "".join(f"<li>{_link(h['url'], h['title'][:110])}<br><small>{_e(h['warning'] or h['snippet'][:160])}</small></li>"
+        items = "".join(f"<li>{_link(h['url'], t(h['title'][:110]))}<br><small>{_e(t(h['warning'] or h['snippet'][:160]))}</small></li>"
                         for h in r["homonyms"][:20])
         homonyms = (f'<section class="muted"><h2>Posiblemente otra persona</h2><p class="hint">Resultados con el '
                     f'mismo nombre pero con señales de ser otra persona (otro país, otra profesión…). No se usan en '

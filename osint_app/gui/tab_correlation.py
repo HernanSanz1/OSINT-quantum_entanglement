@@ -499,7 +499,7 @@ class CorrelationTab(QWidget):
         try:
             from ..db.feedback_db import db
 
-            from ..cti_link import collect_tech_terms_from_reports
+            from ..cti_link import collect_tech_terms_from_reports, tech_scan_note
 
             from ..core.models import ToolReport
 
@@ -546,9 +546,10 @@ class CorrelationTab(QWidget):
             self._log(f"   Datos del objetivo cruzados: {used}")
             if tech_terms:
                 self._log(f"   Tecnologías y fabricantes buscados: {', '.join(dict.fromkeys(tech_terms))}")
+            tech_text = (tech_scan_note(reports, tech_terms)
+                         or f"{n_tech} tecnología(s) con vulnerabilidades conocidas")
             self._log(f"✅ CTI: {n_rw} registro(s) como víctima de ransomware · {n_ioc} IP en avisos · {n_ment} "
-                      f"noticia(s) que lo citan · {n_cve} CVE(s) del caso ({n_exp} explotados) · {n_tech} "
-                      f"tecnología(s) con vulnerabilidades conocidas.")
+                      f"noticia(s) que lo citan · {n_cve} CVE(s) del caso ({n_exp} explotados) · {tech_text}.")
             if n_tech:
                 self._log("   Ojo: que una tecnología tenga vulnerabilidades no significa que este sitio las tenga; "
                           "depende de su versión y sus plugins. EPSS = probabilidad de que se explote en 30 días.")

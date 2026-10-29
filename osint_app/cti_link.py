@@ -232,6 +232,23 @@ def collect_tech_terms_from_reports(reports) -> List[str]:
     return terms
 
 
+def tech_scan_note(reports, tech_terms) -> str:
+    """Texto para el cruce CTI cuando no hay tecnologías del sitio que cruzar ("" si las hay).
+
+    Evaluación 4: con Tech Detect fallido el registro decía «0 tecnología(s) con vulnerabilidades conocidas» y
+    el analista podía creer que no había riesgo, cuando simplemente no hubo datos.
+    """
+    if tech_terms:
+        return ""
+    names = {(getattr(r, "tool_name", None) or (r.get("tool_name") if isinstance(r, dict) else "") or "")
+             for r in reports or []}
+    if "Tech Detect" in names:
+        return ("tecnología del sitio: no se pudo analizar (Tech Detect no obtuvo respuesta o no reconoció "
+                "ninguna); no significa que no haya riesgo")
+    return ("tecnología del sitio: no se analizó (ejecuta Tech Detect en Herramientas y vuelve a cruzar "
+            "para revisarla también)")
+
+
 def _entity_field(entity, name: str):
     """Lee un campo de una entidad, sea objeto (.attr) o dict."""
     if isinstance(entity, dict):

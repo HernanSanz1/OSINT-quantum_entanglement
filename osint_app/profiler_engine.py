@@ -658,7 +658,7 @@ class ProfilerEngine:
                 if (sr.category or "").split(" /")[0] in NON_CANDIDATE_CATEGORIES:
                     continue
                 # Los listados de personas ("600+ perfiles", directorios) no son candidatos; siguen en los reportes
-                listing = is_directory_result(sr.title, sr.url)
+                listing = is_directory_result(sr.title, sr.url, sr.snippet)
                 if listing:
                     self.skipped_listings[listing] = self.skipped_listings.get(listing, 0) + 1
                     continue

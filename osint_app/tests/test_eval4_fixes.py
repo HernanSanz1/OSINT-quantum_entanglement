@@ -1,0 +1,178 @@
+"""Arreglos de la evaluación 4 de Cowork (29-10-2026), con los datos reales que la provocaron."""
+import json
+
+import pytest
+
+from osint_app.cti_link import tech_scan_note
+from osint_app.core.models import QueryParameters, ToolReport
+from osint_app.reports.person_report import build_person_report, render_person_html
+from osint_app.reports.readable import readable_results
+from osint_app.tools import ip_reputation
+from osint_app.tools.tech_detect import fetch_candidates
+from osint_app.utils.contact_privacy import mask_contacts, mask_email, mask_phone
+from osint_app.utils.directories import is_directory_result
+
+
+# ── F4-1 Tech Detect: también con «www.» ─────────────────────────────────────
+
+def test_tech_detect_tries_www_before_plain_http():
+    # presidencia.gob.ec sin www: certificado de otro nombre y http sin respuesta; www sí responde
+    assert fetch_candidates("presidencia.gob.ec") == [
+        "https://presidencia.gob.ec", "https://www.presidencia.gob.ec",
+        "http://presidencia.gob.ec", "http://www.presidencia.gob.ec"]
+
+
+def test_tech_detect_keeps_the_path_and_does_not_double_www():
+    assert fetch_candidates("www.python.org/about") == ["https://www.python.org/about", "http://www.python.org/about"]
+
+
+def test_tech_detect_falls_back_to_www(monkeypatch):
+    import requests
+    from osint_app.tools import tech_detect
+
+    tried = []
+
+    class Resp:
+        headers = {"Server": "nginx"}
+        text = '<meta name="generator" content="WordPress 7.0.4">'
+
+    def fake_get(url, **kw):
+        tried.append(url)
+        if "www." not in url:
+            raise requests.exceptions.SSLError("certificado de otro nombre")
+        return Resp()
+
+    monkeypatch.setattr(tech_detect.requests, "get", fake_get)
+    results = tech_detect.TechDetectTool().execute(QueryParameters(domain="presidencia.gob.ec"))
+    assert tried == ["https://presidencia.gob.ec", "https://www.presidencia.gob.ec"]
+    assert {r.raw_data["technology"] for r in results} >= {"nginx", "WordPress"}
+
+
+def _report(tool):
+    return ToolReport(case_id=1, tool_name=tool, raw_json="[]")
+
+
+def test_cti_cross_says_tech_could_not_be_analysed_instead_of_zero():
+    note = tech_scan_note([_report("Tech Detect"), _report("Domain WHOIS")], [])
+    assert "no se pudo analizar" in note and "no significa que no haya riesgo" in note
+    assert "no se analizó" in tech_scan_note([_report("Domain WHOIS")], [])
+    assert tech_scan_note([_report("Tech Detect")], ["nginx"]) == ""
+
+
+# ── F4-2 / N-3 directorios oficiales y datos de contacto ─────────────────────
+
+def test_official_notary_directory_is_not_a_candidate():
+    # PDF real que salía al 60 % en el perfil de Jefferson Pérez Quezada (otro Jefferson Pérez, notario en Cuenca)
+    title = "PROVINCIA CANTÓN NOTARÍA NOTARIO (A) DIRECCIÓN TELÉFONO E-MAIL AZUAY CUENCA"
+    url = "https://www.funcionjudicial.gob.ec/images/directorio-notarial/notarias+AZUAY2018.pdf"
+    assert is_directory_result(title, url) == "directorio oficial de funcionarios"
+    assert is_directory_result("Notarías", "https://sitio.gob.ec/doc.pdf",
+                               "Notarías del cantón Cuenca · Notario: Juan Pérez") == "directorio oficial de funcionarios"
+    assert is_directory_result("Nómina de servidores públicos 2024", "https://x.gob.ec/a") != ""
+    assert is_directory_result("Directorio de funcionarios", "https://x.gob.ec/a") != ""
+
+
+@pytest.mark.parametrize("title,url,snippet", [
+    # "Directorio" también es la junta directiva de una federación: puede citar a la persona
+    ("Nuevo directorio de la Federación Ecuatoriana de Atletismo", "https://fea.org.ec/noticia",
+     "Jefferson Pérez integra el directorio"),
+    ("Jefferson Pérez - Wikipedia", "https://es.wikipedia.org/wiki/Jefferson_P%C3%A9rez", "Marchista ecuatoriano"),
+    ("Contacto", "https://jeffersonperez.com/contacto", "Escríbenos: teléfono y correo de la fundación"),
+])
+def test_real_pages_are_not_official_directories(title, url, snippet):
+    assert is_directory_result(title, url, snippet) == ""
+
+
+def test_profiler_skips_the_notary_directory():
+    from osint_app.core.models import SearchResult
+    from osint_app.profiler_engine import ProfilerEngine, SeedData, ToolResult
+
+    eng = ProfilerEngine()
+    eng.results = [ToolResult("Google Dorks", "ok", [SearchResult(
+        title="PROVINCIA CANTÓN NOTARÍA NOTARIO (A) DIRECCIÓN TELÉFONO E-MAIL AZUAY CUENCA",
+        url="https://www.funcionjudicial.gob.ec/images/directorio-notarial/notarias+AZUAY2018.pdf",
+        snippet="JEFFERSON PÉREZ QUEZADA (07)2840123 notaria@ejemplo.ec", source_tool="Google Dorks",
+        category="Registros EC", relevance_score=70)])]
+    assert eng.extract_candidates(SeedData(name="Jefferson Pérez Quezada", country="Ecuador")) == []
+    assert eng.skipped_listings == {"directorio oficial de funcionarios": 1}
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Escríbeme a juan.perez@gmail.com", "Escríbeme a j•••@gmail.com"),
+    ("Cel 0991234567.", "Cel ••••••••67."),
+    ("(07)2840123", "(••)•••••23"),
+    ("+593 99 123 4567", "+••• •• ••• ••67"),
+    ("Tel. 07-284-0123", "Tel. ••-•••-••23"),
+])
+def test_emails_and_phones_are_masked(text, expected):
+    assert mask_contacts(text) == expected
+
+
+@pytest.mark.parametrize("text", [
+    "Medallas en 1996 2000 2004 2008", "CVE-2026-111497", "fecha 2026-10-29", "29/10/2026",
+    "1.234.567 suscriptores", "https://x.com/a/status/1234567890123", "Marca 1:20:49 en 20 km", "", None,
+])
+def test_numbers_that_are_not_phones_stay(text):
+    assert mask_contacts(text) == (text or "")
+
+
+def test_mask_helpers_keep_a_hint_of_the_value():
+    assert mask_email("midu@gmail.com") == "m•••@gmail.com"
+    assert mask_phone("+56 9 1234 5688") == "+•• • •••• ••88"
+
+
+def _midudev_report():
+    candidates = [{"source": "WebSearch", "url": "https://midu.dev/contacto", "title": "Contacto midudev",
+                   "snippet": "Escríbeme a midudev.ejemplo@gmail.com o al +56 9 1234 5688", "confidence": 70,
+                   "category": "Web"}]
+    return build_person_report({"name": "Miguel Ángel Durán", "username": "midudev"}, candidates)
+
+
+def test_ficha_hides_contacts_by_default_and_shows_them_on_request():
+    report = _midudev_report()
+    assert len(report["contacts"]) == 2                   # el dato no se pierde: sigue en la ficha
+    hidden = render_person_html(report)
+    assert "midudev.ejemplo@gmail.com" not in hidden and "1234 5688" not in hidden
+    assert "m•••@gmail.com" in hidden and "Ver con datos de contacto" in hidden
+    shown = render_person_html(report, show_contacts=True)
+    assert "midudev.ejemplo@gmail.com" in shown and "+56 9 1234 5688" in shown
+    assert "Ocultos por protección de datos" not in shown
+
+
+def test_links_are_not_broken_by_the_masking():
+    candidates = [{"source": "WebSearch", "url": "https://x.com/midudev/status/1234567890123",
+                   "title": "midudev en X", "snippet": "tel 0991234567", "confidence": 70, "category": "Web"}]
+    page = render_person_html(build_person_report({"name": "Miguel Ángel Durán"}, candidates))
+    assert 'href="https://x.com/midudev/status/1234567890123"' in page
+
+
+def test_reports_view_masks_snippets_and_says_so():
+    raw = json.dumps([{"title": "Jefferson Pérez | Facebook", "url": "https://facebook.com/jp",
+                       "snippet": "Contacto: 0991234567", "relevance_score": 70, "category": "Web"}])
+    text = readable_results("WebSearch", raw)
+    assert "0991234567" not in text and "••••••••67" in text and "ocultos" in text
+    assert "ocultos" not in readable_results("WebSearch", json.dumps([{"title": "t", "snippet": "sin datos"}]))
+
+
+# ── F4-3 IP Reputation: salida de Tor = riesgo alto ──────────────────────────
+
+def test_tor_exit_alone_is_high_risk(monkeypatch):
+    # 171.25.193.25 sigue en la lista oficial, pero GreyNoise dejó de verla escaneando: bajaba de 65 a 25
+    lists = {"tor": {"171.25.193.25"}, "drop": [], "firehol": [], "urlhaus": {}}
+    monkeypatch.setattr(ip_reputation, "_download_list", lambda name: lists.get(name))
+    tool = ip_reputation.IpReputationTool()
+    monkeypatch.setattr(tool, "_internetdb", lambda ip: ({"ports": [443], "tags": ["tor"]}, ""))
+    monkeypatch.setattr(tool, "_greynoise", lambda ip: ({"noise": False, "riot": False}, ""))
+    result = tool.execute(QueryParameters(ip="171.25.193.25"))[0]
+    assert result.raw_data["risk"] == "alto" and result.raw_data["score"] >= 50
+    clean = tool.execute(QueryParameters(ip="8.8.8.8"))[0]
+    assert clean.raw_data["risk"] == "bajo"
+
+
+# ── F4-4 escala fija de la ventana ───────────────────────────────────────────
+
+def test_gui_uses_system_dpi_awareness_on_windows():
+    from pathlib import Path
+    source = (Path(__file__).parents[1] / "main.py").read_text(encoding="utf-8")
+    start = source.index('os.environ.setdefault("QT_QPA_PLATFORM", "windows:dpiawareness=1")')
+    assert start < source.index("app = QApplication(sys.argv)")      # antes de crear la aplicación

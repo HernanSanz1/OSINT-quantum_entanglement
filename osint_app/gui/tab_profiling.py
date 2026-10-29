@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from osint_app.profiler_engine import ProfilerEngine, SeedData, parse_list
 from osint_app.tools import build_tool_registry
+from osint_app.utils.contact_privacy import mask_contacts
 
 
 
@@ -180,6 +181,10 @@ class ProfilingTab(QWidget):
         ficha_menu = QMenu(self.btn_generate_dossier)
         ficha_menu.addAction("🌐  Ver en el navegador", lambda: self._on_generate_dossier("html"))
         ficha_menu.addAction("📄  Guardar como PDF…", lambda: self._on_generate_dossier("pdf"))
+        ficha_menu.addSeparator()
+        # Correos y teléfonos salen ocultos (m•••@gmail.com); completos solo si el analista los pide
+        ficha_menu.addAction("👁  Ver con datos de contacto (solo con finalidad legítima)",
+                             lambda: self._on_generate_dossier("html", show_contacts=True))
         ficha_menu.addSeparator()
         ficha_menu.addAction("📂  Abrir la carpeta de informes", self._open_reports_folder)
         self.btn_generate_dossier.setMenu(ficha_menu)
@@ -894,6 +899,10 @@ class ProfilingTab(QWidget):
         if row < len(self.candidates_data):
             c = self.candidates_data[row]
             aviso = f"\n⚠️  AVISO: {c['warning']}\n" if c.get('warning') else ""
+            # Correos y teléfonos ocultos (LOPDP): siguen en la página original y en la ficha «con datos de contacto»
+            snippet = mask_contacts(c['snippet'][:300]) if c['snippet'] else 'Sin descripción'
+            if c['snippet'] and snippet != c['snippet'][:300]:
+                snippet += "\n(correos y teléfonos ocultos: doble clic en la fila para abrir la página original)"
             details = f"""URL: {c['url']}
 {aviso}
 Fuente: {c['source']}
@@ -902,7 +911,7 @@ Categoría: {c.get('category', 'N/A')}
 Coincidencias: {', '.join(c['matched']) if c['matched'] else 'Ninguna'}
 
 Fragmento:
-{c['snippet'][:300] if c['snippet'] else 'Sin descripción'}
+{snippet}
 """
             self.candidate_details.setPlainText(details)
             self.info_tabs.setCurrentIndex(self.TAB_DETAILS)
@@ -1094,7 +1103,7 @@ Fragmento:
         self._log(f"Ficha rehecha desde el caso #{case_id} con los resultados guardados.")
         return report, report["seed"].get("name", "")
 
-    def _on_generate_dossier(self, fmt: str = "html"):
+    def _on_generate_dossier(self, fmt: str = "html", show_contacts: bool = False):
         """Ficha legible de la persona (reports/person_report): en el navegador o guardada en PDF.
 
         Sustituye a la "ficha de inteligencia" anterior, cuyas secciones de datos salían siempre vacías y que
@@ -1105,12 +1114,12 @@ Fragmento:
         report, person = self._current_report()
         if report is None:
             return
-        page = render_person_html(report)
+        page = render_person_html(report, show_contacts=show_contacts)
         # Carpeta privada de informes (antes Descargas): solo la lee tu usuario de Windows
         from .reports_folder import reports_folder
         output_dir = reports_folder(self.app)
         name = re.sub(r"[^\w-]+", "_", person)[:30].strip("_") or "persona"
-        stem = f"Ficha_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        stem = f"Ficha_{name}{'_con_contactos' if show_contacts else ''}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         if fmt == "pdf":
             target, _ = QFileDialog.getSaveFileName(self, "Guardar la ficha en PDF", str(output_dir / f"{stem}.pdf"),
                                                     "PDF (*.pdf)")

@@ -22,7 +22,21 @@ _LISTING_TITLE = re.compile(
     r"^\s*(?:\d[\d.,]*\+?\s+)?(?:perfiles de|profiles for|profiles named|people named|personas llamadas)\b", re.I)
 
 
-def is_directory_result(title: str, url: str) -> str:
+# Directorios oficiales (notarías, funcionarios, servidores): listan a cualquiera que se llame igual con su teléfono y
+# su correo. Evaluación 4: un PDF de funcionjudicial.gob.ec con el notario "Jefferson Pérez Quezada" de Cuenca salía al
+# 60 % en el perfil del atleta. "Directorio" a secas no basta: en Ecuador también es la junta directiva de una
+# federación, que sí puede citar a la persona.
+_OFFICIAL_LISTING = re.compile(
+    r"directorio[\s_+-]*(?:notarial|de[\s_+-]+notar|telef|de[\s_+-]+(?:funcionarios|servidores|autoridades|personal|"
+    r"empleados|docentes|jueces)|institucional)"
+    r"|\b(?:n[oó]mina|listado|distributivo)\s+de\s+(?:funcionarios|servidores|personal|empleados|notarios|docentes|"
+    r"jueces)\b"
+    r"|\bnotar[ií]as?\b.{0,80}\bnotario", re.I)
+# Título hecho de cabeceras de tabla: "PROVINCIA CANTÓN NOTARÍA NOTARIO (A) DIRECCIÓN TELÉFONO E-MAIL"
+_TABLE_HEADER_TITLE = re.compile(r"\btel[eé]fonos?\b.{0,40}\b(?:e-?mail|correo)", re.I)
+
+
+def is_directory_result(title: str, url: str, snippet: str = "") -> str:
     """Motivo (texto corto) si el resultado es un listado de personas; '' si puede ser una persona."""
     try:
         parts = urlsplit(url or "")
@@ -41,4 +55,6 @@ def is_directory_result(title: str, url: str) -> str:
     text = title or ""
     if _COUNT_QUOTED.search(text) or _COUNT_PLUS.search(text) or _LISTING_TITLE.search(text):
         return "listado de perfiles"
+    if _OFFICIAL_LISTING.search(f"{text} {snippet or ''} {path}") or _TABLE_HEADER_TITLE.search(text):
+        return "directorio oficial de funcionarios"
     return ""

@@ -48,6 +48,12 @@ def main():
     # Launch GUI
     try:
         import os
+        # Escala fija durante la sesión (evaluación 4): con la escala por monitor de Qt, un aviso de cambio de DPI de
+        # Windows a mitad de uso redibujaba la ventana a 100 % encima de la de 125 % ("ventana doble") y la letra
+        # cambiaba de tamaño entre pestañas. Con la escala del sistema se ve igual (mismo 125 %) y esos avisos no
+        # llegan. Quien lo necesite puede cambiarlo con su propia variable QT_QPA_PLATFORM.
+        if sys.platform == "win32":
+            os.environ.setdefault("QT_QPA_PLATFORM", "windows:dpiawareness=1")
         from PySide6.QtWidgets import QApplication
         from osint_app.gui.app import OSINTGUI
         

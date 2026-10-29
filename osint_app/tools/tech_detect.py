@@ -192,6 +192,18 @@ def detect_technologies(headers: Dict[str, str], html: str = "",
     return found
 
 
+def fetch_candidates(target: str) -> List[str]:
+    """Direcciones que se prueban en orden: https y luego http, cada una sin y con «www.».
+
+    Prueba real (29-10): presidencia.gob.ec sin «www» daba un certificado de otro nombre y por http no
+    respondía, mientras www.presidencia.gob.ec sí respondía; antes Tech Detect se quedaba en «el sitio no
+    respondió». La variante con «www» va antes que http para no esperar de más.
+    """
+    host, sep, path = target.partition("/")
+    hosts = [host] if host.startswith("www.") else [host, "www." + host]
+    return [f"{scheme}{h}{sep}{path}" for scheme in ("https://", "http://") for h in hosts]
+
+
 class TechDetectTool(OSINTTool):
     def __init__(self):
         super().__init__(
@@ -206,11 +218,11 @@ class TechDetectTool(OSINTTool):
         return True
 
     def _fetch(self, target: str):
-        """Devuelve (headers, html) o (None, None). Prueba https y luego http."""
-        for scheme in ("https://", "http://"):
+        """Devuelve (headers, html) o (None, None). Prueba cada dirección de fetch_candidates."""
+        for address in fetch_candidates(target):
             try:
                 resp = requests.get(
-                    scheme + target,
+                    address,
                     headers={"User-Agent": random.choice(USER_AGENTS)},
                     timeout=REQUEST_TIMEOUT,
                     allow_redirects=True,
@@ -232,7 +244,8 @@ class TechDetectTool(OSINTTool):
         self._report_progress(f"🔎 Tech Detect: analizando {target}…")
         headers, html = self._fetch(target)
         if headers is None:
-            self._report_progress("⚠️ Tech Detect: el sitio no respondió.")
+            self._report_progress("⚠️ Tech Detect: el sitio no respondió (se probó con y sin «www», por https y "
+                                  "http). No se pudo analizar su tecnología.")
             return []
 
         techs = detect_technologies(headers, html)

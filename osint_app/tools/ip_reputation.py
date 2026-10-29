@@ -260,7 +260,10 @@ class IpReputationTool(OSINTTool):
         if tor is None:
             sources_failed.append("Tor (lista no disponible)")
         elif raw in tor:
-            findings.append(("MEDIA", "Es un nodo de SALIDA de Tor: el tráfico puede venir de cualquier usuario anónimo", 25))
+            # Riesgo alto por sí sola (evaluación 4): antes valía 25 y solo llegaba a alto si GreyNoise también la
+            # veía escaneando; 171.25.193.25 bajó de 65 a 25 el día que GreyNoise dejó de verla
+            findings.append(("ALTA", "Es un nodo de SALIDA de Tor (lista oficial del Tor Project): el tráfico puede "
+                                     "venir de cualquier usuario anónimo, también de atacantes que ocultan su origen", 50))
 
         drop = _download_list("drop")
         if drop is None:

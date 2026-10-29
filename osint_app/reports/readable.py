@@ -5,6 +5,7 @@ Antes la pestaña mostraba el JSON crudo de cada herramienta: ilegible para una 
 import json
 from urllib.parse import unquote
 
+from ..utils.contact_privacy import mask_contacts
 from .person_report import confidence_word
 
 _NOTICE_CATEGORIES = {"Aviso", "Error", "Config Error", "Sin resultado", "Error / Deprecado"}
@@ -31,11 +32,15 @@ def readable_results(tool_name: str, raw_json: str) -> str:
     lines = [f"{tool_name} — {len(results)} resultado(s)", "=" * 60,
              "Relevancia: la que da la propia herramienta. En Perfilamiento la confianza se recalcula con todos los "
              "datos del objetivo (nombre, país, contexto, homónimos), por eso puede ser distinta.", ""]
+    masked = False
     for d in notices:
         lines += [f"⚠️ {d.get('title', '')}", f"   {d.get('snippet', '')}", ""]
     for n, d in enumerate(sorted(results, key=lambda x: -float(x.get("relevance_score") or 0)), 1):
         score = float(d.get("relevance_score") or 0)
-        snippet = " ".join(str(d.get("snippet") or "").split())
+        full = " ".join(str(d.get("snippet") or "").split())
+        # Evaluación 4: un fragmento mostraba el teléfono de una página de Facebook sin aviso
+        snippet = mask_contacts(full)
+        masked = masked or snippet != full
         if len(snippet) > MAX_SNIPPET:
             snippet = snippet[:MAX_SNIPPET] + "…"
         lines.append(f"{n}. {d.get('title') or 'Sin título'}")
@@ -45,6 +50,9 @@ def readable_results(tool_name: str, raw_json: str) -> str:
         if snippet:
             lines.append(f"   {snippet}")
         lines.append("")
+    if masked:
+        lines.append("🔒 Los correos y teléfonos de los fragmentos se muestran ocultos (protección de datos, LOPDP). "
+                     "Completos: botón «Ver datos técnicos (JSON)» o la página original.")
     return "\n".join(lines)
 
 

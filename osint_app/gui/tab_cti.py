@@ -325,6 +325,11 @@ class CTITab(QWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
+        # Filas compactas y sin la columna de números (salía cortada): en un portátil maximizado (1536×864 a 125 %)
+        # se veían solo 5 noticias (evaluación 4)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(24)
+        self.table.setStyleSheet("QTableWidget::item { padding: 2px 8px; } QHeaderView::section { padding: 4px 8px; }")
         table_layout.addWidget(self.table)
 
         splitter.addWidget(table_frame)
@@ -345,12 +350,13 @@ class CTITab(QWidget):
             "background-color: #0c111d; color: #00ff66; "
             "font-family: monospace; font-size: 11px;"
         )
+        self.log_area.setMinimumHeight(40)   # cede su sitio a la tabla; el separador permite agrandarlo
         log_layout.addWidget(self.log_area)
 
         splitter.addWidget(log_frame)
-        splitter.setStretchFactor(0, 3)     # antes la tabla dejaba ver solo 5 filas
+        splitter.setStretchFactor(0, 5)     # antes la tabla dejaba ver solo 5 filas
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([520, 140])
+        splitter.setSizes([600, 90])
 
         # Status
         self.lbl_status = QLabel("Estado: Listo")
