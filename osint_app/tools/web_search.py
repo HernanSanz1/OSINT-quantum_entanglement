@@ -155,20 +155,22 @@ class WebSearchTool(OSINTTool):
                 queries.append(f'"{name}" site:{domain}')
 
         # El ritmo entre consultas lo controla la capa de búsqueda (search_engine)
-        from ..utils.search_engine import SearchTracker
+        from ..utils.search_engine import SearchTracker, remember_incomplete
         tracker = SearchTracker()
         seen_urls = set()
         engines_used = set()
         planned = queries[:6]  # Limit to avoid rate limiting
+        only = getattr(self, "only_queries", None)
+        if only:                       # reintento: solo las consultas que fallaron la vez anterior
+            planned = [q for q in planned if q in only]
         for i, query in enumerate(planned):
             if self._is_cancelled:
                 break
             outcome = self._search(query, max_results=10)
-            tracker.record(outcome)
+            tracker.record(outcome, query)
             if outcome.all_blocked:
                 # Antes: 0 resultados en silencio tras ~200 s de esperas inútiles
-                tracker.failed += len(planned) - i - 1
-                tracker.total += len(planned) - i - 1
+                tracker.skip(planned[i + 1:])
                 break
             if outcome.engine:
                 engines_used.add(outcome.engine)
@@ -191,6 +193,8 @@ class WebSearchTool(OSINTTool):
                     ))
 
         warning = tracker.warning("WebSearch")
+        if tracker.failed_queries:
+            remember_incomplete(self, query_params, tracker.failed_queries)
         if warning:
             # Visto en real (2026-10-13): 0 menciones para una campeona olímpica sin ningún aviso
             self._report_progress(warning)

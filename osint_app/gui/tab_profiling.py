@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QFrame, QSplitter, QHeaderView, QGroupBox, QTextEdit, QComboBox,
     QListWidget, QListWidgetItem, QAbstractItemView, QTabWidget, QMenu, QFileDialog
 )
-from PySide6.QtCore import Qt, QThread, QUrl, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices
 
 import sys
@@ -45,6 +45,38 @@ CATEGORY_HELP = ("Tipo de resultado. En los de Google Dorks, la letra dice cuán
                  "CONFIRMADO (A) = la página contiene su correo, usuario o teléfono;\n"
                  "PROBABLE (B) = nombre completo y algo de su contexto (profesión, ciudad…);\n"
                  "POSIBLE (C) = solo coincide el nombre. Ábrelo antes de dárselo por bueno.")
+
+def candidates_as_dicts(candidates) -> List[Dict]:
+    return [{'source': c.source_tool, 'url': c.url, 'title': c.title, 'snippet': c.snippet,
+             'confidence': c.confidence, 'category': c.category, 'matched': c.matched_fields,
+             'verdict': c.user_verdict, 'warning': c.warning, 'extra': c.extra_data}
+            for c in candidates]
+
+
+class RetryThread(QThread):
+    """Repite solo las búsquedas web que fallaron y suma lo nuevo al perfil y al mismo caso."""
+    progress = Signal(str)
+    candidates_ready = Signal(list)
+    finished_ok = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, engine, seed: SeedData, case_id: int = None):
+        super().__init__()
+        self.engine, self.seed, self.case_id = engine, seed, case_id
+
+    def run(self):
+        try:
+            self.engine.progress_callback = self.progress.emit
+            new = self.engine.retry_failed_searches()
+            self.candidates_ready.emit(candidates_as_dicts(self.engine.extract_candidates(self.seed, min_confidence=20.0)))
+            if self.case_id is not None:
+                self.engine.save_to_case(self.seed, case_id=self.case_id, results=new)
+            summary = self.engine.get_summary()
+            summary["new_results"] = sum(len(r.results) for r in new)
+            self.finished_ok.emit(summary)
+        except Exception as e:
+            self.error.emit(str(e))
+
 
 class ProfilerThread(QThread):
     """Thread para ejecutar el motor de perfilamiento sin bloquear la GUI"""
@@ -78,26 +110,8 @@ class ProfilerThread(QThread):
             self.engine.run_parallel(self.seed, max_workers=6, timeout_per_tool=90,
                                      only_tools=self.selected_tools, chain=True)
 
-            # Extraer candidatos
-            candidates = self.engine.extract_candidates(self.seed, min_confidence=20.0)
-
-            # Emitir candidatos
-            candidates_data = [
-                {
-                    'source': c.source_tool,
-                    'url': c.url,
-                    'title': c.title,
-                    'snippet': c.snippet,
-                    'confidence': c.confidence,
-                    'category': c.category,
-                    'matched': c.matched_fields,
-                    'verdict': c.user_verdict,
-                    'warning': c.warning,
-                    'extra': c.extra_data,
-                }
-                for c in candidates
-            ]
-            self.candidates_ready.emit(candidates_data)
+            # Extraer y emitir candidatos
+            self.candidates_ready.emit(candidates_as_dicts(self.engine.extract_candidates(self.seed, min_confidence=20.0)))
 
             # Guardar los resultados en un caso para que no se pierdan
             try:
@@ -128,6 +142,11 @@ class ProfilingTab(QWidget):
         self.search_warnings = {}       # avisos de herramientas (búsqueda bloqueada…), para la ficha
         self._profile_case_id = None    # caso donde se guardó este perfil
         self.profiler_thread = None
+        self._retry_engine = None       # motor del último perfil: sabe qué búsquedas fallaron
+        self._retry_seed = None
+        self._retry_timer = QTimer(self)    # cuenta atrás mientras los buscadores siguen en pausa
+        self._retry_timer.setInterval(15000)
+        self._retry_timer.timeout.connect(self._update_retry_button)
 
         # Cargar herramientas disponibles
         self.tools_registry = build_tool_registry()
@@ -472,6 +491,15 @@ class ProfilingTab(QWidget):
         self.btn_refine.clicked.connect(self._on_refine)
         cand_header.addWidget(self.btn_refine)
 
+        # Solo aparece si la búsqueda web quedó incompleta (antes había que repetir el perfil entero)
+        self.btn_retry = QPushButton("🔁 Reintentar búsquedas fallidas")
+        self.btn_retry.setToolTip("Repite SOLO las consultas a buscadores que fallaron por bloqueo, sin volver a lanzar "
+                                  "el resto de herramientas. Lo nuevo se suma al mismo caso; lo confirmado y lo "
+                                  "descartado se conservan.")
+        self.btn_retry.clicked.connect(self._on_retry)
+        self.btn_retry.hide()
+        cand_header.addWidget(self.btn_retry)
+
         right_layout.addLayout(cand_header)
 
         # Candidates Table
@@ -601,6 +629,7 @@ class ProfilingTab(QWidget):
         """Toggle estado de carga"""
         self.btn_search.setEnabled(not busy)
         self.btn_new_profile.setEnabled(not busy)
+        self.btn_retry.setEnabled(not busy)
         if busy:
             self.progress.setRange(0, 0)
             self.progress.show()
@@ -639,6 +668,8 @@ class ProfilingTab(QWidget):
         self.rejected_urls = set()
         self.search_warnings = {}
         self._profile_case_id = None
+        self._retry_engine = self._retry_seed = None
+        self._update_retry_button()
 
     def _toggle_more(self, shown: bool):
         self.more_box.setVisible(shown)
@@ -780,6 +811,9 @@ class ProfilingTab(QWidget):
         self._set_busy(False)
 
         self.search_warnings = summary.get('warnings') or {}
+        thread = self.profiler_thread
+        self._retry_engine = getattr(thread, "engine", None)
+        self._retry_seed = getattr(thread, "seed", None)
         if summary['candidates'] == 0:
             msg = "Completado: no se encontraron candidatos"
             self._log(msg + ". Intenta añadir más contexto o datos.")
@@ -788,10 +822,61 @@ class ProfilingTab(QWidget):
             self._log(msg)
         if self.search_warnings:
             self._log("⚠️ BÚSQUEDA INCOMPLETA: " + ", ".join(self.search_warnings) + " no pudieron consultar todas sus "
-                      "fuentes (bloqueo o límite de los buscadores). Repite en unos 10 minutos; la ficha lo indicará.")
+                      "fuentes (bloqueo o límite de los buscadores). Pulsa «🔁 Reintentar búsquedas fallidas»: "
+                      "repite solo lo que falló. Si no, la ficha lo indicará.")
             self.app.toast.show(msg + " — búsqueda incompleta, ver registro", kind="warning")
         else:
             self.app.toast.show(msg, kind="success")
+        self._update_retry_button()
+
+    def _update_retry_button(self):
+        """Muestra el botón si hay búsquedas por reintentar; mientras los buscadores siguen en pausa tras un
+        bloqueo, dice cuánto falta (reintentar antes solo daría otro fallo)."""
+        engine = self._retry_engine
+        pending = engine.pending_retries() if engine is not None else []
+        if not pending:
+            self.btn_retry.hide()
+            self._retry_timer.stop()
+            return
+        from ..utils.search_engine import retry_wait_seconds
+        wait = retry_wait_seconds()
+        count = sum(len(queries) for _, _, queries in pending)
+        self.btn_retry.show()
+        if wait > 0:
+            self.btn_retry.setText(f"🔁 Reintentar búsquedas fallidas (en {-(-wait // 60)} min)")
+            self.btn_retry.setEnabled(False)
+            self._retry_timer.start()
+        else:
+            self.btn_retry.setText(f"🔁 Reintentar búsquedas fallidas ({count})")
+            self.btn_retry.setEnabled(self.btn_search.isEnabled())
+            self._retry_timer.stop()
+
+    def _on_retry(self):
+        if self._retry_engine is None or not self._retry_engine.pending_retries():
+            self.app.toast.show("No hay búsquedas pendientes de reintentar", kind="info")
+            return
+        self._set_busy(True)
+        self.info_tabs.setCurrentIndex(self.TAB_LOG)
+        self._log("🔁 Reintentando solo las búsquedas web que fallaron…")
+        self.retry_thread = RetryThread(self._retry_engine, self._retry_seed, self._profile_case_id)
+        self.retry_thread.progress.connect(self._log)
+        self.retry_thread.candidates_ready.connect(self._on_candidates_ready)
+        self.retry_thread.finished_ok.connect(self._on_retry_done)
+        self.retry_thread.error.connect(self._on_error)
+        self.retry_thread.start()
+
+    def _on_retry_done(self, summary: Dict):
+        self._set_busy(False)
+        self.search_warnings = summary.get('warnings') or {}
+        new = summary.get("new_results", 0)
+        if self.search_warnings:
+            self._log(f"⚠️ Reintento: {new} resultado(s) nuevo(s), pero los buscadores siguen bloqueando parte de "
+                      "las consultas. Puedes volver a intentarlo más tarde.")
+            self.app.toast.show(f"Reintento: {new} resultados nuevos; aún incompleta", kind="warning")
+        else:
+            self._log(f"✅ Reintento completado: {new} resultado(s) nuevo(s). La búsqueda web ya está completa.")
+            self.app.toast.show(f"Búsqueda completada: {new} resultados nuevos", kind="success")
+        self._update_retry_button()
 
     def _on_error(self, error_msg):
         """Error en el perfilamiento."""

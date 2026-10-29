@@ -98,6 +98,9 @@ class GoogleDorksTool(OSINTTool):
             return cached
 
         queries_objs = self._build_queries(query_params)
+        only = getattr(self, "only_queries", None)
+        if only:                       # reintento: solo las consultas que fallaron la vez anterior
+            queries_objs = [q for q in queries_objs if q["query"] in only]
         total = len(queries_objs)
         if total == 0:
             self._report_progress("⚠️ Google Dorks: No se pudieron generar consultas. Revisa que el caso tenga Nombre, Email o Dominio.")
@@ -105,7 +108,7 @@ class GoogleDorksTool(OSINTTool):
             
         self._report_progress(f"🔍 Google Dorks: {total} consultas a enviar a los buscadores…")
 
-        from ..utils.search_engine import SearchTracker
+        from ..utils.search_engine import SearchTracker, remember_incomplete
         tracker = SearchTracker()
         raw_hits = []
         for i, q_obj in enumerate(queries_objs, 1):
@@ -119,11 +122,10 @@ class GoogleDorksTool(OSINTTool):
             hits = self._search(q_text, max_results=5)
             outcome = getattr(self, "_last_outcome", None)
             if outcome is not None:
-                tracker.record(outcome)
+                tracker.record(outcome, q_text)
             if outcome is not None and outcome.all_blocked:
                 # Todos los buscadores bloquean: seguir solo alarga la espera y empeora el bloqueo
-                tracker.failed += total - i
-                tracker.total += total - i
+                tracker.skip([q["query"] for q in queries_objs[i:]])
                 self._report_progress(f"⏹️ Se detienen las {total - i} consultas restantes.")
                 break
             
@@ -266,9 +268,11 @@ class GoogleDorksTool(OSINTTool):
             ))
 
         warning = tracker.warning("Google Dorks")
+        if tracker.failed_queries:
+            remember_incomplete(self, query_params, tracker.failed_queries)
         if warning:
             self._report_progress(warning)
-        else:
+        elif not only:                 # un reintento parcial no es la búsqueda completa: no va a la caché
             # Una búsqueda incompleta no se guarda en caché: si no, el "0" se repetiría al reintentar
             self._cache.set(query_params.to_dict(), results)
         self._report_progress(f"✅ Dorks completo — {len(results)} resultados legítimos verificados")

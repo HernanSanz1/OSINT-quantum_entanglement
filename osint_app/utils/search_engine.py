@@ -375,12 +375,21 @@ class SearchTracker:
         self.total = 0
         self.failed = 0
         self.last_detail = ""
+        self.failed_queries: List[str] = []     # para repetir solo estas (botón "Reintentar búsquedas fallidas")
 
-    def record(self, outcome: SearchOutcome) -> None:
+    def record(self, outcome: SearchOutcome, query: str = "") -> None:
         self.total += 1
         if outcome.incomplete:
             self.failed += 1
+            if query:
+                self.failed_queries.append(query)
             self.last_detail = readable_attempts(outcome.attempts)
+
+    def skip(self, queries: List[str]) -> None:
+        """Consultas que no se llegaron a hacer porque todos los buscadores bloqueaban."""
+        self.failed += len(queries)
+        self.total += len(queries)
+        self.failed_queries.extend(queries)
 
     def warning(self, tool: str, skipped: int = 0) -> str:
         """Aviso para el usuario, o "" si todas las consultas se hicieron."""
@@ -391,6 +400,28 @@ class SearchTracker:
         return (f"⚠️ {tool}: búsqueda web INCOMPLETA — {failed} de {total} consultas no se pudieron hacer porque "
                 f"los buscadores bloquearon o no respondieron ({self.last_detail}). Los resultados pueden faltar: "
                 f"repite la búsqueda en unos 10 minutos.")
+
+def remember_incomplete(tool, query_params, queries: List[str]) -> None:
+    """Guarda en la herramienta las consultas que no se pudieron hacer, con los datos usados, para reintentarlas.
+
+    Una herramienta puede ejecutarse varias veces en un perfil (el nombre, cada alias…): una entrada por ejecución.
+    """
+    runs = getattr(tool, "incomplete_runs", None)
+    if runs is None:
+        runs = tool.incomplete_runs = []
+    runs.append((query_params, list(dict.fromkeys(queries))))
+
+
+def retry_wait_seconds() -> int:
+    """Segundos hasta que algún buscador salga de la pausa tras un bloqueo; 0 si ya se puede buscar."""
+    names = [name for name, _ in _engines()]
+    now = time.time()
+    with _lock:
+        waits = [_cooldown_until.get(name, 0) - now for name in names]
+    if not waits or min(waits) <= 0:
+        return 0
+    return int(min(waits)) + 1
+
 
 def web_search(query: str, max_results: int = 10, engines: Optional[List[str]] = None) -> SearchOutcome:
     """Busca `query` probando motores en orden hasta que uno dé resultados.

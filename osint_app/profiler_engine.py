@@ -450,6 +450,36 @@ class ProfilerEngine:
             return ToolResult(tool_name=name, status='error', error=str(e),
                               duration_seconds=duration)
 
+    RETRY_LABEL = "reintento"
+
+    def pending_retries(self) -> List[Tuple[str, QueryParameters, List[str]]]:
+        """Búsquedas web que no se pudieron hacer (bloqueo de los buscadores): (herramienta, datos, consultas)."""
+        return [(name, params, queries) for name, tool in self.tools.items()
+                for params, queries in getattr(tool, "incomplete_runs", None) or [] if queries]
+
+    def retry_failed_searches(self) -> List[ToolResult]:
+        """Repite SOLO las consultas que fallaron, una herramienta tras otra (sin saturar a los buscadores).
+
+        Antes la única salida a una "búsqueda INCOMPLETA" era repetir el perfil entero (unos 2 minutos y todas las
+        herramientas otra vez). Los resultados nuevos se añaden a los anteriores; lo que vuelva a fallar queda
+        apuntado para otro reintento y su aviso se mantiene.
+        """
+        pending = self.pending_retries()
+        for name, _, _ in pending:
+            self.tools[name].incomplete_runs = []
+            self.warnings.pop(name, None)
+        new_results = []
+        for name, params, queries in pending:
+            tool = self.tools[name]
+            self._log(f"  [{name}] Reintentando {len(queries)} consulta(s) que fallaron…")
+            tool.only_queries = set(queries)
+            try:
+                new_results.append(self._execute_tool(name, params, label=f"{name}:{self.RETRY_LABEL}"))
+            finally:
+                tool.only_queries = None
+        self.results.extend(new_results)
+        return new_results
+
     def run_second_round(self, seed: SeedData, discovered_usernames: List[str],
                          max_workers: int = 6, timeout_per_tool: int = 90,
                          only_tools: List[str] = None) -> List[ToolResult]:
@@ -826,12 +856,13 @@ class ProfilerEngine:
 
         return seed
 
-    def save_to_case(self, seed: SeedData, case_id: int = None) -> int:
+    def save_to_case(self, seed: SeedData, case_id: int = None, results: List[ToolResult] = None) -> int:
         """Persiste la semilla y los resultados de las herramientas en un caso.
 
         Si no se pasa case_id, crea un caso nuevo con la semilla. Devuelve el
         case_id. Debe llamarse después de run_parallel(). Antes, los resultados
-        del perfilamiento se perdían al cerrar la ventana.
+        del perfilamiento se perdían al cerrar la ventana. `results`: solo esos (los de un reintento), para no
+        duplicar los informes que el caso ya tiene.
         """
         from .db.feedback_db import db
         from .case_manager import CaseManager
@@ -864,7 +895,7 @@ class ProfilerEngine:
                         source="seed", confidence=95,
                     ))
 
-        for tr in self.results:
+        for tr in (self.results if results is None else results):
             report = ToolReport(
                 case_id=case_id, tool_name=tr.tool_name,
                 raw_json=json.dumps([r.to_dict() for r in tr.results], ensure_ascii=False),
