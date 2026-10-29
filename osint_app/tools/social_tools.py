@@ -70,12 +70,9 @@ class SherlockTool(OSINTTool):
         self._binary_names = ["sherlock"]
         self._install_cmd = (
             "Guía de Instalación Sherlock (Entorno Virtual):\n"
-            "1. Abre la terminal en IAprototipe.\n"
-            "2. Activa tu entorno virtual:\n"
-            "   - Mac/Linux: `source env/bin/activate`\n"
-            "   - Windows: `.\\env\\Scripts\\activate`\n"
-            "3. Instala a través de pip:\n"
-            "   `pip install sherlock-project`"
+            "1. Abre PowerShell en la carpeta de SENTINEL (OSINT-quantum_entanglement).\n"
+            "2. Instálalo en el entorno de SENTINEL:\n"
+            "   env\\Scripts\\python.exe -m pip install sherlock-project"
         )
 
     def check_available(self) -> bool:
@@ -134,12 +131,9 @@ class HoleheTool(OSINTTool):
         self._binary_names = ["holehe"]
         self._install_cmd = (
             "Guía de Instalación Holehe (Entorno Virtual):\n"
-            "1. Abre la terminal en IAprototipe.\n"
-            "2. Activa tu entorno virtual:\n"
-            "   - Mac/Linux: `source env/bin/activate`\n"
-            "   - Windows: `.\\env\\Scripts\\activate`\n"
-            "3. Instala a través de pip:\n"
-            "   `pip install holehe`"
+            "1. Abre PowerShell en la carpeta de SENTINEL (OSINT-quantum_entanglement).\n"
+            "2. Instálalo en el entorno de SENTINEL:\n"
+            "   env\\Scripts\\python.exe -m pip install holehe"
         )
 
     def check_available(self) -> bool:
@@ -189,13 +183,10 @@ class GHuntTool(OSINTTool):
         self._binary_names = ["ghunt"]
         self._install_cmd = (
             "Guía de Instalación GHunt (Entorno Virtual):\n"
-            "1. Abre la terminal en IAprototipe.\n"
-            "2. Activa tu entorno virtual:\n"
-            "   - Mac/Linux: `source env/bin/activate`\n"
-            "   - Windows: `.\\env\\Scripts\\activate`\n"
-            "3. Instala a través de pip:\n"
-            "   `pip install ghunt`\n"
-            "4. IMPORTANTE: Para usarlo, primero debes autenticarte. Ejecuta en la terminal:\n"
+            "1. Abre PowerShell en la carpeta de SENTINEL (OSINT-quantum_entanglement).\n"
+            "2. Instálalo en el entorno de SENTINEL:\n"
+            "   env\\Scripts\\python.exe -m pip install ghunt\n"
+            "3. IMPORTANTE: Para usarlo, primero debes autenticarte. Ejecuta en la terminal:\n"
             "   `ghunt login`\n"
             "Sigue las instrucciones en pantalla para inyectar tus cookies de sesión de Google."
         )
@@ -255,10 +246,7 @@ class SnscrapeYoutubeTool(OSINTTool):
         self._binary_names = ["snscrape"]
         self._install_cmd = (
             "Guía de Instalación (Entorno Virtual Python):\n"
-            "1. Abre la terminal en IAprototipe y activa tu entorno virtual:\n"
-            "   source env/bin/activate\n"
-            "2. Instala snscrape a través de pip:\n"
-            "   pip install snscrape"
+            "snscrape dejó de funcionar porque las redes cambiaron su acceso: no hace falta instalarlo."
         )
 
     def check_available(self) -> bool:
@@ -296,12 +284,9 @@ class InstagramTool(OSINTTool):
         self._python_pkgs = ["instaloader"]
         self._install_cmd = (
             "Guía de Instalación Instaloader (Entorno Virtual):\n"
-            "1. Abre la terminal en IAprototipe.\n"
-            "2. Activa tu entorno virtual:\n"
-            "   - Mac/Linux: `source env/bin/activate`\n"
-            "   - Windows: `.\\env\\Scripts\\activate`\n"
-            "3. Instala a través de pip:\n"
-            "   `pip install instaloader`"
+            "1. Abre PowerShell en la carpeta de SENTINEL (OSINT-quantum_entanglement).\n"
+            "2. Instálalo en el entorno de SENTINEL:\n"
+            "   env\\Scripts\\python.exe -m pip install instaloader"
         )
 
     def check_available(self) -> bool:

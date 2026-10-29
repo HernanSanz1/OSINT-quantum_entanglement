@@ -227,6 +227,16 @@ def reports_dir() -> Path:
     return data_dir() / REPORTS_DIR_NAME
 
 
+def tools_dir() -> Path:
+    """Carpeta de herramientas que se instalan descargando su código (TheHarvester, SpiderFoot, Recon-ng)."""
+    return data_dir() / "herramientas"
+
+
+def tools_bin_dir() -> Path:
+    """Carpeta de programas externos descargados (subfinder.exe, amass.exe): SENTINEL los busca aquí."""
+    return data_dir() / "bin"
+
+
 def make_private(path: Path) -> bool:
     """Deja `path` legible solo por la cuenta actual (y el sistema). True si quedó restringida.
 

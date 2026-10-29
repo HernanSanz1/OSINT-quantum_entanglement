@@ -88,8 +88,8 @@ class OSINTTool(ABC):
                 "status": "not_installed",
                 "icon": "❌",
                 "message": (
-                    f"Binario '{self._binary_names[0] if self._binary_names else self.name}' no encontrado o no instalado.\n"
-                    f"Instálalo, compílalo o asegúrate de que esté en tu PATH."
+                    f"{self.name} no está instalado en este equipo. Sigue la guía de abajo para instalarlo; "
+                    f"después pulsa «Verificar Estado»."
                 ),
                 "install_cmd": self._install_cmd or f"# Busca instrucciones de instalación para {self.name}",
             }

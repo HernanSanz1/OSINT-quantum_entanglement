@@ -98,7 +98,7 @@ def test_diagnose_binary_missing():
     tool = FakeTool(name="Sherlock")
     tool.is_available, tool._binary_names, tool._install_cmd = False, ["sherlock"], "pip install sherlock-project"
     d = tool.diagnose_status()
-    assert d["status"] == "not_installed" and "'sherlock'" in d["message"] and d["install_cmd"] == "pip install sherlock-project"
+    assert d["status"] == "not_installed" and "Sherlock no está instalado" in d["message"] and "PATH" not in d["message"] and d["install_cmd"] == "pip install sherlock-project"
 
 
 def test_diagnose_python_package_missing():

@@ -101,6 +101,27 @@ _PLAIN_GUIDE = {
 }
 
 
+# Programa de cada herramienta para la terminal avanzada (antes, para SpiderFoot, una ruta fija de otro equipo)
+PIP_TOOLS = {"Sherlock": "sherlock_project", "GHunt": "ghunt", "Instaloader": "instaloader", "Maigret": "maigret"}
+CLONED_TOOLS = {"TheHarvester": ("theHarvester", "theHarvester.py"), "SpiderFoot": ("spiderfoot", "sf.py"),
+                "Recon-ng": ("recon-ng", "recon-ng")}
+BINARY_TOOLS = {"Subfinder": "subfinder", "OWASP AMASS": "amass"}
+
+
+def shell_command(tool_name: str) -> str:
+    """Comando con el que se abre la herramienta en la terminal avanzada, o "" si no tiene programa propio."""
+    import sys
+    from ..tools.heavy_tools import _find_go_binary, cloned_tool, tool_python
+    if tool_name in BINARY_TOOLS:
+        return _find_go_binary(BINARY_TOOLS[tool_name]) or BINARY_TOOLS[tool_name]
+    if tool_name in CLONED_TOOLS:
+        script = cloned_tool(*CLONED_TOOLS[tool_name])
+        return f'"{tool_python(script)}" "{script}"' if script else ""
+    if tool_name in PIP_TOOLS:
+        return f'"{sys.executable}" -m {PIP_TOOLS[tool_name]}'
+    return ""
+
+
 class ToolsTab(QWidget):
     def __init__(self, app):
         super().__init__()
@@ -482,47 +503,8 @@ class ToolsTab(QWidget):
 
         # Actualizar placeholder del mini-shell para guiar al usuario
         # Fill input with the actual command path so it works like a normal shell
-        binary_map = {
-            "TheHarvester": "theHarvester",
-            "Subfinder": "subfinder",
-            "Amass": "amass",
-            "SpiderFoot": "python3 /Users/gabysanz/Downloads/IAprototipe/spiderfoot/sf.py",
-            "Recon-ng": "recon-ng",
-            "Sherlock": "sherlock",
-            "GHunt": "ghunt",
-            "Instaloader": "instaloader",
-            "Maigret": "maigret",
-            "CENSYS": "censys",
-            "Hunter.io": "hunter",
-            "OpenCTI": "opencti",
-            "MISP": "misp",
-            "Cortex": "cortex",
-            "IntelMQ": "intelmq",
-            "IntelOwn": "intelown",
-        }
-        cmd_prefix = binary_map.get(t_name)
-        if cmd_prefix:
-            import shutil
-            import sys
-            import shlex
-            from pathlib import Path
-            parts = shlex.split(cmd_prefix)
-            if len(parts) > 1 or Path(cmd_prefix).exists():
-                # Leave complex commands or explicit absolute paths alone
-                abs_path = cmd_prefix
-            else:
-                abs_path = shutil.which(cmd_prefix) or shutil.which(cmd_prefix.lower())
-                if not abs_path:
-                    # Check for Go-based tools in the default Go bin directory
-                    go_path = Path.home() / f"go/bin/{cmd_prefix}"
-                    if go_path.exists():
-                        abs_path = str(go_path.absolute())
-                    else:
-                        local_pth = Path(f"{cmd_prefix}/{cmd_prefix}.py")
-                        if local_pth.exists():
-                            abs_path = f"{sys.executable} {local_pth.absolute()}"
-                        else:
-                            abs_path = f"{sys.executable} -m {cmd_prefix}"
+        abs_path = shell_command(t_name)
+        if abs_path:
             self.txt_shell.setText(f"{abs_path} ")
             self.txt_shell.setPlaceholderText(f"Esperando comando...")
         else:

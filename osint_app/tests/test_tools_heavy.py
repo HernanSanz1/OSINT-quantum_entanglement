@@ -105,8 +105,13 @@ def test_tool_failed_distinguishes_cancel_timeout_and_missing_program():
 # ── herramientas con `_run` simulado ─────────────────────────────────────────
 
 @pytest.fixture
-def fake_run(monkeypatch):
+def fake_run(monkeypatch, tmp_path):
     state = {"calls": []}
+    sf = tmp_path / "spiderfoot" / "sf.py"                  # SpiderFoot "clonado" (sin entorno propio)
+    sf.parent.mkdir()
+    sf.write_text("")
+    monkeypatch.setattr(heavy_tools, "SPIDERFOOT_PATH", sf)
+    monkeypatch.setattr(heavy_tools, "cloned_tool", lambda folder, script: None)
 
     def install(out="", rc=0):
         state["calls"].clear()

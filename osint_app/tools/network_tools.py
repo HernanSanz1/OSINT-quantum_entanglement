@@ -10,7 +10,6 @@ SECURITY:
 """
 import importlib.util, re, shutil, subprocess, logging, shlex
 from typing import List
-from pathlib import Path
 from ..core.models import ToolRequirements, QueryParameters, SearchResult
 from ..core.base_tool import OSINTTool
 from ..utils.sanitizer import (
@@ -188,14 +187,13 @@ class TheHarvesterTool(OSINTTool):
         self.check_available()
 
     def check_available(self):
-        local_path = Path("theHarvester/theHarvester.py")
+        from .heavy_tools import cloned_tool
         self.is_available = (
             shutil.which("theHarvester") is not None or
             shutil.which("theharvester") is not None or
-            local_path.exists()
+            cloned_tool("theHarvester", "theHarvester.py") is not None
         )
-
-
+        return self.is_available
 
     def diagnose_status(self):
         self.check_available()
@@ -210,17 +208,16 @@ class TheHarvesterTool(OSINTTool):
         return {
             "status": "not_installed",
             "icon": "❌",
-            "message": "TheHarvester no está instalado.\nSe recomienda instalarlo clonando su repositorio oficial GITHUB.",
+            "message": "TheHarvester no está instalado. Se instala descargando su código (GPL-2.0: se ejecuta como "
+                       "programa aparte).",
             "install_cmd": (
-                "Guía de Instalación Multiplataforma:\n"
-                "1. Abre una terminal en la carpeta principal del proyecto Sentinel.\n"
-                "2. Activa tu entorno virtual:\n"
-                "   - Mac/Linux: `source env/bin/activate`\n"
-                "   - Windows: `.\\env\\Scripts\\activate`\n"
-                "3. Clona el repositorio:\n"
-                "   `git clone https://github.com/laramies/theHarvester.git`\n"
-                "4. Instala sus dependencias:\n"
-                "   `cd theHarvester && python3 -m pip install -r requirements.txt`"
+                "Guía de instalación de TheHarvester (en su propio entorno, para no romper las dependencias de SENTINEL):\n"
+                "1. Abre PowerShell y ve a la carpeta de herramientas de SENTINEL:\n"
+                "   mkdir \"$env:LOCALAPPDATA\\SENTINEL\\herramientas\" -Force; cd \"$env:LOCALAPPDATA\\SENTINEL\\herramientas\"\n"
+                "2. Descarga el código: git clone https://github.com/laramies/theHarvester.git\n"
+                "3. Crea su entorno: cd theHarvester; py -3.12 -m venv .venv\n"
+                "4. Instala sus dependencias: .venv\\Scripts\\python.exe -m pip install .\n"
+                "5. Vuelve a SENTINEL y pulsa «Verificar Estado»."
             )
         }
 
@@ -228,18 +225,15 @@ class TheHarvesterTool(OSINTTool):
         domain = sanitize_shell_arg(query_params.domain or "")
         if not domain or not validate_domain(domain):
             return []
+        from .heavy_tools import cloned_tool, tool_python
         cmd = shutil.which("theHarvester") or shutil.which("theharvester")
-        
-        cmd_args = []
-        if cmd:
+        local = cloned_tool("theHarvester", "theHarvester.py")
+        if local is not None:          # con el Python de su propio entorno
+            cmd_args = [tool_python(local), str(local), "-d", domain]
+        elif cmd:
             cmd_args = [cmd, "-d", domain]
         else:
-            import sys
-            local_path = Path("theHarvester/theHarvester.py")
-            if local_path.exists():
-                cmd_args = [sys.executable, str(local_path.absolute()), "-d", domain]
-            else:
-                return []
+            return []
             
         try:
             if query_params.extra_args:

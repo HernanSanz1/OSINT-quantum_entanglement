@@ -71,6 +71,7 @@ def parse_crtsh(entries: list, domain: str) -> List[str]:
 
 CERTSPOTTER_URL = "https://api.certspotter.com/v1/issuances"
 HACKERTARGET_URL = "https://api.hackertarget.com/hostsearch/"
+URLSCAN_URL = "https://urlscan.io/api/v1/search/"
 FALLBACK_TIMEOUT = 25
 
 
@@ -81,7 +82,7 @@ def in_scope(name: str, domain: str) -> str:
 
 
 class CrtShTool(OSINTTool):
-    """Subdominios pasivos de TRES fuentes.
+    """Subdominios pasivos de CUATRO fuentes (urlscan.io añadida el 2026-10-29: escaneos públicos con su IP).
 
     Verificado en real 2026-10-04: crt.sh caído con HTTP 502 en todo el mundo; CertSpotter dio 59 subdominios de
     utpl.edu.ec y HackerTarget 50 con su IP. Antes solo había crt.sh: si fallaba, 0 resultados. Cada subdominio
@@ -91,7 +92,7 @@ class CrtShTool(OSINTTool):
     def __init__(self):
         super().__init__(
             "crt.sh",
-            "Subdominios pasivos: crt.sh + CertSpotter + HackerTarget (sin clave ni binarios)",
+            "Subdominios pasivos: crt.sh + CertSpotter + HackerTarget + urlscan.io (sin clave ni binarios)",
             REQUIREMENTS,
         )
         self._python_pkgs = ["requests"]
@@ -161,6 +162,28 @@ class CrtShTool(OSINTTool):
                 pairs.append((host, ip.strip()))
         return pairs, ""
 
+    def _from_urlscan(self, domain: str):
+        """[(subdominio, ip)] de los escaneos públicos de urlscan.io (gratis: 30 búsquedas por minuto)."""
+        try:
+            resp = requests.get(URLSCAN_URL, params={"q": f"domain:{domain}", "size": 100},
+                                headers={"User-Agent": "SENTINEL-OSINT/2.0"}, timeout=FALLBACK_TIMEOUT)
+        except requests.RequestException as e:
+            return [], f"sin conexión ({type(e).__name__})"
+        if resp.status_code == 429:
+            return [], "límite gratuito agotado (30 búsquedas por minuto)"
+        if resp.status_code != 200:
+            return [], f"HTTP {resp.status_code}"
+        try:
+            pages = [r.get("page") or {} for r in resp.json().get("results", [])]
+        except (ValueError, AttributeError, TypeError):
+            return [], "respuesta no válida"
+        pairs = {}
+        for page in pages:
+            host = in_scope(page.get("domain", ""), domain)
+            if host:
+                pairs.setdefault(host, str(page.get("ip") or ""))
+        return sorted(pairs.items()), ""
+
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
         domain = sanitize_input(query_params.domain) if query_params.domain else ""
         domain = domain.strip().lower().lstrip(".")
@@ -174,14 +197,16 @@ class CrtShTool(OSINTTool):
             return cached
 
         self._rate.wait_if_needed()
-        self._report_progress(f"🔍 Subdominios de {domain}: consultando crt.sh, CertSpotter y HackerTarget…")
+        self._report_progress(f"🔍 Subdominios de {domain}: consultando crt.sh, CertSpotter, HackerTarget y urlscan.io…")
 
         sources: dict = {}
         ips: dict = {}
         crt, err1 = self._from_crtsh(domain)
         cs, err2 = self._from_certspotter(domain)
         ht, err3 = self._from_hackertarget(domain)
-        status = [("crt.sh", len(crt), err1), ("CertSpotter", len(cs), err2), ("HackerTarget", len(ht), err3)]
+        us, err4 = self._from_urlscan(domain)
+        status = [("crt.sh", len(crt), err1), ("CertSpotter", len(cs), err2), ("HackerTarget", len(ht), err3),
+                  ("urlscan.io", len(us), err4)]
         for name in crt:
             sources.setdefault(name, []).append("crt.sh")
         for name in cs:
@@ -191,6 +216,11 @@ class CrtShTool(OSINTTool):
                 sources[name].append("HackerTarget")
             if ip:
                 ips[name] = ip
+        for name, ip in us:
+            if "urlscan.io" not in sources.setdefault(name, []):
+                sources[name].append("urlscan.io")
+            if ip:
+                ips.setdefault(name, ip)
 
         detail = " · ".join(f"{n}: {c}" if not e else f"{n}: falló ({e})" for n, c, e in status)
         if not sources:
@@ -211,7 +241,7 @@ class CrtShTool(OSINTTool):
                 snippet=f"Subdominio de {domain} visto en {', '.join(found_in)}" + (f" · IP {ip}" if ip else ""),
                 source_tool=self.name,
                 category="Subdominio",
-                relevance_score=min(90, 60 + 10 * len(found_in)),
+                relevance_score=min(95, 60 + 10 * len(found_in)),
                 raw_data={"subdomain": sub, "domain": domain, "sources": found_in, "ip": ip},
             ))
         self._report_progress(f"✅ Subdominios: {len(results)} únicos — {detail}")

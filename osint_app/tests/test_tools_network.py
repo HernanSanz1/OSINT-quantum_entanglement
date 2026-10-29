@@ -391,6 +391,7 @@ api.empresa.com:10.0.0.9
 @pytest.fixture
 def harvester(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)                                                                     # sin theHarvester/ local
+    monkeypatch.setenv("SENTINEL_DATA_DIR", str(tmp_path / "datos"))                                # ni en la carpeta de SENTINEL
     state = {"cmd": None}
 
     def install(stdout="", which="/bin/theHarvester", error=None):
@@ -460,8 +461,9 @@ def test_harvester_validates_the_domain_and_needs_the_program(harvester):
 
 def test_harvester_uses_the_local_clone_when_not_in_path(harvester, tmp_path):
     state = harvester("juan@empresa.com", which=None)
-    (tmp_path / "theHarvester").mkdir()
-    (tmp_path / "theHarvester" / "theHarvester.py").write_text("print('x')")
+    from osint_app.utils.data_paths import tools_dir
+    (tools_dir() / "theHarvester").mkdir(parents=True)                       # carpeta de herramientas de SENTINEL
+    (tools_dir() / "theHarvester" / "theHarvester.py").write_text("print('x')")
     results = TheHarvesterTool().execute(QueryParameters(domain="empresa.com"))
     assert [r.title for r in results] == ["Email: juan@empresa.com"]
     assert state["cmd"][0] == sys.executable and state["cmd"][1].endswith("theHarvester.py")

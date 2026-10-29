@@ -28,14 +28,45 @@ MAX_RESULTS      = 200         # Never return more than 200 results per tool
 SPIDERFOOT_PATH = Path(__file__).parent.parent.parent / "spiderfoot/sf.py"
 
 
+def cloned_tool(folder: str, script: str) -> Path:
+    """Programa que se instala clonando su repositorio (TheHarvester, SpiderFoot, Recon-ng), o None.
+
+    Se busca en la carpeta de herramientas de SENTINEL y junto al proyecto. Antes se buscaba en la carpeta desde la
+    que se abría SENTINEL ("theHarvester/theHarvester.py"): según cómo se abriera, la herramienta no aparecía.
+    """
+    from ..utils.data_paths import tools_dir
+    for base in (tools_dir(), Path(__file__).resolve().parents[2]):
+        candidate = base / folder / script
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def tool_python(script: Path) -> str:
+    """El Python del entorno propio de la herramienta (.venv junto a su código) o, si no tiene, el de SENTINEL.
+
+    Sus dependencias son antiguas y a veces fijas: instaladas en el entorno de SENTINEL podían romperlo.
+    """
+    for venv in (script.parent / ".venv", script.parent / "venv"):
+        for exe in (venv / "Scripts" / "python.exe", venv / "bin" / "python"):
+            if exe.is_file():
+                return str(exe)
+    return sys.executable
+
+
 def _find_go_binary(name: str) -> str:
-    """Return the path to a Go-installed binary (PATH or ~/go/bin), or "" if missing."""
+    """Ruta del programa (PATH, carpeta de programas de SENTINEL o ~/go/bin), o "" si no está.
+
+    La carpeta de SENTINEL permite usar el .exe publicado por el autor sin instalar Go ni tocar el PATH.
+    """
     found = shutil.which(name)
     if found:
         return found
-    for candidate in (Path.home() / "go/bin" / name, Path.home() / "go/bin" / f"{name}.exe"):
-        if candidate.is_file():
-            return str(candidate)
+    from ..utils.data_paths import tools_bin_dir
+    for folder in (tools_bin_dir(), Path.home() / "go/bin"):
+        for candidate in (folder / name, folder / f"{name}.exe"):
+            if candidate.is_file():
+                return str(candidate)
     return ""
 
 
@@ -195,17 +226,20 @@ class SubfinderTool(OSINTTool):
         self.is_heavy = True
         self._binary_names = ["subfinder"]
         self.is_available = self.check_available()
+        from ..utils.data_paths import tools_bin_dir
         self._install_cmd = (
-            "Guía de Instalación Subfinder (Multiplataforma):\n"
-            "1. Descarga e instala Go desde https://go.dev/dl/\n"
-            "2. Abre tu terminal (CMD/PowerShell en Windows, Bash/Zsh en Mac/Linux).\n"
-            "3. Ejecuta: go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest\n"
-            "4. AÑADE GO A TU PATH (Obligatorio para que la IA lo encuentre):\n"
-            "   - Mac/Linux: Agrega `export PATH=\"$PATH:$HOME/go/bin\"` a tu ~/.bashrc o ~/.zshrc y reinicia la terminal.\n"
-            "   - Windows: Presiona Win+R, escribe `sysdm.cpl`, ve a Opciones Avanzadas -> Variables de Entorno. \n"
-            "              Edita la variable 'Path' y añade `%USERPROFILE%\\go\\bin`. Reinicia Sentinel."
+            "Guía de instalación de Subfinder (sin Go):\n"
+            "1. Descarga la versión para tu sistema desde https://github.com/projectdiscovery/subfinder/releases\n"
+            "   (Windows: el archivo «subfinder_<versión>_windows_amd64.zip»).\n"
+            "2. Descomprímelo y copia «subfinder.exe» en la carpeta de programas de SENTINEL:\n"
+            f"   {tools_bin_dir()}\n"
+            "   (también vale cualquier carpeta del PATH o %USERPROFILE%\\go\\bin si ya usas Go).\n"
+            "3. Pulsa «Verificar Estado».\n\n"
+            "Ojo en Windows 11: si «Control inteligente de aplicaciones» (Smart App Control) está activado, puede "
+            "bloquear subfinder.exe porque no está firmado; SENTINEL te avisará.\n"
+            "Sin instalar nada: la herramienta «crt.sh» ya busca subdominios en 4 fuentes públicas."
         )
-        self._system_deps = [("go", "https://go.dev/dl/")]
+        self._system_deps = []
 
     def check_available(self) -> bool:
         return bool(_find_go_binary("subfinder"))
@@ -254,17 +288,20 @@ class AmassTool(OSINTTool):
         self.is_heavy = True
         self._binary_names = ["amass"]
         self.is_available = self.check_available()
+        from ..utils.data_paths import tools_bin_dir
         self._install_cmd = (
-            "Guía de Instalación OWASP Amass (Multiplataforma):\n"
-            "1. Descarga e instala Go desde https://go.dev/dl/\n"
-            "2. Abre tu terminal (CMD/PowerShell en Windows, Bash/Zsh en Mac/Linux).\n"
-            "3. Ejecuta: go install -v github.com/owasp-amass/amass/v4/...@master\n"
-            "4. AÑADE GO A TU PATH (Obligatorio para que la IA lo encuentre):\n"
-            "   - Mac/Linux: Agrega `export PATH=\"$PATH:$HOME/go/bin\"` a tu ~/.bashrc o ~/.zshrc y reinicia la terminal.\n"
-            "   - Windows: Presiona Win+R, escribe `sysdm.cpl`, ve a Opciones Avanzadas -> Variables de Entorno. \n"
-            "              Edita la variable 'Path' y añade `%USERPROFILE%\\go\\bin`. Reinicia Sentinel."
+            "Guía de instalación de OWASP Amass (sin Go):\n"
+            "1. Descarga la versión para tu sistema desde https://github.com/owasp-amass/amass/releases\n"
+            "   (Windows: el archivo «amass_windows_amd64.tar.gz»).\n"
+            "2. Descomprímelo y copia «amass.exe» en la carpeta de programas de SENTINEL:\n"
+            f"   {tools_bin_dir()}\n"
+            "   (también vale cualquier carpeta del PATH o %USERPROFILE%\\go\\bin si ya usas Go).\n"
+            "3. Pulsa «Verificar Estado».\n\n"
+            "Ojo en Windows 11: si «Control inteligente de aplicaciones» (Smart App Control) está activado, puede "
+            "bloquear amass.exe porque no está firmado; SENTINEL te avisará.\n"
+            "Sin instalar nada: la herramienta «crt.sh» ya busca subdominios en 4 fuentes públicas."
         )
-        self._system_deps = [("go", "https://go.dev/dl/")]
+        self._system_deps = []
 
     def check_available(self) -> bool:
         return bool(_find_go_binary("amass"))
@@ -314,20 +351,21 @@ class SpiderFootTool(OSINTTool):
         self.is_available = self.check_available()
         self._binary_names = ["sf.py"]
         self._install_cmd = (
-            "Guía de Instalación SpiderFoot (Requiere Código Fuente):\n"
-            "La versión de PyPI (pip install spiderfoot) está deprecada o rota. Debes clonar el código fuente:\n"
-            "1. Abre una terminal y navega hasta la misma carpeta donde clonaste Sentinel OSINT (IAprototipe/Sentinel).\n"
-            "2. Clona el repositorio oficial de SpiderFoot justo ahí:\n"
-            "   - Mac/Linux/Windows: `git clone https://github.com/smicallef/spiderfoot.git`\n"
-            "3. Entra a la carpeta de tu Entorno Virtual de Sentinel y carga las dependencias:\n"
-            "   - Mac/Linux: `source env/bin/activate`\n"
-            "   - Windows: `.\\env\\Scripts\\activate`\n"
-            "   - Ambos: `cd spiderfoot` y luego `pip install -r requirements.txt`\n"
-            "4. Vuelve a iniciar Sentinel. La IA detectará automáticamente la carpeta `spiderfoot`."
+            "Guía de instalación de SpiderFoot (MIT) (en su propio entorno, para no romper las dependencias de SENTINEL):\n"
+            "1. Abre PowerShell y ve a la carpeta de herramientas de SENTINEL:\n"
+            "   mkdir \"$env:LOCALAPPDATA\\SENTINEL\\herramientas\" -Force; cd \"$env:LOCALAPPDATA\\SENTINEL\\herramientas\"\n"
+            "2. Descarga el código: git clone https://github.com/smicallef/spiderfoot.git\n"
+            "3. Crea su entorno: cd spiderfoot; py -3.12 -m venv .venv\n"
+            "4. Instala sus dependencias: .venv\\Scripts\\python.exe -m pip install -r requirements.txt\n"
+            "5. Vuelve a SENTINEL y pulsa «Verificar Estado»."
         )
 
+    @staticmethod
+    def _script():
+        return SPIDERFOOT_PATH if SPIDERFOOT_PATH.is_file() else cloned_tool("spiderfoot", "sf.py")
+
     def check_available(self) -> bool:
-        return SPIDERFOOT_PATH.is_file()
+        return self._script() is not None
 
     @staticmethod
     def _pick_target(query_params: QueryParameters) -> str:
@@ -350,8 +388,11 @@ class SpiderFootTool(OSINTTool):
         
         self._report_progress("🔍 SpiderFoot: ejecutando módulos OSINT...")
         
-        # sys.executable: "python3" does not exist on Windows
-        cmd_args = [sys.executable, str(SPIDERFOOT_PATH), "-s", target]
+        script = self._script()
+        if script is None:
+            return []
+        # Con el Python de su propio entorno ("python3" no existe en Windows)
+        cmd_args = [tool_python(script), str(script), "-s", target]
         if query_params.extra_args:
             cmd_args.extend(shlex.split(query_params.extra_args))
         else:
@@ -395,23 +436,21 @@ class ReconNgTool(OSINTTool):
             )
         )
         self.is_heavy = True
-        self.is_available = shutil.which("recon-ng") is not None or (Path("recon-ng/recon-ng").exists() and not Path("recon-ng/recon-ng").is_dir())
+        self.is_available = self.check_available()
         self._binary_names = ["recon-ng"]
         self._install_cmd = (
-            "Guía de Instalación Recon-ng (Requiere Código Fuente):\n"
-            "1. Abre una terminal y navega hasta la carpeta principal del proyecto Sentinel.\n"
-            "2. Activa tu entorno virtual:\n"
-            "   - Mac/Linux: `source env/bin/activate`\n"
-            "   - Windows: `.\\env\\Scripts\\activate`\n"
-            "3. Clona el repositorio de Recon-ng:\n"
-            "   `git clone https://github.com/lanmaster53/recon-ng.git`\n"
-            "4. Instala sus dependencias:\n"
-            "   `cd recon-ng && pip install -r REQUIREMENTS`\n\n"
-            "Terminado. Sentinel detectará automáticamente la carpeta local 'recon-ng/recon-ng'."
+            "Guía de instalación de Recon-ng (GPL-3.0: se ejecuta como programa aparte) (en su propio entorno, para no romper las dependencias de SENTINEL):\n"
+            "1. Abre PowerShell y ve a la carpeta de herramientas de SENTINEL:\n"
+            "   mkdir \"$env:LOCALAPPDATA\\SENTINEL\\herramientas\" -Force; cd \"$env:LOCALAPPDATA\\SENTINEL\\herramientas\"\n"
+            "2. Descarga el código: git clone https://github.com/lanmaster53/recon-ng.git\n"
+            "3. Crea su entorno: cd recon-ng; py -3.12 -m venv .venv\n"
+            "4. Instala sus dependencias: .venv\\Scripts\\python.exe -m pip install -r REQUIREMENTS\n"
+            "5. Vuelve a SENTINEL y pulsa «Verificar Estado».\n"
+            "Recon-ng usa sus módulos de la «marketplace»: el de certificados (recon/domains-hosts/certificate_transparency) se instala con: marketplace install recon/domains-hosts/certificate_transparency"
         )
 
     def check_available(self) -> bool:
-        self.is_available = shutil.which("recon-ng") is not None or (Path("recon-ng/recon-ng").exists() and not Path("recon-ng/recon-ng").is_dir())
+        self.is_available = shutil.which("recon-ng") is not None or cloned_tool("recon-ng", "recon-ng") is not None
         return self.is_available
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:
@@ -420,12 +459,13 @@ class ReconNgTool(OSINTTool):
             return []
             
         cmd_path = shutil.which("recon-ng")
-        if not cmd_path:
-            local_path = Path("recon-ng/recon-ng")
-            if local_path.exists():
-                cmd_path = str(local_path.absolute())
-            else:
-                return []
+        local = cloned_tool("recon-ng", "recon-ng")
+        if local is not None:
+            cmd = [tool_python(local), str(local)]       # es un guion de Python: en Windows no se abre solo
+        elif cmd_path:
+            cmd = [cmd_path]
+        else:
+            return []
                 
         # Build a safe script — domain is already sanitized above
         script = (
@@ -434,7 +474,7 @@ class ReconNgTool(OSINTTool):
             f"modules load recon/domains-hosts/certificate_transparency\n"
             f"run\nshow hosts\nexit\n"
         )
-        out, rc = _run(self, [cmd_path], timeout=300, stdin_text=script)
+        out, rc = _run(self, cmd, timeout=300, stdin_text=script)
         if out.startswith("🛑"):
             self._report_progress("🛑 Recon-ng cancelado por el usuario.")
             return []
