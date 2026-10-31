@@ -100,10 +100,27 @@ Nada de lo que produces se guarda dentro del proyecto:
 
 La carpeta de datos se puede cambiar con la variable de entorno `SENTINEL_DATA_DIR`.
 
+### Copias de seguridad
+
+- **Automática:** una al día al abrir SENTINEL, en `%LOCALAPPDATA%\SENTINEL\copias` (se guardan las 7 últimas).
+- **Manual:** pestaña Casos → «💾 Copia de seguridad…» (elige un USB u otro disco) o, desde la consola:
+
+```powershell
+env\Scripts\python.exe -m osint_app.main --backup "E:\Copias"
+```
+
+- **Restaurar**, con SENTINEL cerrado (antes guarda una copia de lo que haya):
+
+```powershell
+env\Scripts\python.exe -m osint_app.main --restore "E:\Copias\SENTINEL_copia_20261031_110227.zip"
+```
+
+La copia lleva los casos, las fichas e informes y las noticias CTI, que contienen datos personales: guárdala en un lugar seguro. Las claves de API no se copian; en otro equipo se vuelven a guardar.
+
 ## Para desarrolladores
 
 ```powershell
-# Tests (sin red; unos 1.070)
+# Tests (sin red; unos 1.160)
 env\Scripts\python.exe -m pytest osint_app/tests -q -p no:cacheprovider
 
 # Pruebas con objetivos reales (usa internet)

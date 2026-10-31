@@ -2,6 +2,7 @@
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,7 +23,32 @@ def main():
                         help="Muestra qué claves de API están configuradas (nunca su valor)")
     parser.add_argument("--set-key", metavar="NOMBRE",
                         help="Guarda una clave de API; la pide por teclado sin mostrarla (ej: --set-key GitHub)")
+    parser.add_argument("--backup", metavar="CARPETA", nargs="?", const="",
+                        help="Copia de seguridad de casos, informes y CTI en un .zip (por defecto, en Documentos)")
+    parser.add_argument("--restore", metavar="ARCHIVO",
+                        help="Restaura una copia (.zip) con SENTINEL cerrado; antes guarda una copia del estado actual")
     args = parser.parse_args()
+
+    if args.backup is not None:
+        from osint_app.utils.backup import make_backup
+        from osint_app.utils.data_paths import synced_warning
+        folder = Path(args.backup) if args.backup else Path.home() / "Documents"
+        made = make_backup(folder)
+        print(f"✅ Copia guardada en {made} ({made.stat().st_size // 1024} KB). Tiene datos personales: guárdala "
+              f"en un lugar seguro.")
+        warning = synced_warning(folder)
+        if warning:
+            print("⚠️ Esa carpeta se sincroniza con la nube: los datos personales de la copia se subirían.")
+        return
+    if args.restore:
+        import zipfile
+        from osint_app.utils.backup import restore_backup
+        try:
+            previous = restore_backup(args.restore)
+        except (OSError, ValueError, zipfile.BadZipFile) as e:
+            sys.exit(f"❌ No se restauró nada: {e}")
+        print(f"✅ Copia restaurada. Lo que había antes quedó guardado en {previous}.")
+        return
 
     if args.keys or args.set_key:
         from osint_app.utils import key_cli
@@ -74,6 +100,11 @@ def main():
                 
         window = OSINTGUI()
         window.show()
+
+        # Copia de seguridad diaria en segundo plano (no retrasa la apertura; ver utils/backup.py)
+        import threading
+        from osint_app.utils.backup import auto_backup
+        threading.Thread(target=auto_backup, name="copia-diaria", daemon=True).start()
 
         # Los casos tienen datos personales de terceros: avisar si quedan en una carpeta sincronizada con la nube
         from osint_app.db.feedback_db import DB_PATH

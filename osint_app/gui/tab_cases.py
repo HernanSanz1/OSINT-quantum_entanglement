@@ -1,6 +1,8 @@
+from pathlib import Path
+
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, 
-    QHeaderView, QLabel, QAbstractItemView, QLineEdit
+    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
+    QHeaderView, QLabel, QAbstractItemView, QLineEdit, QPushButton, QFileDialog, QApplication
 )
 from PySide6.QtCore import Qt
 from .components import SentinelModal
@@ -13,7 +15,20 @@ class CasesTab(QWidget):
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
-        
+
+        # Copia de seguridad (antes nada se respaldaba): la automática diaria y una manual donde elijas
+        top = QHBoxLayout()
+        self.lbl_backup = QLabel("")
+        self.lbl_backup.setStyleSheet("color: #8A9AA9;")
+        top.addWidget(self.lbl_backup, 1)
+        self.btn_backup = QPushButton("💾  Copia de seguridad…")
+        self.btn_backup.setToolTip("Guarda en un .zip tus casos, informes y noticias CTI donde elijas (por ejemplo, un "
+                                   "USB). Tiene datos personales: guárdalo en un lugar seguro. Las claves de API no "
+                                   "se copian.")
+        self.btn_backup.clicked.connect(self._on_backup)
+        top.addWidget(self.btn_backup)
+        layout.addLayout(top)
+
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(["ID", "Nombre", "Descripción", "Estado", "Creado"])
@@ -29,7 +44,37 @@ class CasesTab(QWidget):
         layout.addWidget(self.table)
         self.refresh()
         
+    def _update_backup_label(self):
+        from ..utils.backup import backup_time, last_auto_backup
+        last = last_auto_backup()
+        when = f"la última es del {backup_time(last).strftime('%Y-%m-%d %H:%M')}" if last else "todavía no hay ninguna"
+        self.lbl_backup.setText(f"💾 Copia automática diaria de tus casos (se guardan las 7 últimas): {when}")
+
+    def _on_backup(self):
+        from ..utils.backup import make_backup
+        from ..utils.data_paths import synced_warning
+        folder = QFileDialog.getExistingDirectory(self, "¿Dónde guardo la copia de seguridad?",
+                                                  str(Path.home() / "Documents"))
+        if not folder:
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            made = make_backup(folder)
+        except (OSError, ValueError) as e:
+            self.app.toast.show(f"No se pudo hacer la copia: {e}"[:120], kind="error")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.app.set_status(f"✔  Copia guardada: {made}", "success")
+        warning = synced_warning(folder)
+        if warning:
+            self.app.toast.show("Copia guardada, pero esa carpeta se sincroniza con la nube: los datos personales se "
+                                "subirían. Mejor un USB u otro disco.", kind="warning")
+        else:
+            self.app.toast.show(f"Copia guardada: {made.name}", kind="success")
+
     def refresh(self):
+        self._update_backup_label()
         self.table.setRowCount(0)
         cases = self.app.case_mgr.list_all()
         if not cases:
@@ -48,7 +93,7 @@ class CasesTab(QWidget):
             c_status.setTextAlignment(Qt.AlignCenter)
             c_status.setForeground(Qt.green if is_active else Qt.gray)
 
-            created = c.created_at[:16] if c.created_at else ""
+            created = c.created_at[:16].replace("T", " ") if c.created_at else ""   # sin la "T" de ISO
             c_date = QTableWidgetItem(created)
 
             self.table.setItem(row, 0, c_id)
