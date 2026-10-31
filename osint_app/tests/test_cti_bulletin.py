@@ -23,7 +23,8 @@ def cti(tmp_path_factory):
         sys.modules.pop(name, None)
     render, dossier = importlib.import_module("render"), importlib.import_module("dossier")
     yield render, dossier
-    for name in ("render", "dossier", "clientes", "exposicion_cve", "seleccion_cliente", "fuentes", "productos"):
+    for name in ("render", "dossier", "clientes", "exposicion_cve", "seleccion_cliente", "fuentes", "productos",
+                 "validar"):
         sys.modules.pop(name, None)
     mp.undo()
 
@@ -133,3 +134,57 @@ def test_single_cve_source_still_gives_the_class(cti):
              "cves": ["CVE-2026-10756"]}
     item = {"producto": "", "titulo": "", "impacto": ""}
     assert render.cve_class_text("CVE-2026-10756", "", first, item) == "Tecnología OT / industrial"
+
+
+# ── Validar el boletín antes de enviarlo ─────────────────────────────────────
+
+BULLETIN_EVAL4 = """<html><body>
+<div class="news-item"><h2>&#9889; Amenaza de la Semana</h2>
+<p><strong>Siemens confirma explotación activa:</strong> Siemens confirmó la explotación de CVE-2026-110936.
+<a href="https://csirt.telconet.net/x" class="info-button">Leer M&aacute;s</a></p></div>
+<div class="news-item"><h2>&#9888;&#65039; Principales CVEs</h2><ul>
+<li><a href="https://csirt.telconet.net/gitlab">CVE-2026-110264 CVSS v3.1: 10.0 CRÍTICA</a>: Clase: Aplicación.
+Afecta a Microsoft Integer Overflow or Wraparound in GitLab. La falla reside en el compilador Onigmo, incluido en
+Leer más ... Fuente principal: CSIRT Telconet.</li>
+<li><a href="https://cisa.gov/1">CVE-2026-96652 CVSS v3.1: 7.2 ALTA</a>: Afecta a Plex Media Server. Actualizar.</li>
+<li><a href="https://cisa.gov/2">CVE-2026-96654 CVSS v3.1: 7.2 ALTA</a>: Afecta a Plex Media Server. Actualizar.</li>
+<li><a href="https://cisa.gov/3">CVE-2026-96656 CVSS v3.1: 7.2 ALTA</a>: Afecta a Plex Media Server. Actualizar.</li>
+<li>Researchers demonstrate the exploit on the latest build of the server with crafted data that is sent</li>
+</ul></div>
+<div class="news-item"><h2>Avisos difundidos en Ecuador</h2><ul></ul></div>
+<h2>&#128269; Referencias</h2><ul><li><a href="https://cisa.gov">CISA</a></li></ul>
+</body></html>"""
+
+
+def test_validation_finds_what_the_evaluation_found_by_hand(cti):
+    import importlib
+    validar = importlib.import_module("validar")
+    report = validar.validate(BULLETIN_EVAL4, client="XTRIM")
+    kinds = [p["tipo"] for p in report["problemas"]]
+    assert report["noticias"] == 6
+    assert "frase cortada" in kinds and "producto dudoso" in kinds and "producto repetido" in kinds
+    assert "en inglés" in kinds and "sin enlace" in kinds and "sección vacía" in kinds and "cliente" in kinds
+    gitlab = [p for p in report["problemas"] if p["tipo"] == "producto dudoso"][0]
+    assert gitlab["titulo"].startswith("CVE-2026-110264")
+
+
+def test_validation_of_a_clean_bulletin(cti):
+    import importlib
+    validar = importlib.import_module("validar")
+    page = ("<h2>Noticias Principales</h2><ul><li><strong>Fortinet corrige un fallo:</strong> Fortinet publicó "
+            "parches para FortiOS. Afecta a Fortinet FortiOS. Deben aplicarse las correcciones."
+            "<a href=\"https://fortiguard.com/x\" class=\"info-button\">Leer Más</a></li></ul>"
+            "<p>Boletín preparado para XTRIM.</p>")
+    assert validar.validate(page, client="XTRIM")["problemas"] == []
+
+
+def test_rendering_the_same_week_again_keeps_the_previous_bulletin(cti, tmp_path, monkeypatch):
+    render, _ = cti
+    monkeypatch.setattr(render, "REPORTS", tmp_path / "boletines")
+    monkeypatch.setattr(render, "render", lambda dossier: "<html>boletín</html>")
+    dossier = tmp_path / "dossier-2026-W44-XTRIM.json"
+    dossier.write_text('{"semana": "2026-W44", "cliente": {"nombre": "XTRIM"}}', encoding="utf-8")
+    monkeypatch.setattr("sys.argv", ["render.py", str(dossier)])
+    assert render.main() == 0 and render.main() == 0
+    assert (tmp_path / "boletines" / "AltelThreatIntell_2026W44_XTRIM.html").exists()
+    assert len(list((tmp_path / "boletines" / "anteriores").glob("AltelThreatIntell_2026W44_XTRIM_*.html"))) == 1

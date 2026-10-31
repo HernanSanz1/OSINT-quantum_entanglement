@@ -14,7 +14,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QTableWidget, QTableWidgetItem, QPlainTextEdit,
-    QProgressBar, QFrame, QSplitter, QHeaderView, QMessageBox
+    QProgressBar, QFrame, QSplitter, QHeaderView, QMessageBox, QApplication
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
@@ -69,6 +69,18 @@ def _run_cti_script(cti_path: Path, script: str, args: list, timeout: int,
         env=env,
         timeout=timeout,
     )
+
+
+def validation_lines(report: dict) -> list:
+    """El resultado de validar.py en frases para el registro."""
+    problems = report.get("problemas") or []
+    lines = [f"   {report.get('noticias', 0)} noticia(s) revisada(s)."]
+    for p in problems:
+        where = " · ".join(x for x in (p.get("seccion"), p.get("titulo")) if x)
+        lines.append(f"   ⚠️ {p.get('tipo', '').capitalize()}{' — ' + where if where else ''}: {p.get('detalle', '')}")
+    lines.append("✅ Sin problemas: listo para enviar." if not problems else
+                 f"Revisa {len(problems)} problema(s) antes de enviarlo al cliente.")
+    return lines
 
 
 class HarvestThread(QThread):
@@ -268,8 +280,8 @@ class CTITab(QWidget):
 
         layout.addLayout(header)
         layout.addWidget(DevNotice(
-            "Validar y Enviar (correo) aún no están programados. Para cruzar estas amenazas con un caso, usa "
-            "«Cruzar con CTI» en la pestaña Correlación."))
+            "Enviar (correo) aún no está programado. Para cruzar estas amenazas con un caso, usa «Cruzar con CTI» en "
+            "la pestaña Correlación."))
 
         # ── Actions Bar ────────────────────────────────────────────────────────
         actions = QHBoxLayout()
@@ -295,8 +307,9 @@ class CTITab(QWidget):
 
         self.btn_validate = QPushButton("✅  Validar")
         self.btn_validate.clicked.connect(self._on_validate)
-        self.btn_validate.setEnabled(False)          # sin programar: antes solo decía "en desarrollo" al pulsarlo
-        self.btn_validate.setToolTip("En desarrollo")
+        self.btn_validate.setToolTip("Revisa el último boletín antes de enviarlo: frases cortadas, párrafos en inglés, "
+                                     "productos dudosos o repetidos, noticias sin enlace, secciones vacías y que el de "
+                                     "un cliente lo diga. No cambia el boletín: lo que encuentre sale en el registro.")
         actions.addWidget(self.btn_validate)
 
         self.btn_send = QPushButton("📧  Enviar")
@@ -407,6 +420,7 @@ class CTITab(QWidget):
         self.btn_harvest.setEnabled(not busy)
         self.btn_dossier.setEnabled(not busy)
         self.btn_render.setEnabled(not busy)
+        self.btn_validate.setEnabled(not busy)
         if busy:
             self.progress.setRange(0, 0)
             self.progress.show()
@@ -484,6 +498,7 @@ class CTITab(QWidget):
     def _on_render_done(self, html_path):
         """Abrir el HTML generado en el navegador"""
         self._set_busy(False)
+        self._last_html = html_path
         self._log(f"✅ HTML generado: {html_path}")
         self.app.toast.show("Boletin HTML generado", kind="success")
 
@@ -493,10 +508,41 @@ class CTITab(QWidget):
             webbrowser.open(Path(html_path).resolve().as_uri())
             self._log(f"Abierto en navegador: {html_path}")
 
+    def _latest_bulletin(self):
+        """El último boletín generado (el de esta sesión o, si no, el más reciente de la carpeta)."""
+        last = getattr(self, "_last_html", "")
+        if last and Path(last).exists():
+            return Path(last)
+        folder = cti_reports_dir()
+        found = sorted(folder.glob("*.html"), key=lambda f: f.stat().st_mtime) if folder.exists() else []
+        return found[-1] if found else None
+
     def _on_validate(self):
-        """Ejecutar validar.py"""
-        self._log("Validacion en desarrollo...")
-        self.app.toast.show("Validacion: funcionalidad en desarrollo", kind="info")
+        """Revisa el último boletín con validar.py (antes: "funcionalidad en desarrollo")."""
+        bulletin = self._latest_bulletin()
+        if bulletin is None:
+            self.app.toast.show("No hay boletín que revisar: genera el dossier y pulsa «Ver boletín»", kind="warning")
+            return
+        self._log(f"🔎 Revisando {bulletin.name}…")
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            result = _run_cti_script(CTI_BASE, "validar.py", [str(bulletin)], timeout=60,
+                                     store=active_cti_store(), reports=cti_reports_dir())
+        finally:
+            QApplication.restoreOverrideCursor()
+        try:
+            report = json.loads(result.stdout or "")
+        except ValueError:
+            self._log(f"❌ No se pudo revisar el boletín: {(result.stderr or result.stdout)[-300:]}")
+            self.app.toast.show("No se pudo revisar el boletín (ver registro)", kind="error")
+            return
+        for line in validation_lines(report):
+            self._log(line)
+        problems = len(report.get("problemas") or [])
+        if problems:
+            self.app.toast.show(f"Boletín revisado: {problems} problema(s), ver registro", kind="warning")
+        else:
+            self.app.toast.show("Boletín revisado: sin problemas", kind="success")
 
     def _on_send(self):
         """Ejecutar mail_graph.py"""

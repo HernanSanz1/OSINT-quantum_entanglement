@@ -1831,6 +1831,11 @@ def main() -> int:
     if cliente.get("nombre"):
         suffix = "_" + re.sub(r"[^A-Za-z0-9]+", "", cliente["nombre"].upper())
     out = REPORTS / f"AltelThreatIntell_{dossier['semana'].replace('-', '')}{suffix}.html"
+    if out.exists():
+        # Rehacer el boletín de la semana ya no borra el anterior (evaluación 4): pasa a "anteriores" con su hora
+        old = REPORTS / "anteriores" / f"{out.stem}_{dt.datetime.fromtimestamp(out.stat().st_mtime):%Y%m%d_%H%M%S}.html"
+        old.parent.mkdir(parents=True, exist_ok=True)
+        out.replace(old)
     out.write_text(render(dossier), encoding="utf-8")
     print(out)
     if dossier.get("brechas"):
