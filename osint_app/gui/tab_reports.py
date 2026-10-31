@@ -27,6 +27,9 @@ class ReportsTab(QWidget):
         self.tree = QTreeWidget()
         self.tree.setColumnCount(4)
         self.tree.setHeaderLabels(["Caso", "Nº", "Herramienta", "Fecha"])
+        # Caso y Nº estrechos, para que se lea la herramienta (antes "Google Dor…", "Sherlock:jef…")
+        for col, width in ((0, 50), (1, 50), (2, 200)):
+            self.tree.setColumnWidth(col, width)
         self.tree.itemSelectionChanged.connect(self._on_select)
         left_layout.addWidget(self.tree)
         splitter.addWidget(left_panel)
@@ -57,6 +60,7 @@ class ReportsTab(QWidget):
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
+        splitter.setSizes([440, 800])
         
         self._current_report_id = None
         self.refresh()
@@ -73,6 +77,7 @@ class ReportsTab(QWidget):
             item.setText(0, str(getattr(r, 'case_id', '')))
             item.setText(1, str(getattr(r, 'id', '')))
             item.setText(2, getattr(r, 'tool_name', ''))
+            item.setToolTip(2, getattr(r, 'tool_name', ''))
             ts = str(getattr(r, 'run_at', ''))
             item.setText(3, ts[:16] if len(ts)>16 else ts)
             item.setData(0, Qt.UserRole, getattr(r, 'id', None))

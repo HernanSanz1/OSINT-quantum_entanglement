@@ -22,7 +22,7 @@ class HunterTool(OSINTTool):
     BASE = "https://api.hunter.io/v2"
 
     def __init__(self):
-        super().__init__("Hunter.io", "Email discovery y verificación vía API", REQUIREMENTS)
+        super().__init__("Hunter.io", "Busca y verifica los correos de un dominio (necesita clave de API)", REQUIREMENTS)
         self.requires_api_key = True
 
     def execute(self, query_params: QueryParameters) -> List[SearchResult]:

@@ -48,6 +48,16 @@ CATEGORY_HELP = ("Tipo de resultado. En los de Google Dorks, la letra dice cuán
                  "PROBABLE (B) = nombre completo y algo de su contexto (profesión, ciudad…);\n"
                  "POSIBLE (C) = solo coincide el nombre. Ábrelo antes de dárselo por bueno.")
 
+def retry_bar_text(count: int, wait_seconds: int) -> str:
+    """Por qué aparece el botón Reintentar y si conviene esperar (evaluación 4: no quedaba claro)."""
+    base = (f"⚠️ Búsqueda web incompleta: {count} consulta(s) fallaron porque los buscadores bloquearon las "
+            f"búsquedas automáticas.")
+    if wait_seconds > 0:
+        return (f"{base} Podrás repetirlas en {-(-wait_seconds // 60)} min: antes los buscadores seguirían "
+                f"bloqueando y solo daría otro fallo.")
+    return f"{base} «Reintentar» repite solo esas; lo confirmado y lo descartado se conservan."
+
+
 def candidates_as_dicts(candidates) -> List[Dict]:
     return [{'source': c.source_tool, 'url': c.url, 'title': c.title, 'snippet': c.snippet,
              'confidence': c.confidence, 'category': c.category, 'matched': c.matched_fields,
@@ -194,6 +204,9 @@ class ProfilingTab(QWidget):
         header.addWidget(self.btn_generate_dossier)
 
         self.btn_export = QPushButton("📤  Exportar JSON")
+        self.btn_export.setToolTip("Guarda todos los candidatos y veredictos en un archivo JSON para otras herramientas "
+                                   "o para archivarlo (datos técnicos completos, sin ocultar correos ni teléfonos). "
+                                   "Para leerlo, mejor «Generar Ficha».")
         self.btn_export.clicked.connect(self._on_export)
         header.addWidget(self.btn_export)
 
@@ -483,11 +496,15 @@ class ProfilingTab(QWidget):
 
         self.btn_confirm_selected = QPushButton("✅ Confirmar")
         self.btn_confirm_selected.setObjectName("btnSuccess")
+        self.btn_confirm_selected.setToolTip("Marca el candidato elegido como de esta persona: sale como «✔ Confirmada» "
+                                             "en la ficha y sus datos (usuario, correo…) pasan al caso.")
         self.btn_confirm_selected.clicked.connect(self._on_confirm_candidate)
         cand_header.addWidget(self.btn_confirm_selected)
 
         self.btn_reject_selected = QPushButton("❌ Descartar")
         self.btn_reject_selected.setStyleSheet("background-color: #dc2626;")
+        self.btn_reject_selected.setToolTip("Marca el candidato elegido como NO de esta persona: no sale en la ficha. "
+                                            "No se borra: sigue en Reportes y puedes confirmarlo después.")
         self.btn_reject_selected.clicked.connect(self._on_reject_candidate)
         cand_header.addWidget(self.btn_reject_selected)
 
@@ -497,16 +514,28 @@ class ProfilingTab(QWidget):
         self.btn_refine.clicked.connect(self._on_refine)
         cand_header.addWidget(self.btn_refine)
 
-        # Solo aparece si la búsqueda web quedó incompleta (antes había que repetir el perfil entero)
-        self.btn_retry = QPushButton("🔁 Reintentar búsquedas fallidas")
+        right_layout.addLayout(cand_header)
+
+        # Solo aparece si la búsqueda web quedó incompleta (antes había que repetir el perfil entero). Va en su propia
+        # barra con una frase que explica por qué: en la fila de arriba salía cortado ("ntentar búsquedas falli") y
+        # sin explicación (evaluación 4)
+        self.retry_bar = QFrame()
+        self.retry_bar.setStyleSheet("QFrame { background-color: #3a2a05; border: 1px solid #ffaa00; "
+                                     "border-radius: 6px; } QLabel { border: none; background: transparent; }")
+        retry_layout = QHBoxLayout(self.retry_bar)
+        retry_layout.setContentsMargins(10, 6, 10, 6)
+        self.lbl_retry = QLabel("")
+        self.lbl_retry.setWordWrap(True)
+        self.lbl_retry.setStyleSheet("color: #ffd27a;")
+        retry_layout.addWidget(self.lbl_retry, 1)
+        self.btn_retry = QPushButton("🔁 Reintentar")
         self.btn_retry.setToolTip("Repite SOLO las consultas a buscadores que fallaron por bloqueo, sin volver a lanzar "
                                   "el resto de herramientas. Lo nuevo se suma al mismo caso; lo confirmado y lo "
                                   "descartado se conservan.")
         self.btn_retry.clicked.connect(self._on_retry)
-        self.btn_retry.hide()
-        cand_header.addWidget(self.btn_retry)
-
-        right_layout.addLayout(cand_header)
+        retry_layout.addWidget(self.btn_retry)
+        self.retry_bar.hide()
+        right_layout.addWidget(self.retry_bar)
 
         # Candidates Table
         self.candidates_table = QTableWidget()
@@ -520,9 +549,13 @@ class ProfilingTab(QWidget):
         cand_header_view.setSectionResizeMode(1, QHeaderView.Stretch)
         # Anchos fijos que el analista puede cambiar: antes "Fuente" y "Coincidencias" se ajustaban a su texto más
         # largo y Confianza, Categoría y Estado quedaban fuera de la vista (evaluación 2026-10-28)
-        for col, width in ((0, 110), (2, 150), (3, 75), (4, 130), (5, 110)):
+        for col, width in ((0, 110), (2, 150), (3, 75), (4, 120), (5, 135)):   # Estado: "✅ Confirmado" entero
             self.candidates_table.setColumnWidth(col, width)
         self.candidates_table.verticalHeader().setVisible(False)
+        # Filas compactas, como en CTI y Correlación: con la barra de Reintentar quedaban 3 filas en un portátil
+        self.candidates_table.verticalHeader().setDefaultSectionSize(24)
+        self.candidates_table.setStyleSheet("QTableWidget::item { padding: 2px 8px; } "
+                                            "QHeaderView::section { padding: 4px 8px; }")
         self.candidates_table.setSelectionBehavior(QTableWidget.SelectRows)
         # Doble clic abre el enlace: sin esto, también ponía la celda en modo edición
         self.candidates_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -563,7 +596,7 @@ class ProfilingTab(QWidget):
         self.results_split.addWidget(self.info_tabs)
         self.results_split.setStretchFactor(0, 1)          # el espacio que sobra, para la tabla
         self.results_split.setStretchFactor(1, 0)
-        self.results_split.setSizes([420, 160])
+        self.results_split.setSizes([480, 110])
         right_layout.addWidget(self.results_split, 1)
 
         splitter.addWidget(right_panel)
@@ -725,6 +758,8 @@ class ProfilingTab(QWidget):
         self.info_tabs.setCurrentIndex(self.TAB_LOG)        # durante la búsqueda interesa el registro
         self.lbl_stats.setText("(buscando…)")
         self._log(f"Herramientas marcadas: {len(selected)} ({', '.join(selected)})")
+        if case_id is None:          # va a un caso nuevo: la cabecera no debe seguir con el anterior
+            self.app.show_pending_case(f"Perfil: {name}")
 
         # Iniciar thread
         self.profiler_thread = ProfilerThread(seed, selected, case_id=case_id)
@@ -844,19 +879,20 @@ class ProfilingTab(QWidget):
         engine = self._retry_engine
         pending = engine.pending_retries() if engine is not None else []
         if not pending:
-            self.btn_retry.hide()
+            self.retry_bar.hide()
             self._retry_timer.stop()
             return
         from ..utils.search_engine import retry_wait_seconds
         wait = retry_wait_seconds()
         count = sum(len(queries) for _, _, queries in pending)
-        self.btn_retry.show()
+        self.retry_bar.show()
+        self.lbl_retry.setText(retry_bar_text(count, wait))
         if wait > 0:
-            self.btn_retry.setText(f"🔁 Reintentar búsquedas fallidas (en {-(-wait // 60)} min)")
+            self.btn_retry.setText(f"🔁 Reintentar (en {-(-wait // 60)} min)")
             self.btn_retry.setEnabled(False)
             self._retry_timer.start()
         else:
-            self.btn_retry.setText(f"🔁 Reintentar búsquedas fallidas ({count})")
+            self.btn_retry.setText(f"🔁 Reintentar ({count})")
             self.btn_retry.setEnabled(self.btn_search.isEnabled())
             self._retry_timer.stop()
 
@@ -1011,9 +1047,43 @@ Fragmento:
         except Exception as e:
             self._log(f"⚠️ No se pudo guardar la decisión en el caso: {e}")
 
+    def _load_profile_from_case(self, case_id: int) -> bool:
+        """Pone en pantalla el perfil guardado en el caso (datos, candidatos y veredictos). False si no tiene."""
+        from ..reports.case_profile import profile_from_case
+        profile = profile_from_case(case_id)
+        if profile is None:
+            return False
+        seed = profile["seed"]
+        for widget, key in ((self.input_name, "name"), (self.input_context, "context"), (self.input_username, "username"),
+                            (self.input_email, "email"), (self.input_phone, "phone"), (self.input_domain, "domain"),
+                            (self.input_company, "company"), (self.input_university, "university"),
+                            (self.input_city, "city")):
+            widget.setText(str(seed.get(key) or ""))
+        for widget, key in ((self.input_aliases, "aliases"), (self.input_more_emails, "extra_emails"),
+                            (self.input_more_usernames, "extra_usernames"), (self.input_more_phones, "extra_phones")):
+            widget.setText(", ".join(seed.get(key) or []))
+        if seed.get("country"):
+            self.input_country.setCurrentText(seed["country"])
+        self.confirmed_urls, self.rejected_urls = set(profile["confirmed"]), set(profile["rejected"])
+        self.search_warnings = dict(profile["warnings"] or {})
+        self._profile_case_id = case_id
+        self.confirmed_list.clear()
+        for c in profile["candidates"]:
+            if c["url"] in self.confirmed_urls:
+                self.confirmed_list.appendPlainText(f"✅ [{c['source']}] {c['title'][:50]}")
+        self._on_candidates_ready(profile["candidates"])
+        self._log(f"Perfil del caso #{case_id} cargado: {len(profile['candidates'])} candidatos, "
+                  f"{len(self.confirmed_urls)} confirmado(s), {len(self.rejected_urls)} descartado(s).")
+        return True
+
     def _on_refine(self):
         """Refinar búsqueda: enriquece la semilla con los candidatos confirmados
         (username, email, dominio) y vuelve a buscar."""
+        # Con la tabla vacía y un caso abierto que ya tiene un perfil, se carga ese perfil (antes pedía "Confirma al
+        # menos un candidato" aunque el caso tenía 2 confirmados guardados, evaluación 4)
+        case_id = getattr(self.app, "active_case_id", None)
+        if not self.candidates_data and case_id and self._load_profile_from_case(case_id):
+            self.app.toast.show("Perfil del caso cargado en pantalla", kind="info")
         if not self.confirmed_urls:
             self.app.toast.show("Confirma al menos un candidato primero", kind="error")
             return

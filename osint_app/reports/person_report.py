@@ -336,7 +336,8 @@ def _summary_sentence(r: Dict) -> str:
     incomplete = " <b>Atención: la búsqueda quedó incompleta</b> (ver el aviso de arriba)." if r.get("warnings") else ""
     if not parts:
         return "No se encontró información pública suficiente sobre esta persona con los datos dados." + incomplete
-    return "Sobre esta persona " + "; ".join(parts) + "." + incomplete
+    # Con dos puntos: "Sobre esta persona tiene una ficha…" no se entendía (evaluación 4)
+    return "Sobre esta persona: " + "; ".join(parts) + "." + incomplete
 
 
 def render_person_html(r: Dict, show_contacts: bool = False) -> str:

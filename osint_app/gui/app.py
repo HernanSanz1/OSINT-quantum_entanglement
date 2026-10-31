@@ -386,6 +386,16 @@ class OSINTGUI(QMainWindow):
         # crear, borrar o guardar un perfil en un caso nuevo (evaluación de usuario, 14-10-2026)
         self.set_status(f"✔  Caso abierto: {name}" if case_id else "Ningún caso abierto", "success" if case_id else "info")
 
+    def show_pending_case(self, name: str):
+        """Cabecera mientras se busca a una persona en un caso que aún no existe (se crea al terminar). Antes seguía
+        mostrando el caso anterior y parecía que se buscaba dentro del caso de otra persona (evaluación 4)."""
+        from PySide6.QtGui import QFontMetrics
+        full = f"CASO NUEVO · {name.upper()} (se guarda al terminar)"
+        width = self.case_badge.width() - 36
+        self.case_badge.setText(QFontMetrics(self.case_badge.font()).elidedText(full, Qt.ElideRight, width))
+        self.case_badge.setToolTip(full)
+        self.set_status(f"Buscando: {name} (se guardará en un caso nuevo)", "info")
+
     def _action_toggle_tor(self):
         """Tor para la terminal avanzada. Antes decía "Herramientas rutearán vía Tor" sin que fuera cierto (solo
         la terminal lo usa) y sin comprobar que Tor estuviera en marcha: alguien podía creerse anónimo sin serlo."""

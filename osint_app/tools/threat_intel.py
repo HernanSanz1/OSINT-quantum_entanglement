@@ -54,7 +54,7 @@ class _ThreatBaseTool(OSINTTool):
                 "message": (
                     f"🚧 {self.name}: integración PENDIENTE — SENTINEL todavía no tiene programada la\n"
                     f"consulta a este servidor, así que levantarlo no basta. Para CTI real sin servidor usa\n"
-                    f"'IP Reputation' (Shodan InternetDB, GreyNoise, Tor, Spamhaus, FireHOL, URLhaus)."
+                    f"'IP Reputation' (Shodan InternetDB, GreyNoise, Tor, Spamhaus y FireHOL)."
                 ),
                 "install_cmd": (
                     f"# 1. Clona el repositorio:\n"
@@ -224,7 +224,7 @@ def _server_error_result(tool_name: str, server: str) -> List[SearchResult]:
         url="",
         snippet=(f"SENTINEL todavía no tiene programada la consulta a {server}: configurar el servidor no basta. "
                  f"Para reputación de IPs y URLs usa la herramienta 'IP Reputation' "
-                 f"(Shodan InternetDB, GreyNoise, Tor, Spamhaus, FireHOL y URLhaus, sin clave)."),
+                 f"(Shodan InternetDB, GreyNoise, Tor, Spamhaus y FireHOL, sin clave)."),
         source_tool=tool_name, category="Config Error",
         relevance_score=0,
     )]

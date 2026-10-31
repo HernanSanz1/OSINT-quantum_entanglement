@@ -16,6 +16,18 @@ from ..correlation_engine import CorrelationEngine, CrossCaseCorrelator
 from ..cti_match import CTI_REPORT_TOOL, cti_report_items, cti_rows, rows_from_report
 
 # Relación entre dos datos, en palabras (antes salía "profile_of", "same_name")
+COMPACT_TABLE = "QTableWidget::item { padding: 2px 8px; } QHeaderView::section { padding: 4px 8px; }"
+COMPACT_TREE = "QTreeWidget::item { padding: 2px 4px; } QHeaderView::section { padding: 4px 8px; }"
+
+# Tipos de entidad en el árbol, en español (antes NAME, CONTEXT, PROFILE, USERNAME)
+ENTITY_LABELS = {
+    "email": "Correos", "domain": "Dominios", "ip": "IP", "username": "Usuarios", "phone": "Teléfonos",
+    "name": "Nombres", "profile": "Perfiles", "company": "Empresas", "organization": "Organizaciones",
+    "location": "Lugares", "context": "Contexto", "country": "País", "city": "Ciudad", "university": "Universidades",
+    "cve": "Vulnerabilidades (CVE)", "url": "Direcciones web", "tech": "Tecnologías", "hash_md5": "Hashes MD5",
+    "hash_sha256": "Hashes SHA-256",
+}
+
 RELATION_LABELS = {
     "same_entity": "≡ mismo dato",
     "same_person": "👤 misma persona",
@@ -31,9 +43,11 @@ RELATION_LABELS = {
 
 
 def available_tools(framework) -> set:
-    """Nombres de las herramientas instaladas y listas para usar."""
+    """Nombres de las herramientas instaladas y listas para usar (con su clave, si la necesitan: antes sugería
+    Hunter.io sin clave guardada)."""
     tools = getattr(framework, "tools", None) or {}
-    return {name for name, tool in tools.items() if getattr(tool, "is_available", False)}
+    return {name for name, tool in tools.items() if getattr(tool, "is_available", False)
+            and not (getattr(tool, "requires_api_key", False) and not getattr(tool, "api_key", ""))}
 
 
 def latest_cti_rows(case_id: int) -> list:
@@ -190,6 +204,7 @@ class CorrelationTab(QWidget):
         self.tree_entities.setColumnWidth(0, 250)
         self.tree_entities.setColumnWidth(1, 100)
         self.tree_entities.itemClicked.connect(self._on_entity_clicked)
+        self.tree_entities.setStyleSheet(COMPACT_TREE)
         left_layout.addWidget(self.tree_entities)
 
         # Suggested tools
@@ -230,6 +245,10 @@ class CorrelationTab(QWidget):
         self.table_correlations.setSelectionMode(QTableWidget.SingleSelection)
         self.table_correlations.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table_correlations.currentCellChanged.connect(lambda row, *_: self._show_detail(row))
+        # Filas compactas y sin la columna de números cortados: en un portátil se veían 3 correlaciones (evaluación 4)
+        self.table_correlations.verticalHeader().setVisible(False)
+        self.table_correlations.verticalHeader().setDefaultSectionSize(24)
+        self.table_correlations.setStyleSheet(COMPACT_TABLE)
         corr_layout.addWidget(self.table_correlations, 3)
 
         # Explicación completa de la fila elegida
@@ -237,7 +256,8 @@ class CorrelationTab(QWidget):
         self.detail.setReadOnly(True)
         self.detail.setPlaceholderText("Haz clic en una fila para leer el detalle completo (grupo, fecha, fuente, "
                                        "qué significa y qué hacer).")
-        corr_layout.addWidget(self.detail, 2)
+        self.detail.setMinimumHeight(60)
+        corr_layout.addWidget(self.detail, 1)
 
         right_splitter.addWidget(corr_frame)
 
@@ -258,10 +278,13 @@ class CorrelationTab(QWidget):
             "font-family: monospace; font-size: 11px;"
         )
         self.log_area.setMaximumHeight(150)
+        self.log_area.setMinimumHeight(40)
         log_layout.addWidget(self.log_area)
 
         right_splitter.addWidget(log_frame)
-        right_splitter.setSizes([400, 150])
+        right_splitter.setStretchFactor(0, 4)
+        right_splitter.setStretchFactor(1, 1)
+        right_splitter.setSizes([520, 90])
 
         splitter.addWidget(right_splitter)
         splitter.setSizes([350, 550])
@@ -351,8 +374,8 @@ class CorrelationTab(QWidget):
 
         for entity_type, entities in entities_by_type.items():
             icon = type_icons.get(entity_type, "📌")
-            parent = QTreeWidgetItem([f"{icon} {entity_type.upper()} ({len(entities)})", "", ""])
-            parent.setExpanded(True)
+            label = ENTITY_LABELS.get(entity_type, entity_type.replace("_", " ").capitalize())
+            parent = QTreeWidgetItem([f"{icon} {label} ({len(entities)})", "", ""])
 
             for e in entities:
                 child = QTreeWidgetItem([
@@ -371,6 +394,9 @@ class CorrelationTab(QWidget):
                 parent.addChild(child)
 
             self.tree_entities.addTopLevelItem(parent)
+            # Desplegado DESPUÉS de añadirlo (antes no surtía efecto): con los grupos cerrados se veían 4 filas y la
+            # cabecera decía "Entidades: 52" (evaluación 4)
+            parent.setExpanded(True)
 
     def _add_row(self, values, color=None, url="", detail=""):
         """Una fila de la tabla: el texto completo va en el aviso al pasar el ratón y en el panel de detalle."""
@@ -392,7 +418,9 @@ class CorrelationTab(QWidget):
         """Contadores de la cabecera según lo que se ve (antes "Correlaciones: 0" con 4 filas de CTI en la tabla)."""
         n_case = len(self.engine.correlations) if self.engine else 0
         n_cti = self.table_correlations.rowCount() - self._case_rows
-        self.lbl_entities.setText(f"Entidades: {len(self.engine.entities) if self.engine else 0}")
+        n_types = self.tree_entities.topLevelItemCount()
+        self.lbl_entities.setText(f"Entidades: {len(self.engine.entities) if self.engine else 0}"
+                                  + (f" en {n_types} tipo(s)" if n_types else ""))
         self.lbl_correlations.setText(f"Correlaciones: {n_case}" + (f" · CTI: {n_cti}" if n_cti else ""))
 
     def _populate_correlations_table(self, correlations: list):
@@ -529,7 +557,9 @@ class CorrelationTab(QWidget):
                                       raw_json=json.dumps(items, ensure_ascii=False),
                                       summary=f"{len(rows)} coincidencia(s) con el CTI", results_count=len(rows)))
             self.engine = engine
-            self._populate_correlations_table(engine.get_profile_summary()["correlations"])
+            summary = engine.get_profile_summary()
+            self._populate_entities_tree(summary["entities_by_type"])     # el árbol cuadra con la cabecera
+            self._populate_correlations_table(summary["correlations"])
             self._append_cti_rows(rows)
             self._update_counters()
             if rows:   # la primera fila es la más grave: su detalle a la vista

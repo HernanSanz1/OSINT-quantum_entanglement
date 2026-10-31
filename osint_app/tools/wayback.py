@@ -34,7 +34,7 @@ CDX_URL = "https://web.archive.org/cdx/search/cdx"
 
 class WaybackMachineTool(OSINTTool):
     def __init__(self):
-        super().__init__("Wayback Machine", "Exploras snapshots y endpoints históricos archivados", REQUIREMENTS)
+        super().__init__("Wayback Machine", "Explora copias antiguas de un sitio web (Wayback Machine) y las direcciones que tenía", REQUIREMENTS)
         self._python_pkgs = ["requests"]
         self._install_cmd = "pip install requests"
 

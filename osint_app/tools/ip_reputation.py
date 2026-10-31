@@ -43,6 +43,9 @@ LISTS = {
     # URLs de phishing activas (feed público gratuito de OpenPhish, ~300 URLs, se renueva cada pocas horas)
     "openphish": "https://openphish.com/feed.txt",
 }
+# Listas que ya no se pueden descargar sin clave: no se piden (cada intento era un error 410) y el informe lo dice.
+# Comprobado el 31-10-2026: urlhaus.abuse.ch/downloads/* responde "410 Gone" y su API, "Unauthorized" sin Auth-Key.
+KEY_REQUIRED = {"urlhaus": "URLhaus (abuse.ch exige ahora una clave gratuita)"}
 
 _lists_lock = threading.Lock()
 _lists: Dict[str, Tuple[float, object]] = {}      # nombre → (momento de descarga, contenido procesado)
@@ -50,6 +53,8 @@ _lists: Dict[str, Tuple[float, object]] = {}      # nombre → (momento de desca
 
 def _download_list(name: str):
     """Lista ya procesada: set de IPs (tor) o lista de redes (drop, firehol). None si no se pudo descargar."""
+    if name in KEY_REQUIRED:
+        return None
     with _lists_lock:
         cached = _lists.get(name)
         if cached and time.time() - cached[0] < LIST_TTL:
@@ -210,9 +215,9 @@ class IpReputationTool(OSINTTool):
                                  "no aparece en fuentes públicas de amenazas.", source_tool=self.name,
                                  category="Network", relevance_score=30)]
 
-        self._report_progress(f"🔍 IP Reputation: consultando 6 fuentes para {raw}…")
+        self._report_progress(f"🔍 IP Reputation: consultando 5 fuentes para {raw}…")
         findings: List[Tuple[str, str, int]] = []          # (nivel, texto, puntos de riesgo)
-        sources_failed = []
+        sources_failed, not_checked = [], []
         facts = []
 
         idb, err = self._internetdb(raw)
@@ -282,7 +287,9 @@ class IpReputationTool(OSINTTool):
                 findings.append(("ALTA", f"Está en FireHOL nivel 1 (red {hit[0]}): listas de bloqueo de ataques", 35))
 
         urlhaus = _download_list("urlhaus")
-        if urlhaus is None:
+        if urlhaus is None and "urlhaus" in KEY_REQUIRED:
+            not_checked.append(KEY_REQUIRED["urlhaus"])
+        elif urlhaus is None:
             sources_failed.append("URLhaus (lista no disponible)")
         elif raw in urlhaus:
             sample = urlhaus[raw]
@@ -294,6 +301,8 @@ class IpReputationTool(OSINTTool):
         summary = f"Riesgo {risk} {score} de 100 · " + " · ".join(facts or ["sin datos adicionales"])
         if sources_failed:
             summary += " · No respondieron: " + ", ".join(sources_failed)
+        if not_checked:
+            summary += " · Sin consultar: " + ", ".join(not_checked)
         results = [SearchResult(
             title=f"Reputación de IP {raw}: riesgo {risk}",
             url=f"https://www.shodan.io/host/{raw}",

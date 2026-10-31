@@ -312,3 +312,46 @@ def test_a_rejected_account_stays_out_under_any_of_its_addresses():
                           ("Google Dorks", "https://www.linkedin.com/in/glenda-x"))]
     report = build_person_report(seed, cands, rejected_urls=["https://ec.linkedin.com/in/glenda-x"])
     assert report["homonyms"] == [] and report["accounts"] == []
+
+
+# ── Interfaz y textos menores ────────────────────────────────────────────────
+
+def test_retry_bar_explains_why_and_when():
+    pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+    from osint_app.gui.tab_profiling import retry_bar_text
+    now = retry_bar_text(3, 0)
+    assert "3 consulta(s)" in now and "bloquearon" in now and "se conservan" in now
+    assert "en 2 min" in retry_bar_text(3, 90)
+
+
+def test_suggested_tools_need_their_key():
+    pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+    from types import SimpleNamespace
+    from osint_app.gui.tab_correlation import ENTITY_LABELS, available_tools
+    tools = {"Hunter.io": SimpleNamespace(is_available=True, requires_api_key=True, api_key=""),
+             "crt.sh": SimpleNamespace(is_available=True, requires_api_key=False, api_key=""),
+             "CENSYS": SimpleNamespace(is_available=True, requires_api_key=True, api_key="guardada"),
+             "Subfinder": SimpleNamespace(is_available=False)}
+    assert available_tools(SimpleNamespace(tools=tools)) == {"crt.sh", "CENSYS"}
+    assert ENTITY_LABELS["name"] == "Nombres" and ENTITY_LABELS["context"] == "Contexto"
+
+
+def test_urlhaus_is_not_requested_and_the_report_says_why(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ip_reputation.requests, "get", lambda url, **kw: calls.append(url))
+    assert ip_reputation._download_list("urlhaus") is None and calls == []
+    lists = {"tor": set(), "drop": [], "firehol": []}
+    monkeypatch.setattr(ip_reputation, "_download_list", lambda name: lists.get(name))
+    tool = ip_reputation.IpReputationTool()
+    monkeypatch.setattr(tool, "_internetdb", lambda ip: ({}, ""))
+    monkeypatch.setattr(tool, "_greynoise", lambda ip: ({"noise": False}, ""))
+    snippet = tool.execute(QueryParameters(ip="8.8.8.8"))[0].snippet
+    assert "Sin consultar: URLhaus (abuse.ch exige ahora una clave gratuita)" in snippet
+    assert "No respondieron" not in snippet
+
+
+def test_summary_sentence_reads_well():
+    report = build_person_report({"name": "Jefferson Pérez"}, [
+        {"source": "Wikidata", "url": "https://www.wikidata.org/wiki/Q1", "title": "Jefferson Pérez",
+         "snippet": "Marchista", "confidence": 90, "category": "Persona pública"}])
+    assert "Sobre esta persona: tiene una <b>ficha pública</b>" in render_person_html(report)
