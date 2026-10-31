@@ -92,16 +92,16 @@ class SecretVault:
         return bool(self.get(name))
 
     def status_report(self) -> Dict[str, str]:
-        """Return {name: 'set via env' / 'set via vault' / 'not configured'} — no key values."""
+        """{nombre: dónde está la clave o "sin configurar"}: nunca el valor de la clave."""
         report = {}
         for name in _ENV_MAP.keys():
             env_name = _ENV_MAP[name]
             if os.environ.get(env_name):
-                report[name] = "✅ set via env var"
+                report[name] = "✅ en una variable de entorno"
             elif self._read_vault().get(name):
-                report[name] = "✅ set via vault"
+                report[name] = "✅ guardada (cifrada)"
             else:
-                report[name] = "⬜ not configured"
+                report[name] = "⬜ sin configurar"
         return report
 
     # ── File I/O ──────────────────────────────────────────────────────────────

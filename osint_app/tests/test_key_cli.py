@@ -68,7 +68,7 @@ def test_show_keys_never_prints_values(vault):
     out = []
     key_cli.show_keys(say=out.append, v=vault)
     text = "\n".join(out)
-    assert SECRET not in text and "GitHub" in text and "Hunter.io" in text and "set via vault" in text and "not configured" in text
+    assert SECRET not in text and "GitHub" in text and "Hunter.io" in text and "guardada (cifrada)" in text and "sin configurar" in text
 
 
 # ── conexión con el programa principal ───────────────────────────────────────

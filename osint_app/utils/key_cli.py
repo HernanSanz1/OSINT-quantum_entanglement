@@ -46,5 +46,5 @@ def show_keys(say: Callable[[str], None] = print, v=None) -> int:
     v = v or default_vault
     say("Claves de API (solo se indica si están configuradas):")
     for name, state in v.status_report().items():
-        say(f"  {name:<10} {state}")
+        say(f"  {name:<12} {state}")
     return 0

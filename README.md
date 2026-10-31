@@ -31,6 +31,10 @@ La ventana tiene siete pestañas:
 Para ver qué está listo en tu equipo:
 
 ```powershell
+# Paso a paso: Python, dependencias, claves, Docker y SearXNG, copias… y qué hacer con lo que falte
+env\Scripts\python.exe -m osint_app.main --setup
+
+# Estado de cada herramienta
 env\Scripts\python.exe -m osint_app.main --check-tools
 ```
 

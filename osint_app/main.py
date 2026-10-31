@@ -27,8 +27,14 @@ def main():
                         help="Copia de seguridad de casos, informes y CTI en un .zip (por defecto, en Documentos)")
     parser.add_argument("--restore", metavar="ARCHIVO",
                         help="Restaura una copia (.zip) con SENTINEL cerrado; antes guarda una copia del estado actual")
+    parser.add_argument("--setup", action="store_true",
+                        help="Comprueba la instalación paso a paso y dice qué falta (no cambia nada)")
     args = parser.parse_args()
 
+    if args.setup:
+        from osint_app.utils.setup_check import render, run_checks
+        print(render(run_checks()))
+        return
     if args.backup is not None:
         from osint_app.utils.backup import make_backup
         from osint_app.utils.data_paths import synced_warning
