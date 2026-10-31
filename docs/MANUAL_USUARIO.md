@@ -44,12 +44,12 @@ tu usuario de Windows puede abrirla. Para verla: **Generar Ficha → 📂 Abrir 
 
 | Pestaña | Para qué sirve |
 |---|---|
-| **Casos** | Crear, abrir y borrar casos. Cada caso aísla sus datos y reportes |
+| **Casos** | Crear, abrir y borrar casos. Cada caso aísla sus datos y reportes. Botón **💾 Copia de seguridad…** (ver el apartado 6) |
 | **Datos** | Los datos que conoces del objetivo (correo, usuario, teléfono, dominio, URL…) |
 | **Herramientas** | Ejecutar una herramienta sobre los datos del caso, con indicador 🟢 🟡 🔴 de si tienes lo que necesita |
 | **Perfilamiento** | Buscar a una **persona** con muchas herramientas a la vez y revisar candidatos |
 | **Correlación** | Ver cómo se relacionan los datos del caso (qué correo va con qué usuario, qué perfil con qué nombre…), comparar casos y **buscar el objetivo en la inteligencia de amenazas** (botón "Cruzar con CTI": ¿es víctima de ransomware?, ¿lo citan noticias de seguridad?, ¿sus IP salen en avisos?, ¿sus tecnologías tienen vulnerabilidades explotadas?) |
-| **CTI** | Recolectar feeds de amenazas y generar dossiers por cliente y boletines HTML |
+| **CTI** | Recolectar feeds de amenazas y generar dossiers por cliente y boletines HTML. **✅ Validar** revisa el último boletín antes de enviarlo (frases cortadas, párrafos en inglés, productos dudosos o repetidos, noticias sin enlace) |
 | **Reportes** | Ver y exportar lo que devolvió cada herramienta |
 
 ---
@@ -73,8 +73,12 @@ tu usuario de Windows puede abrirla. Para verla: **Generar Ficha → 📂 Abrir 
 - **⚠️ Aviso de posible homónimo:** el resultado menciona otro país, otra ciudad o un LinkedIn de otro país
   (por ejemplo `mx.linkedin.com` cuando buscas a alguien de Ecuador). **Solo avisa y baja la puntuación; nunca descarta**:
   la decisión es tuya.
-- **Listados omitidos:** los directorios y buscadores de personas ("600+ perfiles") no son una persona y no aparecen como
-  candidatos, pero siguen guardados en el reporte.
+- **Listados omitidos:** los directorios y buscadores de personas ("600+ perfiles"), los directorios oficiales (notarías,
+  nóminas de funcionarios) y las páginas de búsqueda o etiquetas de redes sociales (TikTok «discover», Pinterest «ideas»)
+  no son una persona y no aparecen como candidatos, pero siguen guardados en el reporte.
+- **Búsqueda web incompleta:** si los buscadores bloquean algunas consultas, aparece una barra amarilla con
+  **🔁 Reintentar**. Repite solo las consultas que fallaron y conserva lo confirmado y lo descartado. Si pide esperar unos
+  minutos, es porque antes los buscadores seguirían bloqueando.
 
 ### Confirmar, descartar y refinar
 
@@ -82,9 +86,13 @@ tu usuario de Windows puede abrirla. Para verla: **Generar Ficha → 📂 Abrir 
   confirmado. No cambia el objetivo ni duplica datos.
 - **❌ Descartar** solo marca el candidato; **no borra** lo que ya se hubiera añadido (se corrige en la pestaña Datos).
   Confirmar y descartar se guardan en el caso: la ficha los respeta aunque cierres el programa.
-- **🔄 Refinar búsqueda** vuelve a buscar usando lo que aportaron los candidatos confirmados.
+- **🔄 Refinar búsqueda** vuelve a buscar usando lo que aportaron los candidatos confirmados. Con la tabla vacía, primero
+  carga el perfil guardado del caso abierto.
 - **🎖️ Generar Ficha** abre un menú: **Ver en el navegador** o **Guardar como PDF**. Si no hay un perfilamiento en
   pantalla, la ficha se rehace con el perfil guardado en el **caso abierto** (ábrelo en Casos y pulsa Generar Ficha).
+- **Correos y teléfonos ocultos:** en la ficha, en el detalle del candidato y en Reportes salen como `m•••@gmail.com`
+  (protección de datos, LOPDP). Si tienes una finalidad legítima, **Generar Ficha → Ver con datos de contacto** los
+  muestra completos.
 - **Exportar** guarda el resultado en tu carpeta privada de informes (JSON/HTML/PDF: trátalo como dato
   personal).
 
@@ -111,7 +119,8 @@ Para Link Shield y File Metadata, añade primero en **Datos** un dato de tipo **
 
 ## 5. Claves de API
 
-La mayoría de las herramientas **no necesitan clave**. Para las que sí (GitHub, Hunter.io, CENSYS, etc.):
+La mayoría de las herramientas **no necesitan clave**. Para las que sí (GitHub, Hunter.io, CENSYS, etc.), en
+**Herramientas** elige la herramienta → **Verificar Estado** → **🔑 Guardar clave**. O desde la consola:
 
 ```bash
 python -m osint_app.main --set-key GitHub     # te pide la clave sin mostrarla y la guarda
@@ -125,15 +134,28 @@ python -m osint_app.main --keys               # qué claves tienes (nunca muestr
 
 ---
 
-## 6. Preguntas frecuentes
+## 6. Copias de seguridad y comprobar la instalación
+
+- **Copia automática:** una al día al abrir SENTINEL (se guardan las 7 últimas, en una carpeta que solo tu usuario puede
+  abrir). En **Casos** se ve la fecha de la última.
+- **Copia en un USB u otro disco:** **Casos → 💾 Copia de seguridad…** Contiene datos personales: guárdala en un lugar
+  seguro y no en una carpeta que se suba a la nube (SENTINEL avisa si lo es). Las claves de API no se copian.
+- **Restaurar**, con SENTINEL cerrado: `python -m osint_app.main --restore "ruta\de\la\copia.zip"`. Antes de reemplazar
+  nada guarda una copia de lo que haya.
+- **¿Está todo bien instalado?** `python -m osint_app.main --setup` revisa paso a paso Python, dependencias, claves,
+  Docker y SearXNG, la carpeta de datos y las copias, y dice qué hacer con lo que falte. No cambia nada.
+
+---
+
+## 7. Preguntas frecuentes
 
 **¿Mis datos salen a internet?**
 Las consultas sí: cada herramienta consulta fuentes públicas (buscadores, GitHub, registros de dominios…). Tus **casos** se
 guardan solo en tu equipo.
 
 **¿Por qué una búsqueda devuelve 0 resultados?**
-DuckDuckGo bloquea por ráfagas de consultas (dura de 10 a 30 minutos). Espera un rato o reduce las herramientas de búsqueda.
-Una clave de una API de búsqueda lo resolvería.
+Los buscadores públicos bloquean las ráfagas de consultas (de 10 a 30 minutos). Si aparece la barra de búsqueda
+incompleta, pulsa **🔁 Reintentar** cuando se active. Con el buscador propio SearXNG (Docker abierto) casi no pasa.
 
 **¿Qué hago con los candidatos con ⚠️?**
 Míralos antes de confirmar: pueden ser otra persona con el mismo nombre. Añadir empresa, universidad y ciudad en
