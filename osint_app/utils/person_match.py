@@ -100,6 +100,9 @@ def normalize_url(url: str) -> str:
     host = (parts.hostname or "").lower()
     if host.startswith("www."):
         host = host[4:]
+    # Versión móvil = la misma página: es.m.wikipedia.org y es.wikipedia.org salían dos veces (evaluación 4)
+    host = re.sub(r"^(?:m|mobile)\.", "", host)
+    host = re.sub(r"^([a-z-]+)\.m\.(wikipedia\.org|wiktionary\.org|wikimedia\.org)$", r"\1.\2", host)
     query = urlencode(sorted((k, v) for k, v in parse_qsl(parts.query)
                              if not k.lower().startswith("utm_") and k.lower() not in TRACKING_PARAMS))
     path = parts.path.rstrip("/")

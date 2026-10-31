@@ -71,6 +71,27 @@ _FIELD_WORDS = {
     "organization": "organizaciones", "hash": "hash", "name": "nombres", "note": "valoración y notas",
 }
 
+_GUIDE_ADVICE = {
+    "not_installed": "Pulsa «Verificar Estado» para ver los pasos para instalarla.",
+    "needs_key": "Pulsa «Verificar Estado» y luego «🔑 Guardar clave».",
+    "pending": "Todavía no se puede usar desde SENTINEL.",
+    "deprecated": "Ya no funciona: el servicio cambió su acceso.",
+}
+
+
+def guide_status_text(tool) -> str:
+    """Estado de la herramienta en este equipo para la guía, con la alternativa sin instalar si la hay; "" si está
+    lista."""
+    from ..utils.tool_status import tool_status
+    st = tool_status(tool)
+    if st.code == "ready":
+        return ""
+    text = f"<b>En este equipo:</b> {st.icon} {st.label}. {_GUIDE_ADVICE.get(st.code, '')}"
+    alternative = next((line.strip() for line in str(getattr(tool, "_install_cmd", "")).splitlines()
+                        if line.strip().startswith("Sin instalar nada")), "")
+    return f"{text}<br><i>{alternative}</i>" if alternative else text
+
+
 # Guía sin jerga para las herramientas de uso diario: (qué hace, qué obtendrás). La evaluación de usuario
 # (14-10-2026) señaló RDAP, DNSSEC, MX/SPF/DMARC/DKIM, Shodan InternetDB, GreyNoise y "Qué obtendrás: dominio, note".
 _PLAIN_GUIDE = {
@@ -635,6 +656,14 @@ class ToolsTab(QWidget):
         lbl_desc = QLabel(f"<b>Qué hace:</b><br>{plain[0] if plain else tool.description}")
         lbl_desc.setWordWrap(True)
         lay.addWidget(lbl_desc)
+
+        # Si no se puede usar todavía, la guía lo dice (evaluación 4: solo lo decía «Verificar Estado»)
+        state = guide_status_text(tool)
+        if state:
+            lbl_state = QLabel(state)
+            lbl_state.setWordWrap(True)
+            lbl_state.setStyleSheet("color: #ffaa00;")
+            lay.addWidget(lbl_state)
         
         reqs = tool.requirements
         

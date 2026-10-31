@@ -687,6 +687,13 @@ class ProfilerEngine:
                             signals.append(homonyms.Signal(
                                 "other_job", f"posible homónimo: su LinkedIn dice «{job}» y buscas a «{seed.context}»",
                                 homonyms.OTHER_JOB_PENALTY))
+                    # Solo si el lugar es el TEMA (título o dirección): una semblanza que cita "Coliseo Jefferson Pérez"
+                    # entre sus homenajes sí habla de él (Prezi de Valeria Vallejo, caso real #44)
+                    place = homonyms.named_place(f"{sr.title} {unquote(sr.url or '').replace('-', ' ')}", seed.name)
+                    if place and not own_site:
+                        signals.append(homonyms.Signal(
+                            "named_place", f"parece un lugar con su nombre («{place.title()}»), no la persona",
+                            homonyms.NAMED_PLACE_PENALTY))
                     warning = homonyms.warning_text(signals)
                     if signals:
                         confidence = max(0.0, confidence - homonyms.total_penalty(signals))

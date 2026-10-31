@@ -355,3 +355,66 @@ def test_summary_sentence_reads_well():
         {"source": "Wikidata", "url": "https://www.wikidata.org/wiki/Q1", "title": "Jefferson Pérez",
          "snippet": "Marchista", "confidence": 90, "category": "Persona pública"}])
     assert "Sobre esta persona: tiene una <b>ficha pública</b>" in render_person_html(report)
+
+
+# ── Candidatos de relleno (N-12) ─────────────────────────────────────────────
+
+@pytest.mark.parametrize("url", [
+    "https://www.tiktok.com/discover/moises-caicedo", "https://www.tiktok.com/tag/gonzaloplata",
+    "https://es.pinterest.com/ideas/moises-caicedo/950075579857/", "https://id.pinterest.com/ideas/gonzalo-plata/9/",
+    "https://x.com/hashtag/Luisitocomunica", "https://www.instagram.com/explore/tags/midudev/",
+    "https://www.youtube.com/results?search_query=glenda", "https://www.facebook.com/hashtag/jeffersonperez",
+])
+def test_social_search_and_hashtag_pages_are_not_candidates(url):
+    assert is_directory_result("Moises Caicedo | TikTok", url) == "búsqueda o etiqueta de una red social"
+
+
+@pytest.mark.parametrize("url", [
+    "https://www.tiktok.com/@moises_caicedo55", "https://www.pinterest.com/luisitocomunica/",
+    "https://x.com/LuisitoComunica", "https://www.youtube.com/@midudev", "https://www.instagram.com/gmorejon_",
+])
+def test_real_social_profiles_stay(url):
+    assert is_directory_result("perfil", url) == ""
+
+
+def test_mobile_wikipedia_is_the_same_page():
+    from osint_app.utils.person_match import normalize_url
+    assert normalize_url("https://es.m.wikipedia.org/wiki/Mois%C3%A9s_Caicedo") == \
+        normalize_url("https://es.wikipedia.org/wiki/Mois%C3%A9s_Caicedo")
+    assert normalize_url("https://m.facebook.com/jeffersonperezq") == normalize_url("https://www.facebook.com/jeffersonperezq")
+    assert normalize_url("https://en.wikipedia.org/wiki/X") != normalize_url("https://es.wikipedia.org/wiki/X")
+
+
+def test_place_named_after_the_person_is_flagged_only_when_it_is_the_subject():
+    from osint_app.profiler_engine import SeedData
+    from osint_app.utils.homonyms import named_place
+    assert named_place("Coliseo Jefferson Pérez Quezada | Cuenca", "Jefferson Pérez Quezada") == "coliseo jefferson perez"
+    assert named_place("La pista atlética Jefferson Pérez", "Jefferson Pérez") == "pista atletica jefferson perez"
+    assert named_place("Jefferson Pérez, el marchista", "Jefferson Pérez") == ""
+    seed = SeedData(name="Jefferson Pérez Quezada", context="marchista atleta", country="Ecuador")
+    coliseo = "https://www.goraymi.com/es-ec/azuay/cuenca/escenarios-deportivos/coliseo-jefferson-perez-quezada"
+    prezi = "https://prezi.com/qzr91_kmgipp/jefferson-perez/"
+    cands = _candidates(seed, [
+        _li("Coliseo Jefferson Pérez Quezada", coliseo, "Escenario deportivo de Cuenca"),
+        _li("Jefferson Perez by Valeria Vallejo on Prezi", prezi,
+            "Jefferson Pérez es una leyenda. Monumento en Cuenca. Coliseo Jefferson Peréz. Mejor deportista")])
+    assert "lugar con su nombre" in cands[coliseo].warning
+    assert "lugar con su nombre" not in cands[prezi].warning
+
+
+def test_guide_says_when_a_tool_is_not_ready():
+    pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+    from types import SimpleNamespace
+    from osint_app.gui import tab_tools
+    from osint_app.utils import tool_status as ts
+    status = {"code": "not_installed"}
+    original = ts.tool_status
+    try:
+        ts.tool_status = lambda tool: SimpleNamespace(code=status["code"], icon="❌", label="No instalada")
+        tool = SimpleNamespace(_install_cmd="1. Descarga…\nSin instalar nada: la herramienta «crt.sh» ya busca subdominios.")
+        text = tab_tools.guide_status_text(tool)
+        assert "No instalada" in text and "Verificar Estado" in text and "crt.sh" in text
+        status["code"] = "ready"
+        assert tab_tools.guide_status_text(tool) == ""
+    finally:
+        ts.tool_status = original

@@ -22,6 +22,17 @@ _LISTING_TITLE = re.compile(
     r"^\s*(?:\d[\d.,]*\+?\s+)?(?:perfiles de|profiles for|profiles named|people named|personas llamadas)\b", re.I)
 
 
+# Páginas de búsqueda o de etiquetas de una red social: reúnen a cualquiera que publique ese nombre, no son la
+# persona (evaluación 4: tiktok.com/discover/moises-caicedo y pinterest.es/ideas/… en el top 10 de varios perfiles)
+_SOCIAL_LISTINGS = (
+    (re.compile(r"(^|\.)tiktok\.com$"), ("/discover/", "/tag/", "/search")),
+    (re.compile(r"(^|\.)pinterest\.[a-z.]+$"), ("/ideas/", "/search/")),
+    (re.compile(r"(^|\.)(x|twitter)\.com$"), ("/hashtag/", "/search", "/explore")),
+    (re.compile(r"(^|\.)instagram\.com$"), ("/explore/",)),
+    (re.compile(r"(^|\.)facebook\.com$"), ("/hashtag/",)),
+    (re.compile(r"(^|\.)youtube\.com$"), ("/results", "/hashtag/")),
+)
+
 # Directorios oficiales (notarías, funcionarios, servidores): listan a cualquiera que se llame igual con su teléfono y
 # su correo. Evaluación 4: un PDF de funcionjudicial.gob.ec con el notario "Jefferson Pérez Quezada" de Cuenca salía al
 # 60 % en el perfil del atleta. "Directorio" a secas no basta: en Ecuador también es la junta directiva de una
@@ -52,6 +63,9 @@ def is_directory_result(title: str, url: str, snippet: str = "") -> str:
     for domain in PEOPLE_SEARCH_DOMAINS:
         if host == domain or host.endswith("." + domain):
             return "buscador de personas"
+    for host_re, prefixes in _SOCIAL_LISTINGS:
+        if host_re.search(host) and path.startswith(prefixes):
+            return "búsqueda o etiqueta de una red social"
     text = title or ""
     if _COUNT_QUOTED.search(text) or _COUNT_PLUS.search(text) or _LISTING_TITLE.search(text):
         return "listado de perfiles"

@@ -137,6 +137,27 @@ def linkedin_headline(title: str, snippet: str = "") -> str:
     return head
 
 
+NAMED_PLACE_PENALTY = 25.0
+_PLACE_WORDS = ("coliseo", "estadio", "polideportivo", "avenida", "av", "calle", "parque", "escuela", "colegio",
+                "unidad educativa", "complejo deportivo", "centro deportivo", "pista atletica", "auditorio", "plaza",
+                "puente", "ciudadela", "urbanizacion", "instituto", "barrio")
+
+
+def named_place(text: str, name: str) -> str:
+    """El lugar que lleva el nombre del objetivo ("coliseo jefferson perez"), o "".
+
+    Evaluación 4: en el perfil de Jefferson Pérez salían al 50-60 % noticias de eventos en el Coliseo Jefferson Pérez
+    de Cuenca, que hablan del recinto y no de él.
+    """
+    words = re.findall(r"[a-z0-9]+", normalize_text(name or ""))
+    if len(words) < 2:
+        return ""
+    places = "|".join(re.escape(p) for p in _PLACE_WORDS)
+    found = re.search(rf"(?<![a-z0-9])({places})\.?\s+(?:de\s+)?{re.escape(words[0])}\s+{re.escape(words[1])}(?![a-z0-9])",
+                      normalize_text(text or ""))
+    return f"{found.group(1)} {words[0]} {words[1]}" if found else ""
+
+
 def readable_linkedin_title(title: str, snippet: str = "") -> str:
     """"Glenda Morejón - -- | LinkedIn" → "Glenda Morejón - Ministerio de deporte Ecuador": con el titular vacío, el
     analista descartaba por error el LinkedIn de la persona (evaluación 4). Cualquier otro título, igual."""
