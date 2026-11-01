@@ -4,6 +4,8 @@ Antes iban a Descargas (legibles por cualquier cuenta del equipo y, a veces, sin
 personales de terceros (LOPDP).
 """
 import logging
+import subprocess
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QUrl
@@ -34,3 +36,29 @@ def open_reports_folder() -> Path:
     folder = private_reports_dir()
     QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
     return folder
+
+
+def show_in_folder(path) -> None:
+    """Abre en el Explorador la carpeta del archivo, con el archivo ya seleccionado."""
+    path = Path(path)
+    if sys.platform == "win32" and path.exists():
+        subprocess.Popen(["explorer", f"/select,{path}"])
+    else:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+
+
+def saved_message(path, what: str) -> tuple:
+    """(texto, tipo) del aviso tras guardar. La carpeta de informes está oculta (AppData): el aviso dice dónde quedó
+    el archivo (evaluación 4: «no encontraba las fichas»). Si se eligió una carpeta que va a la nube, lo advierte."""
+    path = Path(path)
+    if synced_warning(path.parent):
+        return f"{what} guardada en {path.name}, pero esa carpeta se sube a la nube (datos personales)", "warning"
+    private = path.parent.resolve() == private_reports_dir().resolve()
+    place = "tu carpeta privada de informes" if private else str(path.parent)
+    return f"{what} guardada en {place}", "success"
+
+
+def announce_saved(app, path, what: str) -> None:
+    """Aviso con el botón «📂 Abrir carpeta», que muestra el archivo en el Explorador."""
+    text, kind = saved_message(path, what)
+    app.toast.show(text, kind=kind, action=("📂 Abrir carpeta", lambda: show_in_folder(path)))

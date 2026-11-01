@@ -16,10 +16,9 @@ from PySide6.QtWidgets import (
     QComboBox, QTableWidget, QTableWidgetItem, QPlainTextEdit,
     QProgressBar, QFrame, QSplitter, QHeaderView, QMessageBox, QApplication
 )
-from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QThread, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices
 
-from .components import DevNotice
 from ..utils.data_paths import active_cti_store, cti_reports_dir
 from ..cti_link import _truthy, normalize_cves
 
@@ -279,9 +278,6 @@ class CTITab(QWidget):
         header.addWidget(self.combo_client)
 
         layout.addLayout(header)
-        layout.addWidget(DevNotice(
-            "Enviar (correo) aún no está programado. Para cruzar estas amenazas con un caso, usa «Cruzar con CTI» en "
-            "la pestaña Correlación."))
 
         # ── Actions Bar ────────────────────────────────────────────────────────
         actions = QHBoxLayout()
@@ -315,8 +311,8 @@ class CTITab(QWidget):
         self.btn_send = QPushButton("📧  Enviar")
         self.btn_send.setObjectName("btnSuccess")
         self.btn_send.clicked.connect(self._on_send)
-        self.btn_send.setEnabled(False)
-        self.btn_send.setToolTip("En desarrollo: enviará el boletín por correo")
+        self.btn_send.setToolTip("Revisa el último boletín y lo prepara como correo nuevo en tu programa de correo, "
+                                 "con los destinatarios del cliente. No envía nada: lo revisas y pulsas Enviar tú.")
         actions.addWidget(self.btn_send)
 
         layout.addLayout(actions)
@@ -421,6 +417,7 @@ class CTITab(QWidget):
         self.btn_dossier.setEnabled(not busy)
         self.btn_render.setEnabled(not busy)
         self.btn_validate.setEnabled(not busy)
+        self.btn_send.setEnabled(not busy)
         if busy:
             self.progress.setRange(0, 0)
             self.progress.show()
@@ -523,6 +520,17 @@ class CTITab(QWidget):
         if bulletin is None:
             self.app.toast.show("No hay boletín que revisar: genera el dossier y pulsa «Ver boletín»", kind="warning")
             return
+        report = self._validate(bulletin)
+        if report is None:
+            return
+        problems = len(report.get("problemas") or [])
+        if problems:
+            self.app.toast.show(f"Boletín revisado: {problems} problema(s), ver registro", kind="warning")
+        else:
+            self.app.toast.show("Boletín revisado: sin problemas", kind="success")
+
+    def _validate(self, bulletin: Path):
+        """Informe de validar.py del boletín (y sus líneas en el registro), o None si no se pudo revisar."""
         self._log(f"🔎 Revisando {bulletin.name}…")
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
@@ -535,25 +543,58 @@ class CTITab(QWidget):
         except ValueError:
             self._log(f"❌ No se pudo revisar el boletín: {(result.stderr or result.stdout)[-300:]}")
             self.app.toast.show("No se pudo revisar el boletín (ver registro)", kind="error")
-            return
+            return None
         for line in validation_lines(report):
             self._log(line)
-        problems = len(report.get("problemas") or [])
-        if problems:
-            self.app.toast.show(f"Boletín revisado: {problems} problema(s), ver registro", kind="warning")
-        else:
-            self.app.toast.show("Boletín revisado: sin problemas", kind="success")
+        return report
 
     def _on_send(self):
-        """Ejecutar mail_graph.py"""
-        reply = QMessageBox.question(
-            self, "Confirmar Envio",
-            "Enviar boletin CTI por correo?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            self._log("Envio por correo en desarrollo...")
-            self.app.toast.show("Envio: funcionalidad en desarrollo", kind="info")
+        """Valida el último boletín y lo prepara como borrador de correo o para pegar (utils/mail_draft.py).
+
+        No envía nada (decisión del 31-10-2026): SENTINEL lo usan empresas con correos distintos y no guarda
+        contraseñas de correo; el analista revisa el borrador en su programa y pulsa Enviar.
+        """
+        bulletin = self._latest_bulletin()
+        if bulletin is None:
+            self.app.toast.show("No hay boletín que enviar: genera el dossier y pulsa «Ver boletín»", kind="warning")
+            return
+        report = self._validate(bulletin)
+        problems = len((report or {}).get("problemas") or [])
+        if report is None or problems:
+            reason = (f"La revisión encontró {problems} problema(s) (están en el registro)." if report is not None
+                      else "No se pudo revisar el boletín.")
+            answer = QMessageBox.question(self, "¿Preparar el correo igualmente?",
+                                          f"{reason}\n\n¿Quieres prepararlo igualmente?",
+                                          QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                return
+        from .send_dialog import SendDialog, copy_bulletin, open_draft
+        dialog = SendDialog(self, bulletin)
+        if dialog.exec() != SendDialog.Accepted:
+            return
+        if dialog.choice == "copy" or dialog.choice.startswith("web:"):
+            copy_bulletin(bulletin.read_text(encoding="utf-8"))
+            if dialog.choice.startswith("web:"):
+                from ..utils.mail_draft import webmail_url
+                QDesktopServices.openUrl(QUrl(webmail_url(dialog.choice[4:], dialog.addresses, dialog.subject)))
+            self._log(f"📋 Boletín copiado: haz clic en el cuerpo del correo y pulsa Ctrl+V. Asunto: {dialog.subject}")
+            self.app.toast.show("Boletín copiado: pégalo en el cuerpo del correo con Ctrl+V", kind="success")
+            return
+        try:
+            mode = open_draft(bulletin, dialog.addresses)
+        except OSError as e:
+            self._log(f"❌ No se pudo abrir el correo: {e}")
+            self.app.toast.show("No se pudo abrir el correo: usa «Copiar para pegar»", kind="error")
+            return
+        to = ", ".join(dialog.addresses) or "sin destinatarios"
+        if mode == "mailto":
+            self._log(f"📧 Correo nuevo abierto ({to}; asunto: {dialog.subject}). El boletín está copiado: haz clic "
+                      f"en el cuerpo del correo y pulsa Ctrl+V. Revísalo y pulsa Enviar.")
+            self.app.toast.show("Correo nuevo abierto: pega el boletín con Ctrl+V y pulsa Enviar", kind="success")
+            return
+        self._log(f"📧 Borrador abierto en tu programa de correo ({to}). Revísalo y pulsa Enviar. "
+                  f"Archivo: {mode[4:]}")
+        self.app.toast.show("Borrador abierto en tu programa de correo: revísalo y pulsa Enviar", kind="success")
 
     def _on_error(self, error_msg):
         self._set_busy(False)

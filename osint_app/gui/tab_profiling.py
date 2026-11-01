@@ -1150,7 +1150,8 @@ Fragmento:
         output_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 
         self._log(f"Exportado: {output_file}")
-        self.app.toast.show(f"Perfil exportado a {output_file.name}", kind="success")
+        from .reports_folder import announce_saved
+        announce_saved(self.app, output_file, "Exportación del perfil")
 
     def _current_report(self):
         """(ficha, nombre) del perfilamiento en pantalla o, si no hay, del perfil guardado en el caso abierto."""
@@ -1209,7 +1210,8 @@ Fragmento:
         import webbrowser
         webbrowser.open(output_file.as_uri())
         self._log(f"Ficha generada: {output_file}")
-        self.app.toast.show("Ficha generada y abierta en el navegador", kind="success")
+        from .reports_folder import announce_saved
+        announce_saved(self.app, output_file, "Ficha abierta en el navegador y")
 
     def _open_reports_folder(self):
         from .reports_folder import open_reports_folder
@@ -1222,7 +1224,8 @@ Fragmento:
             self._pdf_page = None
             if ok:
                 self._log(f"Ficha guardada en PDF: {path}")
-                self.app.toast.show("Ficha guardada en PDF", kind="success")
+                from .reports_folder import announce_saved
+                announce_saved(self.app, path, "Ficha en PDF")
                 QDesktopServices.openUrl(QUrl.fromLocalFile(path))
             else:
                 self._log(f"❌ No se pudo crear el PDF en {path}")

@@ -2,22 +2,31 @@ from PySide6.QtWidgets import QPushButton, QDialog, QLabel, QVBoxLayout, QHBoxLa
 from PySide6.QtCore import Qt, QTimer
 
 class Toast(QFrame):
-    def __init__(self, parent, text, kind):
+    def __init__(self, parent, text, kind, action=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.SubWindow)
-        
+
         bg_color = "#00d4ff" if kind == "info" else "#00ff66" if kind == "success" else "#ffaa00" if kind == "warning" else "#ff3333"
         self.setStyleSheet(f"background-color: {bg_color}; color: #070A12; border-radius: 6px; font-weight: bold;")
-        
+
         lay = QHBoxLayout(self)
         lay.setContentsMargins(12, 8, 12, 8)
         lbl = QLabel(text)
         lay.addWidget(lbl)
-        
+        # action = (texto, función): un botón dentro del aviso, p. ej. «📂 Abrir carpeta» tras guardar una ficha
+        if action:
+            label, callback = action
+            self.action_button = QPushButton(label)
+            self.action_button.setStyleSheet("background-color: #070A12; color: #ffffff; border-radius: 4px; "
+                                             "padding: 4px 10px;")
+            self.action_button.clicked.connect(lambda: (callback(), self.hide_toast()))
+            lay.addWidget(self.action_button)
+
         self.adjustSize()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.hide_toast)
-        self.timer.start(3000)
+        # Con botón dura más: hay que tener tiempo de leerlo y pulsarlo
+        self.timer.start(10000 if action else 3000)
         
     def show_toast(self):
         self.show()
@@ -36,9 +45,10 @@ class ToastManager:
     def __init__(self, parent):
         self.parent = parent
         
-    def show(self, msg, kind="info"):
-        t = Toast(self.parent, msg, kind)
+    def show(self, msg, kind="info", action=None):
+        t = Toast(self.parent, msg, kind, action)
         t.show_toast()
+        return t
 
 class SentinelModal(QDialog):
     def __init__(self, parent, title, width=400, height=200):

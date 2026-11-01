@@ -617,8 +617,9 @@ class CorrelationTab(QWidget):
         if not path:
             return
         Path(path).write_text(json.dumps(summary, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
-        self._log(f"Perfil exportado en: {path}  (se abre desde Perfilamiento → Generar Ficha → Abrir la carpeta de informes)")
-        self.app.toast.show(f"Perfil exportado a {Path(path).name}", kind="success")
+        self._log(f"Perfil exportado en: {path}")
+        from .reports_folder import announce_saved
+        announce_saved(self.app, path, "Exportación de la correlación")
 
     def refresh(self):
         """Refrescar tab"""
