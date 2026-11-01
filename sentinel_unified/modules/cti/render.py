@@ -74,10 +74,36 @@ def fmt_spanish_date(day: dt.date) -> str:
     return f"{day.day} de {months[day.month - 1].capitalize()}, {day.year}"
 
 
+def range_label(window: dict) -> str:
+    """«25 al 31 de Octubre, 2026» (o «29 de Octubre al 4 de Noviembre, 2026») de la ventana {inicio, fin exclusivo}.
+
+    Las fechas se guardan en UTC; se pasan a la hora de Ecuador (UTC-5, sin horario de verano) antes de leer el día.
+    """
+    local = dt.timezone(dt.timedelta(hours=-5))
+    try:
+        start = dt.datetime.fromisoformat(window["inicio"].replace("Z", "+00:00")).astimezone(local).date()
+        last = (dt.datetime.fromisoformat(window["fin"].replace("Z", "+00:00")).astimezone(local)
+                - dt.timedelta(days=1)).date()
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return ""
+    if last <= start:
+        return ""
+    end_text = fmt_spanish_date(last)
+    if start.year != last.year:
+        return f"{fmt_spanish_date(start)} al {end_text}"
+    if start.month != last.month:
+        return f"{fmt_spanish_date(start).split(',')[0]} al {end_text}"
+    return f"{start.day} al {end_text}"
+
+
 def period_label(dossier: dict) -> str:
     if dossier.get("tipo_periodo") == "diario":
         label = fmt_week(dossier["ventana"]["inicio"])
         return f"Informe del {label}"
+    # Rango exacto de días (31-10-2026: el boletín cubre los últimos 7 días hasta hoy, que no empiezan en lunes)
+    window = range_label(dossier.get("ventana") or {})
+    if window:
+        return f"Semana del {window}"
     if dossier.get("tipo_periodo") == "corte":
         try:
             end = dt.datetime.fromisoformat(dossier["ventana"]["fin"].replace("Z", "+00:00")) - dt.timedelta(days=1)
@@ -180,6 +206,10 @@ ENGLISH_WORDS = {
     "against", "new", "warns", "fixes", "patches", "patched", "disclosed", "adds", "issues", "released", "researchers",
     "hackers", "attackers", "flaw", "flaws", "bug", "bugs", "vulnerability", "exploited", "exploit", "more", "two",
     "three", "while", "now", "still", "their", "they", "it", "as", "at", "or", "but", "not", "than",
+    # 31-10-2026: «Volt Typhoon hides zero-day attacks…» y «Japan's GMO urges customers… amid ransomware threat»
+    # quedaban como titulares en inglés
+    "hides", "attacks", "urges", "customers", "amid", "threat", "uses", "steal", "steals", "deploy", "targets",
+    "exposes", "admins", "migrate", "users", "shut", "down",
 }
 SPANISH_WORDS = {
     "el", "la", "los", "las", "de", "del", "y", "que", "en", "con", "por", "para", "una", "un", "es", "se", "su",
@@ -210,11 +240,19 @@ ENGLISH_TOPICS = [
     ((r"zero-day", r"0-day"), "Vulnerabilidad de día cero"),
     ((r"ransomware",), "Ransomware"),
     ((r"data breach", r"\bbreach", r"\bleak"), "Filtración de datos"),
-    ((r"phishing",), "Campaña de phishing"),
+    ((r"adversary-in-the-middle", r"\baitm\b", r"token[- ]replay", r"session hijack"), "Robo de sesiones"),
+    # «phishing-resistant» (métodos de acceso resistentes al phishing) no es una campaña de phishing
+    ((r"phishing(?!-resistant)",), "Campaña de phishing"),
     ((r"supply chain", r"\bnpm\b", r"\bpypi\b"), "Ataque a la cadena de suministro"),
     ((r"malware", r"trojan", r"stealer", r"backdoor", r"botnet"), "Campaña de malware"),
+    ((r"passkey", r"\bmfa\b", r"multi-factor", r"sign-in method"), "Cambio en los métodos de acceso"),
     ((r"\bpatch", r"\bupdate", r"\bfix"), "Actualización de seguridad"),
 ]
+
+
+def english_topic(item: dict) -> str:
+    text = f"{item.get('titulo', '')} {item.get('resumen', '')}".lower()
+    return next((label for patterns, label in ENGLISH_TOPICS if any(re.search(p, text) for p in patterns)), "")
 
 
 def spanish_heading(item: dict) -> str:
@@ -246,8 +284,16 @@ def english_item_text(item: dict) -> str:
         facts.append("Se reporta explotación activa.")
     if "PoC PUBLICO" in labels or item.get("poc_github"):
         facts.append("Existe un exploit público.")
-    facts.append("Se debe validar si el producto está en el inventario, aplicar la corrección del fabricante y "
-                 "revisar los registros del servicio afectado.")
+    if cves:
+        facts.append("Se debe validar si el producto está en el inventario, aplicar la corrección del fabricante y "
+                     "revisar los registros del servicio afectado.")
+    else:
+        # Sin CVE no hay «corrección del fabricante» que aplicar (31-10-2026: se le pedía a una campaña de phishing)
+        topic = english_topic(item)
+        if topic:
+            facts.append(f"{item.get('fuente') or 'La fuente'} informa sobre: {topic[:1].lower() + topic[1:]}.")
+        facts.append("Se recomienda revisar si la actividad descrita afecta a los sistemas de la organización y "
+                     "aplicar las medidas que indica la fuente.")
     title = re.sub(r"\s+", " ", str(item.get("titulo") or "")).strip()
     if title:
         facts.append(f"Titular original (en inglés): «{title}».")
@@ -451,7 +497,32 @@ def canned_fits(canned: str, item: dict) -> bool:
     anchors = canned_anchors(canned)
     low = item_text.lower()
     hits = {a for a in anchors if a.lower() in low}
-    return bool(anchors) and len(hits) >= min(2, len(anchors))
+    return bool(anchors) and len(hits) >= min(2, len(anchors)) and claims_supported(canned, item)
+
+
+# Lo que afirma un texto o titular escrito a mano (izquierda) y lo que la noticia debe decir para respaldarlo (derecha).
+# 31-10-2026: «Microsoft urges Entra ID admins to migrate users to passkeys» salía como «Microsoft corrigió una
+# vulnerabilidad de severidad máxima en Entra ID…», y un fallo de registros insuficientes de VMware ESX, como
+# «múltiples vulnerabilidades… omisión de autenticación o ejecución de código»: bastaba con nombrar Entra ID o VMware.
+CANNED_CLAIMS = [
+    (("ejecución remota de código", "ejecución de código", "ejecutar código"),
+     ("code execution", "rce", "execute arbitrary", "execute code", "ejecución remota", "ejecución de código",
+      "ejecutar código")),
+    (("omisión de autenticación", "evadir controles de autenticación"),
+     ("authentication bypass", "auth bypass", "bypass authentication", "omisión de autenticación")),
+    (("vulnerabilidad", "falla", "corrigió", "corrige ", "parche"),
+     ("vulnerab", "flaw", "cve-", "patch", "fix", "bug", "falla", "parche", "exploit")),
+    (("nómina",), ("payroll", "nómina")),
+    (("financier",), ("financ", "invoice", "payment", "bank", "factura")),
+]
+
+
+def claims_supported(canned: str, item: dict) -> bool:
+    """La noticia respalda lo que afirma el texto escrito a mano (tipo de fallo, que es una vulnerabilidad…)."""
+    canned_low = canned.lower()
+    low = f"{item.get('titulo', '')} {item.get('resumen', '')} {' '.join(item.get('cves') or [])}".lower()
+    return all(any(e in low for e in evidence)
+               for claims, evidence in CANNED_CLAIMS if any(c in canned_low for c in claims))
 
 
 def editorial_text(item: dict) -> str:
@@ -986,7 +1057,8 @@ def generic_editorial(item: dict) -> str:
         summary = "El riesgo debe evaluarse según presencia del producto, exposición del servicio e impacto potencial sobre activos corporativos."
     if item.get("fuente_id") == "cisa_ics":
         summary += " En entornos OT/industriales, se debe identificar activos con el producto afectado y aplicar las mitigaciones del fabricante."
-    elif any(label in item.get("etiquetas", []) for label in ("EXPLOTADO ACTIVAMENTE", "EXPLOTACION REPORTADA")):
+    elif (any(label in item.get("etiquetas", []) for label in ("EXPLOTADO ACTIVAMENTE", "EXPLOTACION REPORTADA"))
+          and "registros del servicio afectado" not in summary):       # english_item_text ya lo pide
         summary += " Deben aplicarse las correcciones disponibles y revisarse registros del servicio afectado en busca de intentos de explotación."
     return summary
 
@@ -1151,7 +1223,7 @@ def title_text(item: dict) -> str:
         (("google workspace breaches",), "Riesgos de brechas en Google Workspace requieren revisión de controles"),
     ]
     for keys, replacement in replacements:
-        if all(key in text for key in keys):
+        if all(key in text for key in keys) and claims_supported(replacement, item):
             return replacement
     title = re.sub(r"\s+", " ", title)
     if len(title) > 160:
@@ -1168,14 +1240,57 @@ def inline_item(item: dict) -> str:
     )
 
 
-def list_section(title: str, items: list[dict], icon_html: str = "") -> str:
+def list_section(title: str, items: list[dict], icon_html: str = "", empty: str = "") -> str:
     if not items:
-        return ""
+        # Antes la sección desaparecía sin más; con `empty`, se explica (decisión del 31-10-2026)
+        return f"""
+    <div class="news-item">
+      <h2>{icon_html}{esc(title)}</h2>
+      <p><em>{esc(empty)}</em></p>
+    </div>
+    """ if empty else ""
     body = "\n".join(f"<li>{inline_item(item)}</li>" for item in items)
     return f"""
     <div class="news-item">
       <h2>{icon_html}{esc(title)}</h2>
       <ul>{body}</ul>
+    </div>
+    """
+
+
+def client_check_text(item: dict, techs: list[str]) -> str:
+    """Qué debe revisar el cliente, según la noticia traiga CVE (versión y parche) o no (registros)."""
+    names = " y ".join(techs[:2])
+    if item.get("cves"):
+        return f"Qué revisar: confirme si su {names} usa una versión afectada y aplique la actualización del fabricante."
+    return f"Qué revisar: busque en los registros de su {names} la actividad que describe la noticia."
+
+
+def client_section(dossier: dict) -> str:
+    """«Lo que afecta a la infraestructura de XTRIM»: las noticias que nombran sus tecnologías, con qué revisar.
+
+    Decisión del 31-10-2026: antes el boletín de un cliente era casi igual al GLOBAL (lo del cliente solo cambiaba el
+    orden). Las noticias de esta sección no se repiten en las demás (dossier.client_environment_items).
+    """
+    cliente = dossier.get("cliente") or {}
+    if not cliente.get("nombre"):
+        return ""
+    title = f"Lo que afecta a la infraestructura de {cliente['nombre']}"
+    items = (dossier.get("secciones") or {}).get("entorno_cliente") or []
+    if not items:
+        return list_section(title, [], "&#127970; ", "Esta semana no hubo noticias que nombren las tecnologías de su "
+                                                     "inventario. Las secciones siguientes recogen las amenazas "
+                                                     "generales.")
+    rows = []
+    for item in items:
+        techs = list(dict.fromkeys(m.get("nombre", "") for m in item.get("cliente_matches") or [] if m.get("nombre")))
+        rows.append(f"<li><strong>{esc(', '.join(techs[:2]))} · {esc(title_text(item))}:</strong> "
+                    f"{esc(editorial_text(item))}{cve_phrase(item)} <em>{esc(client_check_text(item, techs))}</em>"
+                    f"{read_more(item)}</li>")
+    return f"""
+    <div class="news-item">
+      <h2>&#127970; {esc(title)}</h2>
+      <ul>{''.join(rows)}</ul>
     </div>
     """
 
@@ -1591,6 +1706,13 @@ def cve_section(items: list[dict]) -> str:
 
 
 def reference_title(item: dict) -> str:
+    """Titular de la lista de referencias. Uno escrito a mano solo vale si la noticia respalda lo que afirma
+    (31-10-2026: el aviso de passkeys de Entra ID salía como «Microsoft Entra ID corrige falla crítica…»)."""
+    title = _reference_title(item)
+    return title if claims_supported(title, item) else title_text(item)
+
+
+def _reference_title(item: dict) -> str:
     cves = {str(cve).upper() for cve in item.get("cves", [])}
     source = str(item.get("fuente") or "")
     title = str(item.get("titulo") or "")
@@ -1798,10 +1920,11 @@ def render(dossier: dict) -> str:
       <p style="font-size: 10pt;"><em>{period_label(dossier)}</em></p>
       {client_label(dossier)}
       {highlight_section('Amenaza de la Semana', sec.get('amenaza_semana', []))}
-      {list_section(ecuador_title(sec.get('seguridad_ecuador', [])), sec.get('seguridad_ecuador', []), '<img src="https://upload.wikimedia.org/wikipedia/commons/e/e8/Flag_of_Ecuador.svg" alt="Bandera Ecuador" width="35" style="vertical-align: middle; margin-right: 10px;">')}
-      {list_section('Noticias Principales', sec.get('noticias_principales', []), '&#128276; ')}
+      {client_section(dossier)}
+      {list_section(ecuador_title(sec.get('seguridad_ecuador', [])), sec.get('seguridad_ecuador', []), '<img src="https://upload.wikimedia.org/wikipedia/commons/e/e8/Flag_of_Ecuador.svg" alt="Bandera Ecuador" width="35" style="vertical-align: middle; margin-right: 10px;">', 'Esta semana EcuCERT y CSIRT Telconet no publicaron avisos que cumplan los criterios del boletín.')}
+      {list_section('Noticias Principales', sec.get('noticias_principales', []), '&#128276; ', 'Esta semana no hubo otras noticias destacadas.')}
       {cve_section(sec.get('principales_cves', []))}
-      {list_section('Alrededor del Mundo Cibernético', sec.get('alrededor_mundo', []), '&#128240; ')}
+      {list_section('Alrededor del Mundo Cibernético', sec.get('alrededor_mundo', []), '&#128240; ', 'Esta semana no hubo otras campañas ni incidentes destacados.')}
       {references_section(sec.get('referencias', []))}
     </section>
     <div class="footer">

@@ -57,7 +57,8 @@ def validate(page: str, client: str = "") -> dict:
         # Un <p> sin título en negrita ni enlace es un texto de la sección (introducción, nota), no una noticia
         items = [m.group(2) for m in _ITEM.finditer(content) if _text(m.group(2))
                  and (m.group(1).lower() == "li" or re.search(r"<(?:strong|a)\b", m.group(2), re.I))]
-        if not items and key not in _NO_ITEMS_OK:
+        # Que nada nombre las tecnologías del cliente es una buena noticia, no un fallo del boletín
+        if not items and key not in _NO_ITEMS_OK and not key.startswith("lo que afecta"):
             add("sección vacía", section, "", "La sección no tiene ninguna noticia.")
         if key in _NO_ITEMS_OK:
             continue

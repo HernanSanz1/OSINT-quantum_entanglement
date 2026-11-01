@@ -188,3 +188,129 @@ def test_rendering_the_same_week_again_keeps_the_previous_bulletin(cti, tmp_path
     assert render.main() == 0 and render.main() == 0
     assert (tmp_path / "boletines" / "AltelThreatIntell_2026W44_XTRIM.html").exists()
     assert len(list((tmp_path / "boletines" / "anteriores").glob("AltelThreatIntell_2026W44_XTRIM_*.html"))) == 1
+
+
+# ── Decisiones del 31-10-2026: últimos 7 días, sección del cliente, filtro estricto solo para CVE ────────────
+
+def test_default_window_is_the_last_seven_days_including_today(cti):
+    import datetime as dt
+    _, dossier = cti
+    period, start, end = dossier.week_window(None)
+    today = dt.datetime.now(dossier.LOCAL_TZ).date()
+    assert start.astimezone(dossier.LOCAL_TZ).date() == today - dt.timedelta(days=6)
+    assert end.astimezone(dossier.LOCAL_TZ).date() == today + dt.timedelta(days=1)
+    assert period == f"{today.isocalendar().year}-W{today.isocalendar().week:02d}"
+    # Una semana pedida a mano sigue siendo de lunes a domingo
+    _, start, end = dossier.week_window("2026-W44")
+    assert start.astimezone(dossier.LOCAL_TZ).date() == dt.date(2026, 10, 26) and (end - start).days == 7
+
+
+def test_period_label_shows_the_exact_days(cti):
+    render, _ = cti
+    window = {"inicio": "2026-10-25T05:00:00+00:00", "fin": "2026-11-01T05:00:00+00:00"}
+    assert render.period_label({"semana": "2026-W44", "ventana": window}) == "Semana del 25 al 31 de Octubre, 2026"
+    window = {"inicio": "2026-10-29T05:00:00+00:00", "fin": "2026-11-05T05:00:00+00:00"}
+    assert render.range_label(window) == "29 de Octubre al 4 de Noviembre, 2026"
+    window = {"inicio": "2026-12-29T05:00:00+00:00", "fin": "2027-01-05T05:00:00+00:00"}
+    assert render.range_label(window) == "29 de Diciembre, 2026 al 4 de Enero, 2027"
+    assert render.range_label({}) == ""
+
+
+def test_threat_news_without_cve_go_to_news_sections_but_not_noise(cti):
+    _, dossier = cti
+    teams = {"fuente_id": "thehackernews", "titulo": "Attackers Use Microsoft Teams IT Support Scams to Deploy Malware",
+             "etiquetas": ["FRAUDE / PHISHING", "MALWARE"], "cves": []}
+    assert dossier.news_without_cve(teams)
+    assert not dossier.news_without_cve({**teams, "titulo": "Webinar: How to Build AI Threat Readiness"})
+    assert not dossier.news_without_cve({**teams, "titulo": "⚡ Weekly Recap: This2Shell, That2Shell"})
+    assert not dossier.news_without_cve({**teams, "cves": ["CVE-2026-1"]})          # las CVE: filtro estricto
+    assert not dossier.news_without_cve({**teams, "fuente_id": "cisa_kev"})
+    assert not dossier.news_without_cve({**teams, "etiquetas": ["CORROBORACION CRUZADA"]})
+    # Los avisos de EcuCERT y CSIRT Telconet sin número de CVE (Firefox, HPE, nginx) también
+    nginx = {"fuente_id": "csirt_telconet", "region": "ec", "titulo": "Ubuntu publica parches para nginx",
+             "etiquetas": [], "cves": []}
+    assert dossier.news_without_cve(nginx)
+
+
+@pytest.mark.parametrize("a,b,same", [
+    ("Hackers exploit Cisco SD-WAN flaw to deploy custom KeyDrift malware",
+     "Hackers Exploited Cisco SD-WAN Flaw to Plant Malware Built to Steal Encryption Keys", True),
+    ("Volt Typhoon Used Covert Silent Train Network in Four Zero-Day Exploitation Campaigns",
+     "Volt Typhoon hides zero-day attacks using 'Silent Train' framework", True),
+    ("Attackers Exploit PHP2Shell Flaws in Internet-Exposed Palo Alto Networks Management Interfaces",
+     "PHP2Shell Attack Roots 25 Servers, Breaches U.S. Government-Affiliated Network", True),
+    ("Cisco Patches Actively Exploited ASA and FTD VPN Flaw", "Hackers exploit Cisco SD-WAN flaw", False),
+    ("Hackers exploit Fortinet flaw", "Hackers exploit Ivanti flaw", False),
+])
+def test_same_story_from_different_sources(cti, a, b, same):
+    _, dossier = cti
+    assert dossier.same_story({"titulo": a}, {"titulo": b}) is same
+
+
+def test_client_section_takes_exact_products_only(cti):
+    _, dossier = cti
+
+    titles = {1: "VMware vCenter patch", 2: "Microsoft 365 token theft", 3: "Linux kernel TCP bug"}
+
+    def item(n, level, cves=()):
+        return {"id": f"i{n}", "titulo": titles[n], "score": 10 - n, "cves": list(cves),
+                "fecha": "2026-10-28", "cliente_matches": [{"nombre": "X", "nivel_coincidencia": level}]}
+    vcenter, m365 = item(1, "producto_exacto", ["CVE-2026-1"]), item(2, "servicio_exacto")
+    linux = item(3, "sistema_operativo")
+    used = set()
+    chosen = dossier.client_environment_items([linux, m365, vcenter], used, [])
+    assert [c["id"] for c in chosen] == ["i1", "i2"]          # «cualquier noticia de Linux» no basta
+    assert used == {"i1", "i2"}                                # y no se repiten en las demás secciones
+
+
+def test_canned_text_needs_the_news_to_back_its_claims(cti):
+    render, _ = cti
+    passkeys = {"fuente_id": "bleepingcomputer", "fuente": "BleepingComputer", "cves": [], "etiquetas": [],
+                "titulo": "Microsoft urges Entra ID admins to migrate users to passkeys",
+                "resumen": "Microsoft again asked Entra ID administrators to migrate users to phishing-resistant "
+                           "methods before it retires SMS and voice authentication."}
+    text, title = render.editorial_text(passkeys), render.title_text(passkeys)
+    assert "vulnerabilidad" not in text and "corrección del fabricante" not in text
+    assert "corrige falla" not in title and title.startswith("Cambio en los métodos de acceso")
+    assert "corrige falla" not in render.reference_title({**passkeys, "resumen": ""})
+    esx = {"fuente_id": "cisa_kev", "fuente": "CISA KEV", "cves": ["CVE-2026-41709"], "etiquetas": [],
+           "titulo": "CVE-2026-41709 Broadcom VMware ESX",
+           "resumen": "Broadcom VMWare ESX contains an insufficient logging vulnerability."}
+    assert "omisión de autenticación" not in render.editorial_text(esx)
+    # Un texto escrito a mano que sí corresponde se sigue usando
+    vmsa = {**esx, "titulo": "Broadcom VMware VMSA advisory", "resumen": "Broadcom VMware authentication bypass and "
+            "remote code execution vulnerabilities in vCenter and ESXi."}
+    assert "omisión de autenticación" in render.editorial_text(vmsa)
+
+
+def test_client_section_in_the_bulletin(cti):
+    render, _ = cti
+    item = {"fuente_id": "csirt_telconet", "fuente": "CSIRT Telconet", "titulo": "VMware corrige falla en vCenter",
+            "resumen": "Broadcom publicó parches para vCenter.", "cves": ["CVE-2026-1"], "url": "https://x.ec/a",
+            "cliente_matches": [{"nombre": "VMware vCenter", "nivel_coincidencia": "producto_exacto"}]}
+    dossier = {"cliente": {"nombre": "XTRIM"}, "secciones": {"entorno_cliente": [item]}}
+    html_text = render.client_section(dossier)
+    assert "Lo que afecta a la infraestructura de XTRIM" in html_text
+    assert "Qué revisar: confirme si su VMware vCenter usa una versión afectada" in html_text
+    empty = render.client_section({"cliente": {"nombre": "XTRIM"}, "secciones": {"entorno_cliente": []}})
+    assert "no hubo noticias que nombren las tecnologías" in empty
+    assert render.client_section({"secciones": {}}) == ""                       # el GLOBAL no la tiene
+    validar = importlib.import_module("validar")
+    page = ('<html><body><h2>Amenaza</h2><p><strong>Algo:</strong> Texto. <a class="info-button" href="https://x">Leer</a></p>'
+            f"{empty}</body></html>")
+    assert validar.validate(page)["problemas"] == []                           # no es «sección vacía»
+
+
+def test_empty_news_section_explains_itself(cti):
+    render, _ = cti
+    assert render.list_section("Noticias", []) == ""
+    assert "Esta semana no hubo" in render.list_section("Noticias", [], "", "Esta semana no hubo otras noticias.")
+
+
+def test_english_text_without_cve_does_not_ask_for_a_patch(cti):
+    render, _ = cti
+    item = {"fuente": "The Hacker News", "cves": [], "etiquetas": [],
+            "titulo": "Microsoft 365 Token-Replay Attacks Compromise 97 Accounts",
+            "resumen": "A campaign leveraging an adversary-in-the-middle relay to capture sign-in sessions."}
+    text = render.english_item_text(item)
+    assert "corrección del fabricante" not in text and "robo de sesiones" in text

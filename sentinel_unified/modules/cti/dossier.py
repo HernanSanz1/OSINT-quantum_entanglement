@@ -339,12 +339,14 @@ def week_window(week: str | None) -> tuple[str, dt.datetime, dt.datetime]:
         end = (dt.datetime.combine(start_date, dt.time.min, tzinfo=LOCAL_TZ) + dt.timedelta(days=7)).astimezone(dt.timezone.utc)
         return f"{start_date.isocalendar().year}-W{start_date.isocalendar().week:02d}", start, end
     else:
+        # Últimos 7 días hasta hoy incluido (decisión del 31-10-2026). Antes, la semana anterior cerrada de lunes a
+        # domingo: un boletín hecho un jueves traía noticias de hasta 10 días y nada de la semana en curso. Lo ya
+        # publicado en boletines anteriores no se repite (previous_report_keys).
         today_local = dt.datetime.now(LOCAL_TZ).date()
-        report_week_start = today_local - dt.timedelta(days=today_local.weekday())
-        start_date = report_week_start - dt.timedelta(days=7)
-        start_local = dt.datetime.combine(start_date, dt.time.min, tzinfo=LOCAL_TZ)
-        end_local = dt.datetime.combine(report_week_start, dt.time.min, tzinfo=LOCAL_TZ)
-        return f"{report_week_start.isocalendar().year}-W{report_week_start.isocalendar().week:02d}", start_local.astimezone(dt.timezone.utc), end_local.astimezone(dt.timezone.utc)
+        start_local = dt.datetime.combine(today_local - dt.timedelta(days=6), dt.time.min, tzinfo=LOCAL_TZ)
+        end_local = dt.datetime.combine(today_local + dt.timedelta(days=1), dt.time.min, tzinfo=LOCAL_TZ)
+        iso = today_local.isocalendar()
+        return f"{iso.year}-W{iso.week:02d}", start_local.astimezone(dt.timezone.utc), end_local.astimezone(dt.timezone.utc)
 
 
 def day_window(day: str) -> tuple[str, dt.datetime, dt.datetime]:
@@ -989,6 +991,61 @@ def public_news_source(item: dict) -> bool:
     return narrative_source(item) and item.get("fuente_id") != "ransomware_ec"
 
 
+THREAT_NEWS_LABELS = ("ACTOR ATRIBUIDO", "CAMPANA ACTIVA", "FRAUDE / PHISHING", "MALWARE", "FUGA DE DATOS",
+                      "CADENA DE SUMINISTRO", "RANSOMWARE")
+# Titulares que no son una amenaza concreta: publicidad, resúmenes, opinión y anuncios de producto
+NOT_NEWS_TERMS = ("webinar", "weekly recap", "recap:", "how to ", "the rise of", "podcast", "sponsored", "launches ",
+                  "to allow ", "managing ", "how secure are", "scams to watch")
+
+
+def news_without_cve(item: dict) -> bool:
+    """Noticia sin CVE que puede ir en las secciones de noticias (Ecuador, Noticias principales, Alrededor del mundo).
+
+    Decisión del 31-10-2026: el filtro estricto (critical_environment_vulnerability) es para las vulnerabilidades.
+    Aplicado a todo, dejaba fuera campañas, ransomware, phishing y fugas de datos sin CVE, y los avisos de EcuCERT y
+    CSIRT Telconet que no repiten el número de CVE: «Alrededor del mundo» salía con 0 o 1 noticia de 4.
+    """
+    if item.get("cves") or not item.get("reportable", True) or not narrative_source(item):
+        return False
+    title = str(item.get("titulo", "")).lower()
+    if any(term in title for term in NOT_NEWS_TERMS):
+        return False
+    if local_ecuador_source(item):
+        return True
+    return any(label in item.get("etiquetas", []) for label in THREAT_NEWS_LABELS)
+
+
+# Palabras de cualquier titular de seguridad: no sirven para saber si dos titulares cuentan la misma historia
+_GENERIC_STEMS = {"hacke", "attac", "explo", "flaw", "flaws", "vulne", "secur", "updat", "patch", "criti", "malwa",
+                  "using", "abuse", "users", "actor", "campa", "threa", "zero-", "new", "says", "after", "their",
+                  "with", "from", "that", "this", "into", "over", "more", "than", "warns", "falla", "segur", "actua",
+                  "corri", "ataqu", "parch"}
+
+
+def _story_words(item: dict) -> set[str]:
+    words = re.findall(r"[a-z0-9][a-z0-9-]{3,}", str(item.get("titulo", "")).lower())
+    return {w[:5] for w in words} - _GENERIC_STEMS
+
+
+def _named_tokens(item: dict) -> set[str]:
+    words = re.findall(r"[a-z0-9][a-z0-9-]{4,}", str(item.get("titulo", "")).lower())
+    return {w for w in words if re.search(r"[a-z]", w) and re.search(r"\d", w) and not w.startswith("cve-")}
+
+
+def same_story(a: dict, b: dict) -> bool:
+    """Dos titulares de la misma historia contada por fuentes distintas (31-10-2026: «Cisco SD-WAN» salía en
+    Noticias principales y otra vez en Alrededor del mundo con otro titular; Volt Typhoon, tres veces)."""
+    # Un nombre propio de campaña o malware con letras y números (PHP2Shell, S7-1500) basta: «Attackers Exploit
+    # PHP2Shell Flaws…» y «PHP2Shell Attack Roots 25 Servers…» salían juntas en Noticias principales
+    if _named_tokens(a) & _named_tokens(b):
+        return True
+    wa, wb = _story_words(a), _story_words(b)
+    if not wa or not wb:
+        return False
+    common = len(wa & wb)
+    return common >= 2 and common / min(len(wa), len(wb)) >= 0.4
+
+
 def local_ecuador_source(item: dict) -> bool:
     text = text_of(item)
     if item.get("fuente_id") == "ransomware_ec" and not ransomware_has_actor(item):
@@ -1132,7 +1189,7 @@ def prune_topic_duplicates(items: list[dict], prior: list[dict], used: set[str])
     seen = {topic_key(item) for item in prior}
     for item in items:
         topic = topic_key(item)
-        if topic and topic in seen:
+        if (topic and topic in seen) or any(same_story(item, other) for other in prior + out):
             used.discard(item["id"])
             continue
         out.append(item)
@@ -1160,6 +1217,8 @@ def choose_without_cve_overlap(
         topic = topic_key(item)
         if topic and topic in seen_topics:
             continue
+        if any(same_story(item, other) for other in prior + chosen):
+            continue
         chosen.append(item)
         used.add(item["id"])
         seen |= cves
@@ -1168,6 +1227,22 @@ def choose_without_cve_overlap(
         if len(chosen) >= count:
             break
     return chosen
+
+
+# Coincidencias que nombran el producto o servicio del cliente. «sistema_operativo» (cualquier noticia de Linux o
+# Windows) y «sector» son demasiado amplias para decir «esto le afecta»
+STRONG_CLIENT_MATCH = {"producto_exacto", "servicio_exacto", "componente_confirmado"}
+CLIENT_SECTION_SIZE = 5
+
+
+def client_environment_items(items: list[dict], used: set[str], prior: list[dict]) -> list[dict]:
+    """Noticias de la ventana que nombran una tecnología confirmada del inventario del cliente (las de CVE primero)."""
+    candidates = [
+        x for x in items
+        if any(m.get("nivel_coincidencia") in STRONG_CLIENT_MATCH and m.get("confirmado", True)
+               for m in x.get("cliente_matches") or [])
+    ]
+    return choose_without_cve_overlap(candidates, CLIENT_SECTION_SIZE, used, prior)
 
 
 def topic_key(item: dict) -> str:
@@ -1235,7 +1310,9 @@ def build(week: str | None = None, day: str | None = None, until: str | None = N
         if start <= parse_iso(x.get("fecha", "")) < end
         and item_key(x) not in previous_keys
     ]
-    allow_generation_day_critical = period_type == "semanal" and not week
+    # Excepción para alertas críticas publicadas el día de generación: solo hace falta si la ventana no incluye hoy
+    # (con la ventana de los últimos 7 días, hoy ya entra entero)
+    allow_generation_day_critical = period_type == "semanal" and not week and end <= dt.datetime.now(dt.timezone.utc)
     generation_day_critical = [
         mark_generation_day_critical(x) for x in scored
         if allow_generation_day_critical
@@ -1268,13 +1345,18 @@ def build(week: str | None = None, day: str | None = None, until: str | None = N
         }
     used: set[str] = set()
     previous_cves = previously_published_cves(period_id, start, end)
-    weekly_public = []
+    # weekly_public: filtro estricto, para la amenaza de la semana y las CVE. weekly_news: además, noticias de amenazas
+    # sin CVE y avisos locales (news_without_cve), para las secciones de noticias.
+    weekly_public, weekly_news = [], []
     for item in weekly:
-        if not critical_environment_vulnerability(item):
+        strict = critical_environment_vulnerability(item)
+        if not strict and not news_without_cve(item):
             continue
         filtered = remove_previously_reported_cves(item, previous_cves)
         if filtered:
-            weekly_public.append(filtered)
+            weekly_news.append(filtered)
+            if strict:
+                weekly_public.append(filtered)
 
     threat_candidates = [
         x for x in weekly_public
@@ -1296,18 +1378,23 @@ def build(week: str | None = None, day: str | None = None, until: str | None = N
         ranked = sorted(threat_candidates, key=threat_rank, reverse=True)
         amenaza = next(([x] for x in ranked[:3] if spanish_item(x)), ranked[:1])
         used.update(x["id"] for x in amenaza)
-    ecuador = force_local_ecuador_item(weekly_public, used, amenaza)
-    ecuador += choose_preferred(weekly_public, [
+    # Sección propia del cliente (decisión del 31-10-2026): lo que nombra un producto o servicio de su inventario va
+    # aquí y no se repite en las demás secciones, que se completan con noticias generales. Antes el boletín de XTRIM
+    # era casi igual al GLOBAL: lo del cliente solo cambiaba el orden.
+    entorno = client_environment_items(weekly_news, used, amenaza) if cliente_profile else []
+    lead = amenaza + entorno
+    ecuador = force_local_ecuador_item(weekly_news, used, lead)
+    ecuador += choose_preferred(weekly_news, [
         ("qilin",),
         ("joomla", "defacement"),
         ("wallstreet",),
     ], 3 - len(ecuador), used, local_ecuador_source)
-    ecuador = prune_cve_duplicates(ecuador, amenaza, used)
+    ecuador = prune_cve_duplicates(ecuador, lead, used)
     if len(ecuador) < 3:
-        ecuador += choose_without_cve_overlap(weekly_public, 3 - len(ecuador), used, amenaza + ecuador, local_ecuador_source)
+        ecuador += choose_without_cve_overlap(weekly_news, 3 - len(ecuador), used, lead + ecuador, local_ecuador_source)
     if not ecuador:
-        ecuador = force_local_ecuador_item(exact_window, used, amenaza)
-    noticias = choose_preferred(weekly_public, client_specs + [
+        ecuador = force_local_ecuador_item(exact_window, used, lead)
+    noticias = choose_preferred(weekly_news, client_specs + [
         ("secure firewall management center", "zero-day"),
         ("velocloud",),
         ("cisco secure firewall management center",),
@@ -1315,25 +1402,25 @@ def build(week: str | None = None, day: str | None = None, until: str | None = N
         ("macos", "malvertising"),
         ("secure firewall management center",),
     ], 5, used, public_news_source)
-    noticias = prune_cve_duplicates(noticias, amenaza + ecuador, used)
-    noticias = prune_topic_duplicates(noticias, amenaza + ecuador, used)
+    noticias = prune_cve_duplicates(noticias, lead + ecuador, used)
+    noticias = prune_topic_duplicates(noticias, lead + ecuador, used)
     if len(noticias) < 5:
-        noticias += choose_without_cve_overlap(weekly_public, 5 - len(noticias), used, amenaza + ecuador + noticias, public_news_source)
-    mundo = choose_preferred(weekly_public, client_specs + [
+        noticias += choose_without_cve_overlap(weekly_news, 5 - len(noticias), used, lead + ecuador + noticias, public_news_source)
+    mundo = choose_preferred(weekly_news, client_specs + [
         ("hotel wi-fi",),
         ("sonicwall", "inc ransomware"),
         ("18 malicious npm",),
         ("advanced responsive video embedder",),
-    ], 4, used, lambda x: public_news_source(x) and x.get("region") != "ec" and not (used_has_topic(amenaza + noticias, "quickfox") and "quickfox" in text_of(x)) and any(t in x.get("etiquetas", []) for t in ("ACTOR ATRIBUIDO", "CAMPANA ACTIVA", "FRAUDE / PHISHING", "MALWARE", "FUGA DE DATOS", "CADENA DE SUMINISTRO", "RANSOMWARE")))
-    mundo = prune_cve_duplicates(mundo, amenaza + ecuador + noticias, used)
-    mundo = prune_topic_duplicates(mundo, amenaza + ecuador + noticias, used)
+    ], 4, used, lambda x: public_news_source(x) and x.get("region") != "ec" and not (used_has_topic(lead + noticias, "quickfox") and "quickfox" in text_of(x)) and any(t in x.get("etiquetas", []) for t in THREAT_NEWS_LABELS))
+    mundo = prune_cve_duplicates(mundo, lead + ecuador + noticias, used)
+    mundo = prune_topic_duplicates(mundo, lead + ecuador + noticias, used)
     if len(mundo) < 4:
-        mundo += choose_without_cve_overlap(weekly_public, 4 - len(mundo), used, amenaza + ecuador + noticias + mundo, lambda x: public_news_source(x) and not (used_has_topic(amenaza + noticias + mundo, "quickfox") and "quickfox" in text_of(x)))
-        mundo = prune_topic_duplicates(mundo, amenaza + ecuador + noticias, used)
+        mundo += choose_without_cve_overlap(weekly_news, 4 - len(mundo), used, lead + ecuador + noticias + mundo, lambda x: public_news_source(x) and not (used_has_topic(lead + noticias + mundo, "quickfox") and "quickfox" in text_of(x)))
+        mundo = prune_topic_duplicates(mundo, lead + ecuador + noticias, used)
 
     cve_items = [x for x in weekly_public if x.get("cves") and x.get("reportable", True)]
     principales_cves = build_cve_priorities(cve_items, PUBLIC_CVE_COUNT)
-    selected_public = amenaza + ecuador + noticias + principales_cves[:PUBLIC_CVE_COUNT] + mundo
+    selected_public = amenaza + entorno + ecuador + noticias + principales_cves[:PUBLIC_CVE_COUNT] + mundo
     exposicion_cve = build_exposure_matrix(cliente_profile, selected_public)
 
     brechas = []
@@ -1356,7 +1443,9 @@ def build(week: str | None = None, day: str | None = None, until: str | None = N
             "zona_horaria": "America/Guayaquil",
             "inicio_inclusivo": start.astimezone(LOCAL_TZ).isoformat(),
             "fin_exclusivo": end.astimezone(LOCAL_TZ).isoformat(),
-            "descripcion": "siete dias calendario inmediatamente anteriores completos a la fecha de generacion",
+            "descripcion": ("semana ISO indicada (lunes a domingo)" if week else
+                            "ultimos siete dias calendario hasta el dia de generacion incluido") if period_type == "semanal"
+                           else "periodo indicado",
             "excepcion_dia_generacion": "solo alertas criticas/zero-day/explotacion activa publicadas el dia de generacion y validadas contra fuente original",
         },
         "criterio_editorial": {
@@ -1386,11 +1475,12 @@ def build(week: str | None = None, day: str | None = None, until: str | None = N
         },
         "secciones": {
             "amenaza_semana": amenaza,
+            "entorno_cliente": entorno,
             "seguridad_ecuador": ecuador,
             "noticias_principales": noticias,
             "principales_cves": principales_cves[:PUBLIC_CVE_COUNT],
             "alrededor_mundo": mundo,
-            "referencias": public_reference_refs(amenaza + ecuador + noticias + principales_cves[:PUBLIC_CVE_COUNT] + mundo),
+            "referencias": public_reference_refs(amenaza + entorno + ecuador + noticias + principales_cves[:PUBLIC_CVE_COUNT] + mundo),
         },
         "brechas": brechas,
     }

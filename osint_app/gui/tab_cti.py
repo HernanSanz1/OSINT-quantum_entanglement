@@ -123,7 +123,8 @@ class HarvestThread(QThread):
 
 
 # Secciones del boletín, en palabras (antes "items store: 7800 · items ventana: 110 · cves previas excluidas: 0")
-SECTION_NAMES = {"amenaza_semana": "amenaza de la semana", "seguridad_ecuador": "de Ecuador",
+SECTION_NAMES = {"amenaza_semana": "amenaza de la semana", "entorno_cliente": "de la infraestructura del cliente",
+                 "seguridad_ecuador": "de Ecuador",
                  "noticias_principales": "noticias principales", "principales_cves": "vulnerabilidades (CVE)",
                  "alrededor_mundo": "del mundo", "referencias": "fuentes citadas"}
 
@@ -138,7 +139,8 @@ def dossier_summary_lines(data: dict) -> list:
                      f"son de este periodo y {totals.get('explotados', 0)} hablan de vulnerabilidades explotadas.")
     if sections:
         lines.append("   Contenido: " + " · ".join(f"{v} {SECTION_NAMES.get(k, k.replace('_', ' '))}"
-                                                  for k, v in sections.items()))
+                                                  for k, v in sections.items()
+                                                  if v or k != "entorno_cliente"))    # el GLOBAL no tiene cliente
     missing = []
     for note in data.get("brechas") or []:          # "Seguridad Ecuador: 1/3 candidatos."
         name, _, counts = str(note).partition(":")
