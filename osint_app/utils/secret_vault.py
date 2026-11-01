@@ -36,6 +36,8 @@ _ENV_MAP: Dict[str, str] = {
     # Búsqueda web estable (sin captcha): API oficial de Brave (plan gratuito) o un SearXNG propio (su URL)
     "BraveSearch": "OSINT_BRAVE_KEY",
     "SearXNG":     "OSINT_SEARXNG_URL",
+    # Clave gratuita de abuse.ch (auth.abuse.ch): URLhaus en IP Reputation y Link Shield
+    "abuse.ch":    "OSINT_ABUSECH_KEY",
     # Usuario de Instagram con sesión creada por `instaloader --login USUARIO` (no es una contraseña)
     "Instagram":   "OSINT_INSTAGRAM_USER",
 }

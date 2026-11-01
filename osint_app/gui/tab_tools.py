@@ -127,6 +127,21 @@ PIP_TOOLS = {"Sherlock": "sherlock_project", "GHunt": "ghunt", "Instaloader": "i
 CLONED_TOOLS = {"TheHarvester": ("theHarvester", "theHarvester.py"), "SpiderFoot": ("spiderfoot", "sf.py"),
                 "Recon-ng": ("recon-ng", "recon-ng")}
 BINARY_TOOLS = {"Subfinder": "subfinder", "OWASP AMASS": "amass"}
+# Claves que no hacen falta pero añaden una fuente (31-10-2026: URLhaus exige ahora la clave gratuita de abuse.ch)
+OPTIONAL_KEYS = {"IP Reputation": ("abuse.ch", "con la clave gratuita de abuse.ch (https://auth.abuse.ch/) también "
+                                                "consulta URLhaus: si la IP reparte malware ahora mismo"),
+                 "Link Shield": ("abuse.ch", "con la clave gratuita de abuse.ch (https://auth.abuse.ch/) también "
+                                              "consulta URLhaus: si el enlace reparte malware ahora mismo")}
+
+
+def key_for_tool(t_name: str, status: str):
+    """Clave que pide «🔑 Guardar clave»: la de la herramienta si la necesita, o una opcional aún sin guardar."""
+    from ..utils.key_cli import resolve_name
+    from ..utils.secret_vault import vault
+    if status == "needs_key":
+        return resolve_name(t_name)
+    optional = OPTIONAL_KEYS.get(t_name, ("", ""))[0]
+    return optional if optional and not vault.get(optional) else None
 
 
 def shell_command(tool_name: str) -> str:
@@ -504,6 +519,7 @@ class ToolsTab(QWidget):
     def _on_select(self):
         items = self.list_tools.selectedItems()
         self.btn_key.hide()
+        self._key_name = None          # la clave del botón es la de la herramienta elegida en «Verificar Estado»
         if not items:   # los botones siguen activos: al pulsarlos avisan de que falta elegir herramienta
             return
 
@@ -561,8 +577,10 @@ class ToolsTab(QWidget):
         inst_cmd = st.fix
         color    = st.color
 
-        from ..utils.key_cli import resolve_name
-        self.btn_key.setVisible(status == "needs_key" and resolve_name(t_name) is not None)
+        self._key_name = key_for_tool(t_name, status)
+        self.btn_key.setVisible(self._key_name is not None)
+        self.btn_key.setText("🔑  Guardar clave" if status == "needs_key" or not self._key_name
+                             else f"🔑  Guardar clave de {self._key_name} (opcional)")
 
         # Update status banner
         self.lbl_status_icon.setText(icon)
@@ -586,6 +604,9 @@ class ToolsTab(QWidget):
         self.log_area.appendPlainText(f"Mensaje: {message}")
         if inst_cmd:
             self.log_area.appendPlainText(f"\nCOMO INSTALAR:\n{inst_cmd}")
+        if self._key_name and status != "needs_key":
+            self.log_area.appendPlainText(f"\nOpcional: {OPTIONAL_KEYS[t_name][1]}. Pulsa «🔑 Guardar clave de "
+                                          f"{self._key_name}».")
         if status == "ready":
             if not self.app.active_case_id:
                 self.log_area.appendPlainText(
@@ -603,8 +624,8 @@ class ToolsTab(QWidget):
         from ..utils.key_cli import resolve_name
         from ..utils.secret_vault import vault
         items = self.list_tools.selectedItems()
-        canonical = resolve_name(items[0].data(Qt.UserRole)) if items else None
-        if not canonical:
+        canonical = getattr(self, "_key_name", None) or (resolve_name(items[0].data(Qt.UserRole)) if items else None)
+        if not items or not canonical:
             return
         modal = SentinelModal(self.window(), f"🔑  Clave de {canonical}", 460, 220)
         lay = QVBoxLayout(modal.content)

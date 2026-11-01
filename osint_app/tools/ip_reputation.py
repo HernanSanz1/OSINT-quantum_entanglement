@@ -38,14 +38,17 @@ LISTS = {
     "tor": "https://check.torproject.org/torbulkexitlist",
     "drop": "https://www.spamhaus.org/drop/drop_v4.json",
     "firehol": "https://iplists.firehol.org/files/firehol_level1.netset",
-    # URLs que distribuyen malware AHORA (últimos 30 días). Sin ella, una IP que repartía malware salía "riesgo 0"
-    "urlhaus": "https://urlhaus.abuse.ch/downloads/text_recent/",
     # URLs de phishing activas (feed público gratuito de OpenPhish, ~300 URLs, se renueva cada pocas horas)
     "openphish": "https://openphish.com/feed.txt",
 }
-# Listas que ya no se pueden descargar sin clave: no se piden (cada intento era un error 410) y el informe lo dice.
-# Comprobado el 31-10-2026: urlhaus.abuse.ch/downloads/* responde "410 Gone" y su API, "Unauthorized" sin Auth-Key.
-KEY_REQUIRED = {"urlhaus": "URLhaus (abuse.ch exige ahora una clave gratuita)"}
+# URLhaus (abuse.ch): URLs que distribuyen malware. Sin ella, una IP que repartía malware salía "riesgo 0".
+# Desde 2026 exige una clave gratuita (comprobado el 31-10-2026: la lista text_recent responde "410 Gone" y la API,
+# "Unauthorized" sin Auth-Key). Se consulta por servidor (IP o dominio) con la clave guardada como "abuse.ch".
+URLHAUS_HOST = "https://urlhaus-api.abuse.ch/v1/host/"
+URLHAUS_KEY = "abuse.ch"
+URLHAUS_NO_KEY = ("URLhaus (falta la clave gratuita de abuse.ch: Herramientas → IP Reputation → «🔑 Guardar clave», "
+                  "o --set-key abuse.ch)")
+HOST_TTL = 3600
 
 _lists_lock = threading.Lock()
 _lists: Dict[str, Tuple[float, object]] = {}      # nombre → (momento de descarga, contenido procesado)
@@ -53,8 +56,6 @@ _lists: Dict[str, Tuple[float, object]] = {}      # nombre → (momento de desca
 
 def _download_list(name: str):
     """Lista ya procesada: set de IPs (tor) o lista de redes (drop, firehol). None si no se pudo descargar."""
-    if name in KEY_REQUIRED:
-        return None
     with _lists_lock:
         cached = _lists.get(name)
         if cached and time.time() - cached[0] < LIST_TTL:
@@ -67,7 +68,7 @@ def _download_list(name: str):
         return None
     if name == "tor":
         parsed = {line.strip() for line in resp.text.splitlines() if line.strip() and not line.startswith("#")}
-    elif name in ("urlhaus", "openphish"):
+    elif name == "openphish":
         from urllib.parse import urlsplit
         parsed = {}
         for line in resp.text.split():
@@ -103,6 +104,47 @@ def _download_list(name: str):
     return parsed
 
 
+_hosts: Dict[str, Tuple[float, object]] = {}     # servidor → (momento de la consulta, respuesta de URLhaus)
+
+
+def urlhaus_host(host: str):
+    """URLs de malware que URLhaus conoce en una IP o dominio, con la clave gratuita de abuse.ch.
+
+    Devuelve None si no hay clave, "clave" si abuse.ch la rechaza, "error" si no respondió, o la lista de URLs
+    (cada una con url, url_status «online»/«offline», threat…; vacía si el servidor no aparece).
+    """
+    from ..utils.secret_vault import vault
+    key = vault.get(URLHAUS_KEY)
+    host = (host or "").strip().lower()
+    if not key or not host:
+        return None
+    with _lists_lock:
+        cached = _hosts.get(host)
+        if cached and time.time() - cached[0] < HOST_TTL:
+            return cached[1]
+    try:
+        resp = requests.post(URLHAUS_HOST, data={"host": host}, timeout=TIMEOUT,
+                             headers={"Auth-Key": key, "User-Agent": USER_AGENT})
+        if resp.status_code in (401, 403):
+            return "clave"
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"IP Reputation: URLhaus no respondió ({type(e).__name__})")
+        return "error"
+    status = data.get("query_status") or data.get("query_staus")     # la documentación lo escribe de las dos formas
+    if status == "no_results":
+        urls = []
+    elif status == "ok":
+        urls = [u for u in data.get("urls") or [] if isinstance(u, dict) and u.get("url")]
+    else:
+        logger.warning(f"IP Reputation: URLhaus respondió {status!r} para {host}")
+        return "error"
+    with _lists_lock:
+        _hosts[host] = (time.time(), urls)
+    return urls
+
+
 def _norm_url(url: str) -> str:
     return (url or "").strip().rstrip("/").lower()
 
@@ -120,20 +162,29 @@ def feed_hits(urls: List[str]) -> List[Tuple[str, str]]:
     """[(severidad, texto)] si alguna URL (o su servidor) está en OpenPhish o URLhaus. Lo usa Link Shield.
 
     URL exacta en la lista → "alta". Solo el servidor → "media": servicios compartidos (docs.google.com,
-    blogspot) también alojan páginas maliciosas sin que todo el servidor lo sea.
+    blogspot) también alojan páginas maliciosas sin que todo el servidor lo sea. URLhaus se consulta por servidor y
+    solo si hay clave de abuse.ch; cuentan sus URLs aún activas («online»).
     """
     from urllib.parse import urlsplit
+    from ..utils.secret_vault import vault
     found: List[Tuple[str, str]] = []
+    openphish = _download_list("openphish")
+
+    def listed_on(feed: str, host: str) -> List[str]:
+        if feed == "openphish":
+            return openphish.get(host) or []
+        hits = urlhaus_host(host)
+        return [u["url"] for u in hits if u.get("url_status") == "online"] if isinstance(hits, list) else []
+
     for feed, label in (("openphish", "phishing activo (OpenPhish)"), ("urlhaus", "malware activo (URLhaus, abuse.ch)")):
-        data = _download_list(feed)
-        if not data:
+        if (feed == "openphish" and not openphish) or (feed == "urlhaus" and not vault.get(URLHAUS_KEY)):
             continue
         for url in urls:
             try:
                 host = (urlsplit(url if "://" in url else "http://" + url).hostname or "").lower()
             except ValueError:
                 continue
-            listed = data.get(host) or []
+            listed = listed_on(feed, host)
             if not listed:
                 continue
             target = _norm_url(url if "://" in url else "http://" + url)
@@ -286,15 +337,21 @@ class IpReputationTool(OSINTTool):
             if hit:
                 findings.append(("ALTA", f"Está en FireHOL nivel 1 (red {hit[0]}): listas de bloqueo de ataques", 35))
 
-        urlhaus = _download_list("urlhaus")
-        if urlhaus is None and "urlhaus" in KEY_REQUIRED:
-            not_checked.append(KEY_REQUIRED["urlhaus"])
-        elif urlhaus is None:
-            sources_failed.append("URLhaus (lista no disponible)")
-        elif raw in urlhaus:
-            sample = urlhaus[raw]
-            findings.append(("ALTA", f"Distribuye malware ahora mismo según URLhaus: {len(sample)} URL(s), p. ej. "
-                                     f"{sample[0].replace('http', 'hxxp', 1)}", 50))
+        urlhaus = urlhaus_host(raw)
+        if urlhaus is None:
+            not_checked.append(URLHAUS_NO_KEY)
+        elif urlhaus == "clave":
+            sources_failed.append("URLhaus (abuse.ch rechazó la clave: vuelve a guardarla)")
+        elif urlhaus == "error":
+            sources_failed.append("URLhaus (no respondió)")
+        elif urlhaus:
+            online = [u for u in urlhaus if u.get("url_status") == "online"]
+            if online:
+                findings.append(("ALTA", f"Distribuye malware ahora mismo según URLhaus: {len(online)} URL(s) activa(s), "
+                                         f"p. ej. {online[0]['url'].replace('http', 'hxxp', 1)}", 50))
+            else:
+                findings.append(("MEDIA", f"Repartió malware hace poco según URLhaus: {len(urlhaus)} URL(s), ya "
+                                          "inactiva(s)", 20))
 
         score = min(100, sum(p for _, _, p in findings))
         risk = "alto" if score >= 50 else "medio" if score >= 20 else "bajo"

@@ -336,18 +336,86 @@ def test_suggested_tools_need_their_key():
     assert ENTITY_LABELS["name"] == "Nombres" and ENTITY_LABELS["context"] == "Contexto"
 
 
-def test_urlhaus_is_not_requested_and_the_report_says_why(monkeypatch):
-    calls = []
-    monkeypatch.setattr(ip_reputation.requests, "get", lambda url, **kw: calls.append(url))
-    assert ip_reputation._download_list("urlhaus") is None and calls == []
+def _ip_tool(monkeypatch):
     lists = {"tor": set(), "drop": [], "firehol": []}
     monkeypatch.setattr(ip_reputation, "_download_list", lambda name: lists.get(name))
+    monkeypatch.setattr(ip_reputation, "_hosts", {})
     tool = ip_reputation.IpReputationTool()
     monkeypatch.setattr(tool, "_internetdb", lambda ip: ({}, ""))
     monkeypatch.setattr(tool, "_greynoise", lambda ip: ({"noise": False}, ""))
+    return tool
+
+
+def _abuse_key(monkeypatch, key):
+    from osint_app.utils.secret_vault import vault
+    real_get = vault.get
+    monkeypatch.setattr(vault, "get", lambda name: key if name == "abuse.ch" else real_get(name))
+
+
+def test_urlhaus_without_key_is_not_requested_and_the_report_says_how(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ip_reputation.requests, "post", lambda url, **kw: calls.append(url))
+    _abuse_key(monkeypatch, "")
+    tool = _ip_tool(monkeypatch)
     snippet = tool.execute(QueryParameters(ip="8.8.8.8"))[0].snippet
-    assert "Sin consultar: URLhaus (abuse.ch exige ahora una clave gratuita)" in snippet
+    assert calls == []
+    assert "Sin consultar: URLhaus (falta la clave gratuita de abuse.ch" in snippet and "Guardar clave" in snippet
     assert "No respondieron" not in snippet
+
+
+class _Resp:
+    def __init__(self, status, data=None):
+        self.status_code, self._data = status, data
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise ip_reputation.requests.HTTPError(str(self.status_code))
+
+    def json(self):
+        return self._data
+
+
+def test_urlhaus_with_key_asks_by_host_and_counts_active_urls(monkeypatch):
+    sent = []
+
+    def post(url, data=None, headers=None, timeout=None):
+        sent.append((url, data, headers))
+        return _Resp(200, {"query_status": "ok", "urls": [
+            {"url": "http://45.9.148.9/bins/x86", "url_status": "online", "threat": "malware_download"},
+            {"url": "http://45.9.148.9/old", "url_status": "offline"}]})
+    monkeypatch.setattr(ip_reputation.requests, "post", post)
+    _abuse_key(monkeypatch, "clave-de-prueba")
+    tool = _ip_tool(monkeypatch)
+    result = tool.execute(QueryParameters(ip="45.9.148.9"))[0]
+    assert sent[0][0] == "https://urlhaus-api.abuse.ch/v1/host/" and sent[0][1] == {"host": "45.9.148.9"}
+    assert sent[0][2]["Auth-Key"] == "clave-de-prueba"           # la clave va en la cabecera, nunca en la URL
+    assert result.raw_data["score"] >= 50 and "1 URL(s) activa(s)" in result.snippet + str(result.raw_data)
+    assert "hxxp://45.9.148.9/bins/x86" in str(result.raw_data)
+
+
+def test_urlhaus_inactive_rejected_key_and_no_results(monkeypatch):
+    _abuse_key(monkeypatch, "k")
+    answers = {"45.9.149.1": _Resp(200, {"query_status": "ok", "urls": [{"url": "http://a/b", "url_status": "offline"}]}),
+               "45.9.149.2": _Resp(401), "45.9.149.3": _Resp(200, {"query_status": "no_results"})}
+    monkeypatch.setattr(ip_reputation.requests, "post", lambda url, data=None, **kw: answers[data["host"]])
+    tool = _ip_tool(monkeypatch)
+    inactive = tool.execute(QueryParameters(ip="45.9.149.1"))[0]
+    assert "ya inactiva" in str(inactive.raw_data) and inactive.raw_data["score"] == 20
+    assert "rechazó la clave" in tool.execute(QueryParameters(ip="45.9.149.2"))[0].snippet
+    clean = tool.execute(QueryParameters(ip="45.9.149.3"))[0]
+    assert clean.raw_data["score"] == 0 and "URLhaus" not in clean.snippet
+
+
+def test_link_shield_feed_uses_urlhaus_active_urls_only_with_key(monkeypatch):
+    monkeypatch.setattr(ip_reputation, "_download_list", lambda name: {})
+    monkeypatch.setattr(ip_reputation, "_hosts", {})
+    monkeypatch.setattr(ip_reputation.requests, "post", lambda url, data=None, **kw: _Resp(200, {
+        "query_status": "ok", "urls": [{"url": "http://malo.example/payload.exe", "url_status": "online"}]}))
+    _abuse_key(monkeypatch, "")
+    assert ip_reputation.feed_hits(["http://malo.example/payload.exe"]) == []
+    _abuse_key(monkeypatch, "k")
+    assert ip_reputation.feed_hits(["http://malo.example/payload.exe"])[0][0] == "alta"
+    assert ip_reputation.feed_hits(["http://malo.example/otra"])[0][0] == "media"
 
 
 def test_summary_sentence_reads_well():
@@ -418,3 +486,15 @@ def test_guide_says_when_a_tool_is_not_ready():
         assert tab_tools.guide_status_text(tool) == ""
     finally:
         ts.tool_status = original
+
+
+def test_optional_abuse_key_button_for_ip_reputation_and_link_shield(monkeypatch):
+    pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+    from osint_app.gui.tab_tools import key_for_tool
+    _abuse_key(monkeypatch, "")
+    assert key_for_tool("IP Reputation", "ready") == "abuse.ch"
+    assert key_for_tool("Link Shield", "ready") == "abuse.ch"
+    assert key_for_tool("crt.sh", "ready") is None
+    assert key_for_tool("Hunter.io", "needs_key") == "Hunter.io"
+    _abuse_key(monkeypatch, "k")
+    assert key_for_tool("IP Reputation", "ready") is None          # ya guardada: el botón no sale

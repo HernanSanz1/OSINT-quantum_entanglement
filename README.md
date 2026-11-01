@@ -17,14 +17,14 @@ La ventana tiene siete pestañas:
 | **Herramientas** | Lanzar cada herramienta OSINT sobre los datos del caso, ver su estado y su guía de instalación, y guardar claves de API. |
 | **Perfilamiento** | Buscar a una persona pública con varias herramientas a la vez, revisar candidatos (confirmar o descartar), separar homónimos y generar la ficha en HTML o PDF. |
 | **Correlación** | Relacionar los datos del caso entre sí y con otros casos, y cruzarlos con el CTI: víctima de ransomware, noticias que lo citan, IP en avisos y tecnologías con vulnerabilidades (con EPSS). |
-| **CTI** | Recoger noticias y vulnerabilidades (CISA KEV, Microsoft, EcuCERT, CSIRT Telconet…) y generar el boletín semanal, general o para un cliente. |
+| **CTI** | Recoger noticias y vulnerabilidades (CISA KEV, Microsoft, EcuCERT, CSIRT Telconet…) y generar el boletín de los últimos 7 días, general o para un cliente (con su sección «Lo que afecta a su infraestructura»). «Validar» lo revisa y «Enviar» lo prepara como correo en el programa del analista (no guarda contraseñas). |
 | **Reportes** | Leer el resultado de cada herramienta en lenguaje claro (o el JSON técnico). |
 
 ### Herramientas incluidas
 
 - **Sin instalar nada:** búsqueda web multibuscador, Google Dorks, Wikidata (ficha y cuentas oficiales de personas públicas), GitHub, variantes de usuario, crt.sh (subdominios desde 4 fuentes públicas), Domain WHOIS, DNS, IP/ASN, IP Reputation, Wayback Machine, Mail Health (SPF, DMARC), Tech Detect, Link Shield, metadatos de archivos y análisis de teléfonos.
 - **Paquetes de Python** (se instalan con `requirements.txt` o aparte): Sherlock, Maigret, Holehe e Instaloader.
-- **Con clave de API:** Hunter.io, CENSYS y token de GitHub (opcional, sube el límite de consultas).
+- **Con clave de API:** Hunter.io, CENSYS, token de GitHub (opcional, sube el límite de consultas) y abuse.ch (opcional y gratuita: URLhaus en IP Reputation y Link Shield).
 - **Externas** (cada una con su guía en la pestaña Herramientas): Subfinder, OWASP Amass, TheHarvester, SpiderFoot y Recon-ng.
 - **Plataformas de CTI con servidor** (MISP, OpenCTI, IntelOwl, Cortex, IntelMQ): todavía en desarrollo.
 
@@ -97,6 +97,7 @@ Nada de lo que produces se guarda dentro del proyecto:
 | Casos (base SQLite `osint_v2.db`) | `%LOCALAPPDATA%\SENTINEL\` |
 | Fichas, PDF y exportaciones | `%LOCALAPPDATA%\SENTINEL\informes\` (carpeta solo para tu usuario). Se abre desde Perfilamiento → Generar Ficha → Abrir la carpeta de informes. |
 | Noticias CTI, dossiers y boletines | `%LOCALAPPDATA%\SENTINEL\cti\` |
+| Destinatarios del boletín por cliente (solo direcciones) | `%LOCALAPPDATA%\SENTINEL\cti\destinatarios.json` |
 | Configuración de SearXNG | `%LOCALAPPDATA%\SENTINEL\searxng\` |
 | Programas externos (`subfinder.exe`, `amass.exe`) | `%LOCALAPPDATA%\SENTINEL\bin\` |
 | Herramientas descargadas con su código (TheHarvester, SpiderFoot, Recon-ng) | `%LOCALAPPDATA%\SENTINEL\herramientas\` |
@@ -124,7 +125,7 @@ La copia lleva los casos, las fichas e informes y las noticias CTI, que contiene
 ## Para desarrolladores
 
 ```powershell
-# Tests (sin red; unos 1.160)
+# Tests (sin red; unos 1.200)
 env\Scripts\python.exe -m pytest osint_app/tests -q -p no:cacheprovider
 
 # Pruebas con objetivos reales (usa internet)

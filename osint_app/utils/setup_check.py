@@ -174,6 +174,8 @@ def run_checks() -> List[Step]:
         check_key("Hunter.io", "correos de un dominio", f"Opcional: {PY} -m osint_app.main --set-key Hunter.io"),
         check_key("BraveSearch", "buscador de respaldo", "Opcional: crea la clave gratuita en "
                   f"https://brave.com/search/api/ y guárdala con: {PY} -m osint_app.main --set-key BraveSearch"),
+        check_key("abuse.ch", "URLhaus (IP o enlace que reparte malware)", "Opcional: crea la clave gratuita en "
+                  f"https://auth.abuse.ch/ y guárdala con: {PY} -m osint_app.main --set-key abuse.ch"),
         check_data_folder(), check_backup(), check_smart_app_control(),
     ]
 

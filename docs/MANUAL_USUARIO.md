@@ -36,7 +36,8 @@ SENTINEL te avisa al abrir; actívalo en Configuración → Privacidad y segurid
 Home) o **BitLocker** (Windows Pro).
 
 Las **fichas, PDF y exportaciones** van a la subcarpeta `informes` de esa misma carpeta (antes, a Descargas). Solo
-tu usuario de Windows puede abrirla. Para verla: **Generar Ficha → 📂 Abrir la carpeta de informes**.
+tu usuario de Windows puede abrirla. Al guardar una ficha, un PDF o una exportación, el aviso dice dónde quedó y trae el
+botón **📂 Abrir carpeta**. También: **Generar Ficha → 📂 Abrir la carpeta de informes**.
 
 ---
 
@@ -49,7 +50,7 @@ tu usuario de Windows puede abrirla. Para verla: **Generar Ficha → 📂 Abrir 
 | **Herramientas** | Ejecutar una herramienta sobre los datos del caso, con indicador 🟢 🟡 🔴 de si tienes lo que necesita |
 | **Perfilamiento** | Buscar a una **persona** con muchas herramientas a la vez y revisar candidatos |
 | **Correlación** | Ver cómo se relacionan los datos del caso (qué correo va con qué usuario, qué perfil con qué nombre…), comparar casos y **buscar el objetivo en la inteligencia de amenazas** (botón "Cruzar con CTI": ¿es víctima de ransomware?, ¿lo citan noticias de seguridad?, ¿sus IP salen en avisos?, ¿sus tecnologías tienen vulnerabilidades explotadas?) |
-| **CTI** | Recolectar feeds de amenazas y generar dossiers por cliente y boletines HTML. **✅ Validar** revisa el último boletín antes de enviarlo (frases cortadas, párrafos en inglés, productos dudosos o repetidos, noticias sin enlace) |
+| **CTI** | Recolectar feeds de amenazas y generar el boletín de los **últimos 7 días**, general o para un cliente (ver el apartado 4b). **✅ Validar** revisa el último boletín (frases cortadas, párrafos en inglés, productos dudosos o repetidos, noticias sin enlace). **📧 Enviar** lo prepara como correo |
 | **Reportes** | Ver y exportar lo que devolvió cada herramienta |
 
 ---
@@ -115,6 +116,24 @@ Algunas funcionan sin clave y solo con un dato:
 
 Para Link Shield y File Metadata, añade primero en **Datos** un dato de tipo **URL** (o la ruta de un archivo).
 
+### 4b. Boletín CTI y botón Enviar
+
+- **Qué días cubre:** los últimos 7 días hasta hoy. Lo que ya salió en un boletín anterior no se repite.
+- **Boletín de un cliente:** empieza con **«Lo que afecta a la infraestructura de …»**: las noticias que nombran un
+  producto o servicio de su inventario (por ejemplo VMware vCenter o Microsoft 365) y qué revisar. Esas noticias no se
+  repiten en las demás secciones.
+- **Qué entra:** las vulnerabilidades (CVE) pasan un filtro estricto (críticas y de tecnologías que usan los clientes).
+  Las secciones de noticias aceptan también campañas, ransomware, phishing y fugas de datos. Si una sección queda vacía,
+  el boletín lo explica.
+- **📧 Enviar no envía nada por sí solo.** Revisa el boletín y abre una ventana con los destinatarios del cliente
+  (SENTINEL los recuerda; avisa si una dirección es de otro cliente). Luego:
+  - **Abrir borrador:** un correo nuevo en tu programa de correo (Outlook, Correo de Windows, Thunderbird) con el
+    boletín dentro. Si tu equipo no tiene programa para eso, abre un correo nuevo con destinatarios y asunto y deja el
+    boletín copiado: pégalo con **Ctrl+V**.
+  - **Copiar para pegar:** para el correo en el navegador. Abre **Gmail** u **Outlook web** con destinatarios y asunto;
+    pega el boletín con **Ctrl+V**.
+  - SENTINEL no guarda contraseñas de correo: sale desde tu cuenta, con tu firma, y tú pulsas Enviar.
+
 ---
 
 ## 5. Claves de API
@@ -131,6 +150,9 @@ python -m osint_app.main --keys               # qué claves tienes (nunca muestr
 - En Windows las claves se guardan **cifradas** (solo tu usuario de Windows en este equipo puede leerlas).
 - También sirven las variables de entorno (`GITHUB_TOKEN`, `OSINT_HUNTER_KEY`…); tienen prioridad sobre las guardadas.
 - Tener un token de **GitHub** sube el límite de consultas de 60 a 5.000 por hora.
+- **abuse.ch** (opcional y gratuita, en [auth.abuse.ch](https://auth.abuse.ch/)): con ella IP Reputation y Link Shield
+  consultan **URLhaus** (si una IP o un enlace reparte malware ahora mismo). Se guarda con `--set-key abuse.ch` o en
+  Herramientas → IP Reputation → **🔑 Guardar clave de abuse.ch (opcional)**.
 
 ---
 
