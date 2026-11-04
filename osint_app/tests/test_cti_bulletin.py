@@ -393,3 +393,18 @@ def test_rss_source_down_is_an_error_not_zero_news(cti, monkeypatch):
     with pytest.raises(ConnectionResetError):
         harvest.harvest_rss({"id": "csirt_telconet", "url": "https://x/feed/", "paginas": 5})
     assert len(calls) == 1                     # antes, 5 páginas y ~100 s para acabar en «OK, 0 noticias»
+
+
+def test_dossier_summary_explains_ecuador_gap_when_its_sources_are_down(tmp_path):
+    pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+    import json
+    from osint_app.gui.tab_cti import dossier_summary_lines, last_failed_sources
+    (tmp_path / "harvest-run.json").write_text(json.dumps({"errors": [
+        {"fuente": "ecucert", "error": "403"}, {"fuente": "csirt_telconet", "error": "10054"}]}), encoding="utf-8")
+    failed = last_failed_sources(tmp_path)
+    assert failed == ["ecucert", "csirt_telconet"] and last_failed_sources(tmp_path / "no") == []
+    data = {"semana": "2026-W45", "brechas": ["Seguridad Ecuador: 1/3 candidatos."]}
+    text = "\n".join(dossier_summary_lines(data, failed))
+    assert "no respondieron EcuCERT ni CSIRT Telconet" in text
+    assert "Motivo" not in "\n".join(dossier_summary_lines(data, []))
+    assert "Motivo" not in "\n".join(dossier_summary_lines({"brechas": []}, failed))

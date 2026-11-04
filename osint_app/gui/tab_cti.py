@@ -129,7 +129,20 @@ SECTION_NAMES = {"amenaza_semana": "amenaza de la semana", "entorno_cliente": "d
                  "alrededor_mundo": "del mundo", "referencias": "fuentes citadas"}
 
 
-def dossier_summary_lines(data: dict) -> list:
+# Fuentes de la sección de Ecuador y su nombre para el resumen
+ECUADOR_SOURCES = {"ecucert": "EcuCERT", "csirt_telconet": "CSIRT Telconet"}
+
+
+def last_failed_sources(store: Path) -> list:
+    """Fuentes que no respondieron en la última «Actualizar noticias» (harvest-run.json), o [] si no se sabe."""
+    try:
+        run = json.loads((Path(store) / "harvest-run.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [str(err.get("fuente")) for err in run.get("errors") or [] if isinstance(err, dict)]
+
+
+def dossier_summary_lines(data: dict, failed_sources: list = ()) -> list:
     """Resumen del dossier para una persona no técnica."""
     totals = data.get("totales") or {}
     sections = data.get("secciones") or {}
@@ -149,6 +162,11 @@ def dossier_summary_lines(data: dict) -> list:
     if missing:
         lines.append("   ⚠ Hay pocas noticias para completar: " + ", ".join(missing) + ". El boletín sale igual, "
                      "más corto. Pulsa «Actualizar noticias» o genera el boletín más adelante.")
+        # 04-11-2026: EcuCERT y CSIRT Telconet estaban caídas (tampoco cargaban en el navegador) y no se decía
+        down = [ECUADOR_SOURCES[f] for f in failed_sources if f in ECUADOR_SOURCES]
+        if down and any("ecuador" in m.lower() for m in missing):
+            lines.append(f"     Motivo: en la última actualización no respondieron {' ni '.join(down)} (sus webs "
+                         "pueden estar caídas). En cuanto vuelvan, «Actualizar noticias» recogerá sus avisos.")
     lines.append("   Pulsa «Ver boletín» para verlo en el navegador.")
     return lines
 
@@ -483,7 +501,7 @@ class CTITab(QWidget):
         self._set_busy(False)
         # Antes se volcaba el JSON tal cual en el registro
         try:
-            for line in dossier_summary_lines(json.loads(output or "{}")):
+            for line in dossier_summary_lines(json.loads(output or "{}"), last_failed_sources(active_cti_store())):
                 self._log(line)
         except ValueError:
             self._log("✅ Dossier generado")
