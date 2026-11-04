@@ -244,10 +244,72 @@ ENGLISH_TOPICS = [
     # «phishing-resistant» (métodos de acceso resistentes al phishing) no es una campaña de phishing
     ((r"phishing(?!-resistant)",), "Campaña de phishing"),
     ((r"supply chain", r"\bnpm\b", r"\bpypi\b"), "Ataque a la cadena de suministro"),
+    # «Attackers Exploit Critical Siemens IoT2050 Flaw…» salía «Campaña de malware» (por «backdoor») y «…Exploit
+    # PHP2Shell Flaws…», «Actualización de seguridad»
+    ((r"\bexploit(?:s|ed|ing)?\b(?! kit)",), "Explotación activa"),
     ((r"malware", r"trojan", r"stealer", r"backdoor", r"botnet"), "Campaña de malware"),
     ((r"passkey", r"\bmfa\b", r"multi-factor", r"sign-in method"), "Cambio en los métodos de acceso"),
     ((r"\bpatch", r"\bupdate", r"\bfix"), "Actualización de seguridad"),
 ]
+
+
+# Nombres propios que dicen DE QUIÉN o DE QUÉ trata una noticia en inglés (04-11-2026: «Campaña de malware, según The
+# Hacker News» salía dos veces en el mismo boletín, una por Sogou/DarkVigil y otra por las apps falsas de ChatGPT).
+# Primero los nombres de varias palabras. País en español.
+KNOWN_NAMES = [
+    ("palo alto networks", "Palo Alto Networks"), ("microsoft teams", "Microsoft Teams"),
+    ("microsoft 365", "Microsoft 365"), ("google chrome", "Google Chrome"), ("red hat", "Red Hat"),
+    ("entra id", "Entra ID"), ("check point", "Check Point"), ("volt typhoon", "Volt Typhoon"),
+    ("north korea", "Corea del Norte"), ("north korean", "Corea del Norte"),
+    ("microsoft", "Microsoft"), ("google", "Google"), ("chrome", "Chrome"), ("android", "Android"), ("ios", "iOS"),
+    ("apple", "Apple"), ("macos", "macOS"), ("windows", "Windows"), ("linux", "Linux"), ("ubuntu", "Ubuntu"),
+    ("cisco", "Cisco"), ("fortinet", "Fortinet"), ("fortigate", "FortiGate"), ("vmware", "VMware"),
+    ("broadcom", "Broadcom"), ("siemens", "Siemens"), ("gitlab", "GitLab"), ("github", "GitHub"),
+    ("wordpress", "WordPress"), ("magento", "Magento"), ("sogou", "Sogou"), ("chatgpt", "ChatGPT"),
+    ("claude", "Claude"), ("openai", "OpenAI"), ("telegram", "Telegram"), ("whatsapp", "WhatsApp"),
+    ("slack", "Slack"), ("zoom", "Zoom"), ("okta", "Okta"), ("aws", "AWS"), ("azure", "Azure"), ("oracle", "Oracle"),
+    ("sap", "SAP"), ("ivanti", "Ivanti"), ("citrix", "Citrix"), ("netscaler", "NetScaler"), ("sonicwall", "SonicWall"),
+    ("juniper", "Juniper"), ("zimbra", "Zimbra"), ("salesforce", "Salesforce"), ("snowflake", "Snowflake"),
+    ("lazarus", "Lazarus"), ("php", "PHP"), ("npm", "npm"), ("pypi", "PyPI"), ("docker", "Docker"),
+    ("kubernetes", "Kubernetes"), ("jenkins", "Jenkins"), ("atlassian", "Atlassian"), ("veeam", "Veeam"),
+    ("mikrotik", "MikroTik"), ("huawei", "Huawei"), ("samsung", "Samsung"), ("sharepoint", "SharePoint"),
+    ("outlook", "Outlook"),
+    ("china", "China"), ("chinese", "China"), ("russia", "Rusia"), ("russian", "Rusia"), ("iran", "Irán"),
+    ("iranian", "Irán"), ("japan", "Japón"),
+]
+# Siglas y palabras técnicas con mayúsculas que no distinguen una noticia de otra
+GENERIC_NAMES = {"cve", "cvss", "rce", "dos", "ddos", "dns", "tcp", "udp", "kev", "api", "apis", "url", "urls", "http",
+                 "https", "sql", "xss", "csrf", "ssrf", "mfa", "sms", "vpn", "cisa", "apt", "ioc", "iocs", "javascript",
+                 "typescript", "json", "xml", "html", "llm", "llms", "saas", "iot", "ceo", "ciso", "the"}
+
+
+def title_subjects(title: str, limit: int = 3) -> list[str]:
+    """Nombres propios del titular en inglés: marcas conocidas, nombres con letras y números (IoT2050, APT29), con
+    mayúsculas internas (DarkVigil, CryptoPayment) o siglas propias (GMO). Sin traducir nada."""
+    text = str(title or "")
+    found: list[tuple[int, str]] = []
+    taken: list[tuple[int, int]] = []
+    low = text.lower()
+    for pattern, name in KNOWN_NAMES:
+        for m in re.finditer(rf"(?<![a-z0-9]){re.escape(pattern)}(?:'s)?(?![a-z0-9])", low):
+            if not any(a <= m.start() < b for a, b in taken):
+                found.append((m.start(), name))
+                taken.append((m.start(), m.end()))
+    for m in re.finditer(r"[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*", text):
+        if any(a <= m.start() < b for a, b in taken):
+            continue
+        token = re.sub(r"-(?:Linked|Aligned|Based|Backed|Sponsored|Nexus)$", "", m.group(), flags=re.I)
+        if token.lower() in GENERIC_NAMES or len(token) < 3:
+            continue
+        distinctive = ((re.search(r"\d", token) and re.search(r"[A-Za-z]", token))
+                       or re.search(r"[a-z][A-Z]", token) or (token.isupper() and len(token) >= 3))
+        if distinctive:
+            found.append((m.start(), token))
+    out = []
+    for _, name in sorted(found):
+        if name.lower() not in (o.lower() for o in out):
+            out.append(name)
+    return out[:limit]
 
 
 def english_topic(item: dict) -> str:
@@ -257,15 +319,19 @@ def english_topic(item: dict) -> str:
 
 def spanish_heading(item: dict) -> str:
     """Titular en español para una noticia publicada en inglés: tema, producto (si se conoce) y CVE."""
-    text = f"{item.get('titulo', '')} {item.get('resumen', '')}".lower()
+    title = str(item.get("titulo", ""))
+    text = f"{title} {item.get('resumen', '')}".lower()
     topics = [label for patterns, label in ENGLISH_TOPICS if any(re.search(p, text) for p in patterns)]
     cves = item.get("cves", [])[:2]
-    if len(topics) > 2 and not cves:      # resumen semanal de varias noticias ("ThreatsDay: … + 21 More")
+    # Resumen semanal de varias noticias ("ThreatsDay: … + 21 More", "Weekly Recap: …"): se mira solo el titular
+    title_topics = [label for patterns, label in ENGLISH_TOPICS if any(re.search(p, title.lower()) for p in patterns)]
+    if re.search(r"\brecap\b|\+\s*\d+\s+more", title, re.I) or (len(title_topics) > 2 and not cves):
         topic = "Resumen de varias amenazas de la semana"
     else:
-        topic = topics[0] if topics else "Vulnerabilidad o amenaza"
+        topic = topics[0] if topics else ("Vulnerabilidad" if cves else "Amenaza")
     products = [p for p in item.get("productos_cve", []) if p][:2]
-    heading = topic + (f" en {' y '.join(products)}" if products else "")
+    subjects = [] if products or topic.startswith("Resumen") else title_subjects(title)
+    heading = topic + (f" en {' y '.join(products)}" if products else "") + (f": {', '.join(subjects)}" if subjects else "")
     if cves:
         heading += f" ({', '.join(cves)})"
     return heading + (f", según {item['fuente']}" if item.get("fuente") else "")

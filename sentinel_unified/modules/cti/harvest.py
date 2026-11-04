@@ -189,7 +189,13 @@ def harvest_rss(fuente: dict) -> list[dict]:
         try:
             all_items.extend(parse_rss(fetch(url), fuente))
         except Exception as exc:
+            # 04-11-2026: CSIRT Telconet cortaba la conexión en todas las páginas y salía «OK, 0 noticias» tras
+            # ~100 s de reintentos; la ventana no avisaba. Si falla la primera, la fuente no respondió (error); si
+            # falla una posterior, se guarda lo leído y no se piden más.
+            if page == 1:
+                raise
             log(f"WARN fuente={fuente['id']} pagina={page} error={exc}")
+            break
     return all_items
 
 
@@ -329,9 +335,19 @@ def harvest_sitemap(fuente: dict) -> list[dict]:
     return out
 
 
-def current_msrc_release_id() -> str:
-    now = dt.datetime.now(dt.timezone.utc)
-    return f"{now.year}-{now.strftime('%b')}"
+def current_msrc_release_id(now: dt.datetime | None = None) -> str:
+    now = now or dt.datetime.now(dt.timezone.utc)
+    return f"{now.year}-{MONTHS_EN[now.month - 1]}"
+
+
+def previous_msrc_release_id(now: dt.datetime | None = None) -> str:
+    now = now or dt.datetime.now(dt.timezone.utc)
+    year, month = (now.year, now.month - 1) if now.month > 1 else (now.year - 1, 12)
+    return f"{year}-{MONTHS_EN[month - 1]}"
+
+
+# Abreviaturas de MSRC («2026-Nov»). strftime('%b') depende del idioma del equipo: en uno en español daría «nov.»
+MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
 def unique_values(values: list[str]) -> list[str]:
@@ -347,9 +363,16 @@ def unique_values(values: list[str]) -> list[str]:
 
 
 def harvest_msrc_cvrf_actual(fuente: dict) -> list[dict]:
+    # Microsoft publica el segundo martes de cada mes: antes de esa fecha el mes en curso da 404 (04-11-2026) y la
+    # fuente quedaba vacía; entonces se usa la publicación del mes anterior
     release_id = current_msrc_release_id()
-    url = f"{fuente['url'].rstrip('/')}/{release_id}"
-    raw = fetch(url, timeout=60)
+    try:
+        raw = fetch(f"{fuente['url'].rstrip('/')}/{release_id}", timeout=60)
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            raise
+        release_id = previous_msrc_release_id()
+        raw = fetch(f"{fuente['url'].rstrip('/')}/{release_id}", timeout=60)
     root = ET.fromstring(raw)
     ns = {
         "cvrf": "http://www.icasi.org/CVRF/schema/cvrf/1.1",

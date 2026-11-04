@@ -457,7 +457,14 @@ class CTITab(QWidget):
                 self._log(f"   ⚠️ {err.get('fuente')}: no respondió ({str(err.get('error'))[:120]})")
         else:
             self._log("✅ Recolección terminada")
-        self.app.toast.show(f"Noticias CTI actualizadas: {audit.get('total_nuevos', 0)} nuevas", kind="success")
+        # 04-11-2026: con EcuCERT y CSIRT Telconet caídas el aviso salía igual en verde y el boletín traía 1 de 3
+        # noticias de Ecuador sin explicación
+        failed = [str(err.get("fuente")) for err in audit.get("errors") or []]
+        if failed:
+            self.app.toast.show(f"Noticias CTI: {audit.get('total_nuevos', 0)} nuevas · no respondieron: "
+                                f"{', '.join(failed)}", kind="warning")
+        else:
+            self.app.toast.show(f"Noticias CTI actualizadas: {audit.get('total_nuevos', 0)} nuevas", kind="success")
         self._load_items()
 
     def _on_dossier(self):

@@ -998,6 +998,13 @@ NOT_NEWS_TERMS = ("webinar", "weekly recap", "recap:", "how to ", "the rise of",
                   "to allow ", "managing ", "how secure are", "scams to watch")
 
 
+def not_news(item: dict) -> bool:
+    """Webinar, resumen semanal, opinión o anuncio: no es una amenaza concreta. 04-11-2026: el «⚡ Weekly Recap» de
+    The Hacker News entraba en el boletín por traer CVE (pasaba el filtro estricto)."""
+    title = str(item.get("titulo", "")).lower()
+    return any(term in title for term in NOT_NEWS_TERMS)
+
+
 def news_without_cve(item: dict) -> bool:
     """Noticia sin CVE que puede ir en las secciones de noticias (Ecuador, Noticias principales, Alrededor del mundo).
 
@@ -1005,10 +1012,7 @@ def news_without_cve(item: dict) -> bool:
     Aplicado a todo, dejaba fuera campañas, ransomware, phishing y fugas de datos sin CVE, y los avisos de EcuCERT y
     CSIRT Telconet que no repiten el número de CVE: «Alrededor del mundo» salía con 0 o 1 noticia de 4.
     """
-    if item.get("cves") or not item.get("reportable", True) or not narrative_source(item):
-        return False
-    title = str(item.get("titulo", "")).lower()
-    if any(term in title for term in NOT_NEWS_TERMS):
+    if item.get("cves") or not item.get("reportable", True) or not narrative_source(item) or not_news(item):
         return False
     if local_ecuador_source(item):
         return True
@@ -1349,6 +1353,8 @@ def build(week: str | None = None, day: str | None = None, until: str | None = N
     # sin CVE y avisos locales (news_without_cve), para las secciones de noticias.
     weekly_public, weekly_news = [], []
     for item in weekly:
+        if not_news(item):
+            continue
         strict = critical_environment_vulnerability(item)
         if not strict and not news_without_cve(item):
             continue

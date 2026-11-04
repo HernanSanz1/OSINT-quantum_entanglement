@@ -24,7 +24,7 @@ def cti(tmp_path_factory):
     render, dossier = importlib.import_module("render"), importlib.import_module("dossier")
     yield render, dossier
     for name in ("render", "dossier", "clientes", "exposicion_cve", "seleccion_cliente", "fuentes", "productos",
-                 "validar"):
+                 "validar", "harvest"):
         sys.modules.pop(name, None)
     mp.undo()
 
@@ -314,3 +314,82 @@ def test_english_text_without_cve_does_not_ask_for_a_patch(cti):
             "resumen": "A campaign leveraging an adversary-in-the-middle relay to capture sign-in sessions."}
     text = render.english_item_text(item)
     assert "corrección del fabricante" not in text and "robo de sesiones" in text
+
+
+# ── 04-11-2026: titulares de noticias en inglés, resúmenes semanales, Microsoft a principios de mes ──────────────
+
+@pytest.mark.parametrize("title,expected", [
+    ("China-Aligned Hackers Hijack Sogou Input Method DNS Requests to Deploy DarkVigil Backdoor",
+     ["China", "Sogou", "DarkVigil"]),
+    ("Fake ChatGPT and Claude Apps Abuse Signed Executables to Deploy Crypto Miners", ["ChatGPT", "Claude"]),
+    ("Attackers Exploit Critical Siemens IoT2050 Flaw to Plant Remote Command Backdoors", ["Siemens", "IoT2050"]),
+    ("APT29-Linked Hackers Hijack Web Analytics Script to Deliver iOS and Android Exploits", ["APT29", "iOS", "Android"]),
+    ("Japan's GMO urges customers to shut down PCs amid ransomware threat", ["Japón", "GMO"]),
+    ("Attackers Exploit PHP2Shell Flaws in Internet-Exposed Palo Alto Networks Management Interfaces",
+     ["PHP2Shell", "Palo Alto Networks"]),
+    # Siglas técnicas y palabras corrientes no cuentan; «exchange» de criptomonedas no es Microsoft Exchange
+    ("Linux Kernel TCP Flaw With 9.8 CVSS Score Affects RCE", ["Linux"]),
+    ("Crypto exchange hacked", []),
+])
+def test_title_subjects(cti, title, expected):
+    render, _ = cti
+    assert render.title_subjects(title) == expected
+
+
+def test_english_heading_names_the_story(cti):
+    render, _ = cti
+    sogou = {"fuente": "The Hacker News", "cves": [], "titulo": "China-Aligned Hackers Hijack Sogou Input Method DNS "
+             "Requests to Deploy DarkVigil Backdoor", "resumen": "A backdoor called DarkVigil."}
+    gpt = {**sogou, "titulo": "Fake ChatGPT and Claude Apps Abuse Signed Executables to Deploy Crypto Miners",
+           "resumen": "Malware distributed through fake apps."}
+    assert render.spanish_heading(sogou) == "Campaña de malware: China, Sogou, DarkVigil, según The Hacker News"
+    assert render.spanish_heading(sogou) != render.spanish_heading(gpt)      # antes, dos titulares iguales
+    siemens = {**sogou, "cves": ["CVE-2026-58115"], "titulo": "Attackers Exploit Critical Siemens IoT2050 Flaw to Plant "
+               "Remote Command Backdoors", "resumen": ""}
+    assert render.spanish_heading(siemens) == ("Explotación activa: Siemens, IoT2050 (CVE-2026-58115), según "
+                                               "The Hacker News")
+    recap = {**sogou, "titulo": "⚡ Weekly Recap: Critical CVEs, Linux DDoS Botnet, Device-Code Phishing"}
+    assert render.spanish_heading(recap).startswith("Resumen de varias amenazas de la semana")
+
+
+def test_weekly_recaps_are_not_news(cti):
+    _, dossier = cti
+    assert dossier.not_news({"titulo": "⚡ Weekly Recap: Critical CVEs, Linux DDoS Botnet"})
+    assert not dossier.not_news({"titulo": "Attackers Exploit Critical Siemens IoT2050 Flaw"})
+
+
+def test_msrc_release_ids_do_not_depend_on_the_system_language(cti):
+    import datetime as dt
+    harvest = importlib.import_module("harvest")
+    nov = dt.datetime(2026, 11, 4, tzinfo=dt.timezone.utc)
+    assert harvest.current_msrc_release_id(nov) == "2026-Nov"
+    assert harvest.previous_msrc_release_id(nov) == "2026-Oct"
+    assert harvest.previous_msrc_release_id(dt.datetime(2027, 1, 5, tzinfo=dt.timezone.utc)) == "2026-Dec"
+
+
+def test_msrc_uses_last_month_before_patch_tuesday(cti, monkeypatch):
+    import urllib.error
+    harvest = importlib.import_module("harvest")
+    asked = []
+
+    def fetch(url, timeout=35):
+        asked.append(url.rsplit("/", 1)[-1])
+        if url.endswith(harvest.current_msrc_release_id()):
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        return b'<cvrfdoc xmlns="http://www.icasi.org/CVRF/schema/cvrf/1.1"></cvrfdoc>'
+    monkeypatch.setattr(harvest, "fetch", fetch)
+    assert harvest.harvest_msrc_cvrf_actual({"id": "microsoft_msrc", "url": "https://x/cvrf"}) == []
+    assert asked == [harvest.current_msrc_release_id(), harvest.previous_msrc_release_id()]
+
+
+def test_rss_source_down_is_an_error_not_zero_news(cti, monkeypatch):
+    harvest = importlib.import_module("harvest")
+    calls = []
+
+    def fetch(url, timeout=35):
+        calls.append(url)
+        raise ConnectionResetError("el servidor cortó la conexión")
+    monkeypatch.setattr(harvest, "fetch", fetch)
+    with pytest.raises(ConnectionResetError):
+        harvest.harvest_rss({"id": "csirt_telconet", "url": "https://x/feed/", "paginas": 5})
+    assert len(calls) == 1                     # antes, 5 páginas y ~100 s para acabar en «OK, 0 noticias»
