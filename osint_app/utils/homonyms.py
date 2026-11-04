@@ -412,6 +412,33 @@ def _url_country_is_own(url: str, own_codes: Set[str]) -> bool:
     return code in own_codes
 
 
+# ── Papelera (enfoque C, 04-11-2026) ─────────────────────────────────────────
+# Sobre el enfoque A (marcar y bajar), solo lo CLARÍSIMO sale de la tabla de candidatos a «Descartados», con su motivo
+# y recuperable con un clic; lo dudoso sigue marcado con ⚠️. Nada se borra y la ficha no cambia (ya los separa).
+# Clarísimo = una señal fuerte y NINGÚN dato en común con el objetivo. Mencionar otro país o ser un LinkedIn de otro
+# país no basta solo: un deportista sale en noticias de fuera (prueba real: una publicación de Cannondale, la marca de
+# bicicletas de Carapaz, iba a la papelera por «menciona France», el Tour de France), y alguien puede vivir fuera.
+# Esas dos solo cuentan acompañadas de otra señal.
+TRASH_SIGNALS = {"other_job", "named_place"}
+PAIRED_SIGNALS = ("country", "linkedin_country")
+# Coincidencias que ligan el resultado al objetivo: con cualquiera de ellas, el candidato se queda en la tabla
+TIES = {"email", "username", "username_chained", "mention", "phone", "domain", "company", "university", "context",
+        "city"}
+
+
+def trash_reason(signals: List[Signal], matched, official: bool = False) -> str:
+    """Motivo para mandar el candidato a la papelera, o "" si debe quedarse en la tabla."""
+    if official or not signals or set(matched or ()) & TIES:
+        return ""
+    strong = [s for s in signals if s.code in TRASH_SIGNALS]
+    if not strong and len(signals) >= 2:
+        strong = sorted((s for s in signals if s.code in PAIRED_SIGNALS), key=lambda s: PAIRED_SIGNALS.index(s.code))
+    if not strong:
+        return ""
+    reason = strong[0].message.replace("posible homónimo (señal débil): ", "").replace("posible homónimo: ", "")
+    return f"{reason[:1].upper()}{reason[1:]}; no coincide ningún otro dato del objetivo"
+
+
 def total_penalty(signals: List[Signal]) -> float:
     return min(MAX_PENALTY, sum(s.penalty for s in signals))
 

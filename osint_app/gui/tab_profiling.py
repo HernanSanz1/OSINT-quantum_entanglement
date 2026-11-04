@@ -58,6 +58,11 @@ def retry_bar_text(count: int, wait_seconds: int) -> str:
     return f"{base} «Reintentar» repite solo esas; lo confirmado y lo descartado se conservan."
 
 
+def in_trash(c: Dict, restored, confirmed) -> bool:
+    """El candidato está en la papelera de homónimos (enfoque C) y el analista no lo sacó ni lo confirmó."""
+    return bool((c.get('extra') or {}).get('papelera')) and c.get('url') not in restored and c.get('url') not in confirmed
+
+
 def candidates_as_dicts(candidates) -> List[Dict]:
     return [{'source': c.source_tool, 'url': c.url, 'title': c.title, 'snippet': c.snippet,
              'confidence': c.confidence, 'category': c.category, 'matched': c.matched_fields,
@@ -149,8 +154,10 @@ class ProfilingTab(QWidget):
 
         # Estado del perfilamiento
         self.candidates_data = []
+        self.table_candidates = []      # los de la tabla, en su orden (los de la papelera no están)
         self.confirmed_urls = set()
         self.rejected_urls = set()
+        self.restored_urls = set()      # sacados de la papelera por el analista
         self.search_warnings = {}       # avisos de herramientas (búsqueda bloqueada…), para la ficha
         self._profile_case_id = None    # caso donde se guardó este perfil
         self.profiler_thread = None
@@ -508,6 +515,16 @@ class ProfilingTab(QWidget):
         self.btn_reject_selected.clicked.connect(self._on_reject_candidate)
         cand_header.addWidget(self.btn_reject_selected)
 
+        # Papelera de homónimos (enfoque C): lo clarísimo sale de la tabla, con su motivo y recuperable
+        self.btn_trash = QPushButton("🗑 Descartados (0)")
+        self.btn_trash.setToolTip("Resultados que SENTINEL apartó por ser claramente otra persona con el mismo nombre "
+                                  "(un LinkedIn de otra profesión, un lugar con su nombre, o varias señales a la "
+                                  "vez como otro país, y ningún dato en común). "
+                                  "No se borran: puedes verlos con su motivo y devolverlos a la tabla.")
+        self.btn_trash.clicked.connect(self._show_trash)
+        self.btn_trash.setEnabled(False)
+        cand_header.addWidget(self.btn_trash)
+
         self.btn_refine = QPushButton("🔄 Refinar búsqueda")
         self.btn_refine.setToolTip("Vuelve a buscar en el MISMO caso usando lo que confirmaste (usuarios, webs, "
                                    "correos) como datos nuevos. Lo confirmado y lo descartado se conservan.")
@@ -703,8 +720,12 @@ class ProfilingTab(QWidget):
         self.lbl_stats.setText("")
 
         self.candidates_data = []
+        self.table_candidates = []
         self.confirmed_urls = set()
         self.rejected_urls = set()
+        self.restored_urls = set()
+        self.btn_trash.setText("🗑 Descartados (0)")
+        self.btn_trash.setEnabled(False)
         self.search_warnings = {}
         self._profile_case_id = None
         self._retry_engine = self._retry_seed = None
@@ -785,11 +806,13 @@ class ProfilingTab(QWidget):
     def _on_candidates_ready(self, candidates: List[Dict]):
         """Procesar candidatos encontrados."""
         self.candidates_data = candidates
+        self.table_candidates = [c for c in candidates if not in_trash(c, self.restored_urls, self.confirmed_urls)]
+        trashed = len(candidates) - len(self.table_candidates)
 
         # Actualizar tabla
         self.candidates_table.setRowCount(0)
 
-        for c in candidates:
+        for c in self.table_candidates:
             row = self.candidates_table.rowCount()
             self.candidates_table.insertRow(row)
 
@@ -848,7 +871,10 @@ class ProfilingTab(QWidget):
             self.candidates_table.setItem(row, 5, status_item)
 
         # Actualizar stats
-        self.lbl_stats.setText(f"({len(candidates)} encontrados)")
+        self.lbl_stats.setText(f"({len(self.table_candidates)} encontrados"
+                               + (f" · {trashed} en «Descartados»)" if trashed else ")"))
+        self.btn_trash.setText(f"🗑 Descartados ({trashed})")
+        self.btn_trash.setEnabled(bool(trashed))
 
     def _on_search_done(self, summary: Dict):
         """Perfilamiento completado."""
@@ -864,6 +890,10 @@ class ProfilingTab(QWidget):
         else:
             msg = f"Completado: {summary['candidates']} candidatos de {summary['total_results']} resultados"
             self._log(msg)
+            trashed = len(self._trashed())
+            if trashed:
+                self._log(f"🗑 {trashed} resultado(s) apartado(s) en «Descartados»: claramente de otra persona con el "
+                          "mismo nombre. No se borran: pulsa «🗑 Descartados» para verlos o devolverlos a la tabla.")
         if self.search_warnings:
             self._log("⚠️ BÚSQUEDA INCOMPLETA: " + ", ".join(self.search_warnings) + " no pudieron consultar todas sus "
                       "fuentes (bloqueo o límite de los buscadores). Pulsa «🔁 Reintentar búsquedas fallidas»: "
@@ -936,8 +966,8 @@ class ProfilingTab(QWidget):
             return
 
         row = rows[0].row()
-        if row < len(self.candidates_data):
-            c = self.candidates_data[row]
+        if row < len(self.table_candidates):
+            c = self.table_candidates[row]
             aviso = f"\n⚠️  AVISO: {c['warning']}\n" if c.get('warning') else ""
             # Correos y teléfonos ocultos (LOPDP): siguen en la página original y en la ficha «con datos de contacto»
             snippet = mask_contacts(c['snippet'][:300]) if c['snippet'] else 'Sin descripción'
@@ -959,8 +989,8 @@ Fragmento:
     def _on_open_url(self, item):
         """Abrir URL del candidato en el navegador."""
         row = item.row()
-        if row < len(self.candidates_data):
-            url = self.candidates_data[row]['url']
+        if row < len(self.table_candidates):
+            url = self.table_candidates[row]['url']
             import webbrowser
             webbrowser.open(url)
             self._log(f"Abriendo: {url}")
@@ -973,8 +1003,8 @@ Fragmento:
             return
 
         row = rows[0].row()
-        if row < len(self.candidates_data):
-            c = self.candidates_data[row]
+        if row < len(self.table_candidates):
+            c = self.table_candidates[row]
             url = c['url']
 
             self.confirmed_urls.add(url)
@@ -1019,11 +1049,12 @@ Fragmento:
             return
 
         row = rows[0].row()
-        if row < len(self.candidates_data):
-            c = self.candidates_data[row]
+        if row < len(self.table_candidates):
+            c = self.table_candidates[row]
             url = c['url']
 
             self.rejected_urls.add(url)
+            self.restored_urls.discard(url)     # un homónimo devuelto y luego descartado vuelve a «Descartados»
             if url in self.confirmed_urls:
                 self.confirmed_urls.remove(url)
 
@@ -1047,6 +1078,75 @@ Fragmento:
         except Exception as e:
             self._log(f"⚠️ No se pudo guardar la decisión en el caso: {e}")
 
+    def _trashed(self) -> List[Dict]:
+        return [c for c in self.candidates_data if in_trash(c, self.restored_urls, self.confirmed_urls)]
+
+    def _show_trash(self):
+        """Ventana «Descartados»: lo que la papelera apartó, con su motivo, y «↩ Devolver a la tabla»."""
+        from PySide6.QtWidgets import QAbstractItemView, QDialog, QHBoxLayout as HBox, QVBoxLayout as VBox
+        trashed = self._trashed()
+        if not trashed:
+            self.app.toast.show("No hay nada en «Descartados»", kind="info")
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Descartados: {len(trashed)} resultado(s) de otra persona con el mismo nombre")
+        dialog.resize(1000, 460)
+        lay = VBox(dialog)
+        note = QLabel("SENTINEL apartó estos resultados porque son claramente de otra persona: una señal fuerte (un "
+                      "LinkedIn de otra profesión, un lugar con su nombre, o varias señales a la vez como otro país) y "
+                      "ningún dato en común con el objetivo. No se "
+                      "han borrado: si alguno sí es de la persona, elígelo y pulsa «↩ Devolver a la tabla». "
+                      "Doble clic: abre la página.")
+        note.setWordWrap(True)
+        lay.addWidget(note)
+        table = QTableWidget(len(trashed), 3)
+        table.setHorizontalHeaderLabels(["Resultado", "Fuente", "Motivo"])
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(True)
+        for row, c in enumerate(trashed):
+            title = c['title']
+            if "linkedin.com/in/" in (c['url'] or ""):
+                title = readable_linkedin_title(title, c['snippet'])
+            title_item = QTableWidgetItem(title[:80])
+            title_item.setToolTip(c['url'])
+            table.setItem(row, 0, title_item)
+            table.setItem(row, 1, QTableWidgetItem(c['source']))
+            reason = QTableWidgetItem(c['extra']['papelera'])
+            reason.setToolTip(c['extra']['papelera'])
+            table.setItem(row, 2, reason)
+        table.setColumnWidth(0, 380)
+        table.setColumnWidth(1, 110)
+        table.itemDoubleClicked.connect(lambda item: __import__("webbrowser").open(trashed[item.row()]['url']))
+        lay.addWidget(table)
+
+        def restore():
+            rows = sorted({i.row() for i in table.selectedIndexes()})
+            if not rows:
+                self.app.toast.show("Elige un resultado de la lista", kind="warning")
+                return
+            for row in rows:
+                url = trashed[row]['url']
+                self.restored_urls.add(url)
+                self._save_verdict(url, "restaurado")
+                self._log(f"↩ Devuelto a la tabla: {trashed[row]['title'][:60]}")
+            dialog.accept()
+            self._on_candidates_ready(self.candidates_data)
+            self.app.toast.show(f"{len(rows)} resultado(s) devuelto(s) a la tabla", kind="success")
+
+        buttons = HBox()
+        btn_restore = QPushButton("↩ Devolver a la tabla")
+        btn_restore.setObjectName("btnSuccess")
+        btn_restore.clicked.connect(restore)
+        btn_close = QPushButton("Cerrar")
+        btn_close.clicked.connect(dialog.reject)
+        buttons.addStretch()
+        buttons.addWidget(btn_restore)
+        buttons.addWidget(btn_close)
+        lay.addLayout(buttons)
+        dialog.exec()
+
     def _load_profile_from_case(self, case_id: int) -> bool:
         """Pone en pantalla el perfil guardado en el caso (datos, candidatos y veredictos). False si no tiene."""
         from ..reports.case_profile import profile_from_case
@@ -1065,6 +1165,7 @@ Fragmento:
         if seed.get("country"):
             self.input_country.setCurrentText(seed["country"])
         self.confirmed_urls, self.rejected_urls = set(profile["confirmed"]), set(profile["rejected"])
+        self.restored_urls = set(profile.get("restored") or ())
         self.search_warnings = dict(profile["warnings"] or {})
         self._profile_case_id = case_id
         self.confirmed_list.clear()

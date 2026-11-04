@@ -224,6 +224,7 @@ def test_real_tab_candidate_table_keeps_rows_visible_on_a_laptop_screen():
     assert table.viewport().height() >= 3 * table.rowHeight(0)
     tab.candidates_data = [{"url": f"https://ejemplo.com/{i}", "source": "WebSearch", "confidence": 60,
                             "matched": [], "snippet": ""} for i in range(20)]
+    tab.table_candidates = tab.candidates_data          # filas de la tabla (sin los de la papelera)
     table.selectRow(2)
     assert tab.info_tabs.currentIndex() == tab.TAB_DETAILS   # al elegir un candidato se ven sus detalles
     tab.close()

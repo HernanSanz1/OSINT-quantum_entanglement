@@ -83,7 +83,9 @@ def profile_from_case(case_id: int, db=None) -> Optional[Dict]:
                    "warning": c.warning, "extra": c.extra_data}
                   for c in engine.extract_candidates(seed_obj, min_confidence=20.0)]
     confirmed, rejected = _verdicts(case_id, db)
-    return {"seed": seed, "candidates": candidates, "confirmed": confirmed, "rejected": rejected,
+    # Candidatos que el analista sacó de la papelera de homónimos («↩ Devolver a la tabla»)
+    restored = {u for u, v in db.get_verdicts(case_id).items() if v == "restaurado"}
+    return {"seed": seed, "candidates": candidates, "confirmed": confirmed, "rejected": rejected, "restored": restored,
             "warnings": runs[0]["warnings"] if runs else {}, "run_at": runs[0]["run_at"] if runs else ""}
 
 

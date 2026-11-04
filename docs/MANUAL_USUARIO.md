@@ -72,8 +72,13 @@ botón **📂 Abrir carpeta**. También: **Generar Ficha → 📂 Abrir la carpe
 - **Confianza:** cuántos datos coinciden con lo que sabes (nombre, usuario, correo, teléfono, empresa, universidad, ciudad…).
   El nombre se compara sin importar tildes, mayúsculas ni el orden "Apellido Nombre".
 - **⚠️ Aviso de posible homónimo:** el resultado menciona otro país, otra ciudad o un LinkedIn de otro país
-  (por ejemplo `mx.linkedin.com` cuando buscas a alguien de Ecuador). **Solo avisa y baja la puntuación; nunca descarta**:
-  la decisión es tuya.
+  (por ejemplo `mx.linkedin.com` cuando buscas a alguien de Ecuador). **Solo avisa y baja la puntuación**: la decisión
+  es tuya.
+- **🗑 Descartados (papelera):** lo que es *claramente* otra persona sale de la tabla. Por ejemplo, un LinkedIn de
+  otra profesión, un lugar con su nombre («Coliseo Jefferson Pérez») o varias señales a la vez (como otro país), siempre
+  que **no coincida ningún dato** del objetivo (usuario, correo, teléfono, empresa, ciudad…). Mencionar otro país, por
+  sí solo, no basta: un deportista sale en noticias de fuera. **No se borra nada:** el botón **🗑 Descartados (N)**
+  muestra cada uno con su motivo, y **↩ Devolver a la tabla** lo recupera (el caso lo recuerda).
 - **Listados omitidos:** los directorios y buscadores de personas ("600+ perfiles"), los directorios oficiales (notarías,
   nóminas de funcionarios) y las páginas de búsqueda o etiquetas de redes sociales (TikTok «discover», Pinterest «ideas»)
   no son una persona y no aparecen como candidatos, pero siguen guardados en el reporte.

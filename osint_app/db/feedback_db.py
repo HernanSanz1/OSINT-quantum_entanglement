@@ -225,7 +225,7 @@ class Database:
                  "run_at": r["run_at"]} for r in rows]
 
     def set_verdict(self, case_id: int, url: str, verdict: str) -> None:
-        """verdict: "confirmado" o "descartado"; "" borra la decisión."""
+        """verdict: "confirmado", "descartado" o "restaurado" (sacado de la papelera de homónimos); "" la borra."""
         with sqlite3.connect(self.db_path) as c:
             if verdict:
                 c.execute("INSERT OR REPLACE INTO candidate_verdicts (case_id, url, verdict, decided_at) VALUES (?,?,?,?)",

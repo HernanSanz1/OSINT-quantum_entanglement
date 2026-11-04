@@ -704,6 +704,10 @@ class ProfilerEngine:
                         # nombre y bajaban a 50 y 25: la ficha los daba por "otra persona" (prueba real 2026-10-21).
                         confidence = max(confidence, OFFICIAL_CONFIDENCE)
                         extra = {**extra, "official": True}
+                    # Papelera (enfoque C): lo clarísimo sale de la tabla, recuperable y con su motivo
+                    trash = homonyms.trash_reason(signals, matched, official=bool(extra.get("official")) or own_site)
+                    if trash:
+                        extra = {**extra, "papelera": trash}
 
                     candidate = Candidate(
                         source_tool=tool_result.tool_name,
