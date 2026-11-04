@@ -135,13 +135,22 @@ OPTIONAL_KEYS = {"IP Reputation": ("abuse.ch", "con la clave gratuita de abuse.c
 
 
 def key_for_tool(t_name: str, status: str):
-    """Clave que pide «🔑 Guardar clave»: la de la herramienta si la necesita, o una opcional aún sin guardar."""
+    """Clave que maneja el botón «🔑»: la de la herramienta (GitHub, Hunter.io…) o una opcional (abuse.ch).
+
+    Se devuelve también cuando ya está guardada (04-11-2026): antes el botón desaparecía al guardarla y no había
+    forma de cambiar una clave equivocada ni de quitarla desde la ventana.
+    """
     from ..utils.key_cli import resolve_name
-    from ..utils.secret_vault import vault
-    if status == "needs_key":
-        return resolve_name(t_name)
-    optional = OPTIONAL_KEYS.get(t_name, ("", ""))[0]
-    return optional if optional and not vault.get(optional) else None
+    own = resolve_name(t_name)
+    if status == "needs_key" or own:
+        return own
+    return OPTIONAL_KEYS.get(t_name, ("", ""))[0] or None
+
+
+def key_button_text(key: str, saved: bool) -> str:
+    if saved:
+        return f"🔑  Cambiar clave de {key}"
+    return f"🔑  Guardar clave de {key}" + (" (opcional)" if key in {k for k, _ in OPTIONAL_KEYS.values()} else "")
 
 
 def shell_command(tool_name: str) -> str:
@@ -299,6 +308,13 @@ class ToolsTab(QWidget):
         self.btn_key.clicked.connect(self._ask_key)
         self.btn_key.hide()
         bot_lay.addWidget(self.btn_key)
+
+        self.btn_key_del = QPushButton("🗑  Quitar clave")
+        self.btn_key_del.setObjectName("btnVerify")
+        self.btn_key_del.setCursor(Qt.PointingHandCursor)
+        self.btn_key_del.clicked.connect(self._delete_key)
+        self.btn_key_del.hide()
+        bot_lay.addWidget(self.btn_key_del)
 
         self.btn_check = QPushButton("🔍  Verificar Estado")
         self.btn_check.setObjectName("btnVerify")
@@ -519,6 +535,7 @@ class ToolsTab(QWidget):
     def _on_select(self):
         items = self.list_tools.selectedItems()
         self.btn_key.hide()
+        self.btn_key_del.hide()
         self._key_name = None          # la clave del botón es la de la herramienta elegida en «Verificar Estado»
         if not items:   # los botones siguen activos: al pulsarlos avisan de que falta elegir herramienta
             return
@@ -577,10 +594,13 @@ class ToolsTab(QWidget):
         inst_cmd = st.fix
         color    = st.color
 
+        from ..utils.secret_vault import vault
         self._key_name = key_for_tool(t_name, status)
+        key_saved = bool(self._key_name and vault.get(self._key_name))
         self.btn_key.setVisible(self._key_name is not None)
-        self.btn_key.setText("🔑  Guardar clave" if status == "needs_key" or not self._key_name
-                             else f"🔑  Guardar clave de {self._key_name} (opcional)")
+        self.btn_key_del.setVisible(key_saved)
+        if self._key_name:
+            self.btn_key.setText(key_button_text(self._key_name, key_saved))
 
         # Update status banner
         self.lbl_status_icon.setText(icon)
@@ -604,9 +624,12 @@ class ToolsTab(QWidget):
         self.log_area.appendPlainText(f"Mensaje: {message}")
         if inst_cmd:
             self.log_area.appendPlainText(f"\nCOMO INSTALAR:\n{inst_cmd}")
-        if self._key_name and status != "needs_key":
+        if self._key_name and status != "needs_key" and not key_saved and t_name in OPTIONAL_KEYS:
             self.log_area.appendPlainText(f"\nOpcional: {OPTIONAL_KEYS[t_name][1]}. Pulsa «🔑 Guardar clave de "
                                           f"{self._key_name}».")
+        elif key_saved:
+            self.log_area.appendPlainText(f"\nClave de {self._key_name}: guardada (cifrada). Para sustituirla pulsa "
+                                          f"«🔑 Cambiar clave de {self._key_name}»; para borrarla, «🗑 Quitar clave».")
         if status == "ready":
             if not self.app.active_case_id:
                 self.log_area.appendPlainText(
@@ -629,8 +652,9 @@ class ToolsTab(QWidget):
             return
         modal = SentinelModal(self.window(), f"🔑  Clave de {canonical}", 460, 220)
         lay = QVBoxLayout(modal.content)
+        replace = " Sustituirá a la que ya está guardada." if vault.get(canonical) else ""
         info = QLabel(f"Pega tu clave de {canonical}. No se mostrará en pantalla: se guarda cifrada en este equipo "
-                      "y nunca en el caso ni en los informes.", modal.content)
+                      f"y nunca en el caso ni en los informes.{replace}", modal.content)
         info.setWordWrap(True)
         lay.addWidget(info)
         field = QLineEdit(modal.content)
@@ -654,6 +678,31 @@ class ToolsTab(QWidget):
         modal.add_button("Cancelar", modal.reject)
         modal.add_button("Guardar", _save, variant="primary")
         modal.exec()
+
+    def _delete_key(self):
+        """Borra del baúl la clave de la herramienta elegida, tras confirmarlo (no se puede deshacer)."""
+        from PySide6.QtWidgets import QMessageBox
+        from ..utils.secret_vault import vault
+        canonical = getattr(self, "_key_name", None)
+        items = self.list_tools.selectedItems()
+        if not canonical or not items:
+            return
+        answer = QMessageBox.question(
+            self, "Quitar clave",
+            f"¿Borrar la clave de {canonical} guardada en este equipo?\n\nNo se puede deshacer: para volver a usarla "
+            f"tendrás que pegarla de nuevo.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        vault.delete(canonical)
+        tool = self.app.framework.tools.get(items[0].data(Qt.UserRole))
+        if tool is not None and getattr(tool, "api_key", None):
+            tool.set_api_key("")
+        if vault.get(canonical):      # una variable de entorno manda sobre el baúl
+            self.app.toast.show(f"Borrada del baúl, pero {canonical} sigue definida en una variable de entorno.",
+                                kind="warning")
+        else:
+            self.app.toast.show(f"Clave de {canonical} borrada.", kind="success")
+        self._verify_status()
 
     # ── Show tool guide ───────────────────────────────────────────────────────
 

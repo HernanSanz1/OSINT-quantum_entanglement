@@ -341,7 +341,8 @@ class IpReputationTool(OSINTTool):
         if urlhaus is None:
             not_checked.append(URLHAUS_NO_KEY)
         elif urlhaus == "clave":
-            sources_failed.append("URLhaus (abuse.ch rechazó la clave: vuelve a guardarla)")
+            sources_failed.append("URLhaus (abuse.ch no reconoce la clave guardada: cámbiala en Herramientas → "
+                                  "IP Reputation → «🔑 Cambiar clave de abuse.ch»)")
         elif urlhaus == "error":
             sources_failed.append("URLhaus (no respondió)")
         elif urlhaus:

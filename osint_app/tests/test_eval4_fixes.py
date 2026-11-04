@@ -396,12 +396,13 @@ def test_urlhaus_with_key_asks_by_host_and_counts_active_urls(monkeypatch):
 def test_urlhaus_inactive_rejected_key_and_no_results(monkeypatch):
     _abuse_key(monkeypatch, "k")
     answers = {"45.9.149.1": _Resp(200, {"query_status": "ok", "urls": [{"url": "http://a/b", "url_status": "offline"}]}),
-               "45.9.149.2": _Resp(401), "45.9.149.3": _Resp(200, {"query_status": "no_results"})}
+               # 04-11-2026, en real: una clave que abuse.ch no conoce → 403 {"query_status": "unknown_auth_key"}
+               "45.9.149.2": _Resp(403, {"query_status": "unknown_auth_key"}), "45.9.149.3": _Resp(200, {"query_status": "no_results"})}
     monkeypatch.setattr(ip_reputation.requests, "post", lambda url, data=None, **kw: answers[data["host"]])
     tool = _ip_tool(monkeypatch)
     inactive = tool.execute(QueryParameters(ip="45.9.149.1"))[0]
     assert "ya inactiva" in str(inactive.raw_data) and inactive.raw_data["score"] == 20
-    assert "rechazó la clave" in tool.execute(QueryParameters(ip="45.9.149.2"))[0].snippet
+    assert "no reconoce la clave guardada: cámbiala" in tool.execute(QueryParameters(ip="45.9.149.2"))[0].snippet
     clean = tool.execute(QueryParameters(ip="45.9.149.3"))[0]
     assert clean.raw_data["score"] == 0 and "URLhaus" not in clean.snippet
 
@@ -490,11 +491,41 @@ def test_guide_says_when_a_tool_is_not_ready():
 
 def test_optional_abuse_key_button_for_ip_reputation_and_link_shield(monkeypatch):
     pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
-    from osint_app.gui.tab_tools import key_for_tool
-    _abuse_key(monkeypatch, "")
+    from osint_app.gui.tab_tools import key_button_text, key_for_tool
     assert key_for_tool("IP Reputation", "ready") == "abuse.ch"
     assert key_for_tool("Link Shield", "ready") == "abuse.ch"
     assert key_for_tool("crt.sh", "ready") is None
     assert key_for_tool("Hunter.io", "needs_key") == "Hunter.io"
-    _abuse_key(monkeypatch, "k")
-    assert key_for_tool("IP Reputation", "ready") is None          # ya guardada: el botón no sale
+    # Ya guardada, el botón sigue para cambiarla (04-11-2026: antes desaparecía y no se podía corregir)
+    assert key_for_tool("GitHub", "ready") == "GitHub"
+    assert key_button_text("abuse.ch", saved=False) == "🔑  Guardar clave de abuse.ch (opcional)"
+    assert key_button_text("Hunter.io", saved=False) == "🔑  Guardar clave de Hunter.io"
+    assert key_button_text("abuse.ch", saved=True) == "🔑  Cambiar clave de abuse.ch"
+
+
+def test_change_and_remove_key_buttons_in_the_tools_tab(monkeypatch, tmp_path):
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+    from types import SimpleNamespace
+    from osint_app.gui import tab_tools
+    from osint_app.utils.secret_vault import SecretVault
+    test_vault = SecretVault(tmp_path / "baul")
+    monkeypatch.setattr("osint_app.utils.secret_vault.vault", test_vault)
+    test_vault.set("abuse.ch", "k-vieja")
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    toasts = []
+    fake_app = SimpleNamespace(toast=SimpleNamespace(show=lambda *a, **k: toasts.append(a[0])), active_case_id=None,
+                               framework=SimpleNamespace(tools={"IP Reputation": ip_reputation.IpReputationTool()}))
+    tab = tab_tools.ToolsTab.__new__(tab_tools.ToolsTab)
+    QtWidgets.QWidget.__init__(tab)
+    tab.app = fake_app
+    tab.list_tools = QtWidgets.QListWidget()
+    item = QtWidgets.QListWidgetItem("IP Reputation")
+    item.setData(tab_tools.Qt.UserRole, "IP Reputation")
+    tab.list_tools.addItem(item)
+    item.setSelected(True)
+    tab._key_name = "abuse.ch"
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", lambda *a, **k: QtWidgets.QMessageBox.Yes)
+    monkeypatch.setattr(tab, "_verify_status", lambda: None)
+    tab._delete_key()
+    assert test_vault.get("abuse.ch") == "" and toasts == ["Clave de abuse.ch borrada."]
+    del app
