@@ -28,12 +28,16 @@ def main():
     parser.add_argument("--restore", metavar="ARCHIVO",
                         help="Restaura una copia (.zip) con SENTINEL cerrado; antes guarda una copia del estado actual")
     parser.add_argument("--setup", action="store_true",
-                        help="Comprueba la instalación paso a paso y dice qué falta (no cambia nada)")
+                        help="Comprueba la instalación paso a paso y ofrece arreglar lo que falte, preguntando antes")
     args = parser.parse_args()
 
     if args.setup:
-        from osint_app.utils.setup_check import render, run_checks
-        print(render(run_checks()))
+        from osint_app.utils.setup_check import render, run_checks, run_interactive
+        steps = run_checks()
+        print(render(steps))
+        # En una consola, ofrece arreglar lo que se pueda, preguntando antes de cada paso (sin consola, solo revisa)
+        if sys.stdin and sys.stdin.isatty():
+            run_interactive(steps)
         return
     if args.backup is not None:
         from osint_app.utils.backup import make_backup

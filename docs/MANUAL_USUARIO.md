@@ -170,7 +170,9 @@ python -m osint_app.main --keys               # qué claves tienes (nunca muestr
 - **Restaurar**, con SENTINEL cerrado: `python -m osint_app.main --restore "ruta\de\la\copia.zip"`. Antes de reemplazar
   nada guarda una copia de lo que haya.
 - **¿Está todo bien instalado?** `python -m osint_app.main --setup` revisa paso a paso Python, dependencias, claves,
-  Docker y SearXNG, la carpeta de datos y las copias, y dice qué hacer con lo que falte. No cambia nada.
+  Docker y SearXNG, la carpeta de datos y las copias, y dice qué hacer con lo que falte. Después **ofrece arreglarlo**
+  (instalar dependencias, guardar claves, abrir Docker, crear SearXNG, hacer la primera copia) **preguntándote antes de
+  cada paso**. Si respondes que no, no cambia nada. Python, cifrar el disco o Smart App Control solo los explica.
 
 ---
 
