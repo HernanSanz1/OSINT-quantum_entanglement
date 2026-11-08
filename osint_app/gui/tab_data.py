@@ -21,6 +21,8 @@ class DataTab(QWidget):
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["ID", "Tipo", "Valor", "Añadido"])
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        # La fecha entera («2026-10-29 14:11»; antes «2026-10-29…», 08-11-2026)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setShowGrid(False)
@@ -72,8 +74,8 @@ class DataTab(QWidget):
             d_val = QTableWidgetItem(str(getattr(d, "value", "")))
             d_val.setForeground(Qt.cyan) # aesthetic pop
             
-            ts = str(getattr(d, "created_at", ""))
-            d_time = QTableWidgetItem(ts[:16] if len(ts) > 16 else ts)
+            ts = str(getattr(d, "created_at", "")).replace("T", " ")      # como en Casos
+            d_time = QTableWidgetItem(ts[:16])
             
             self.table.setItem(row, 0, d_id)
             self.table.setItem(row, 1, d_type)

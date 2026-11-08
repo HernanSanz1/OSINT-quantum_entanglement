@@ -238,18 +238,20 @@ class ProfilingTab(QWidget):
         left_layout.setSpacing(10)
 
         left_scroll.setWidget(left_panel)
-        left_scroll.setMinimumWidth(420)
-        left_scroll.setMaximumWidth(480)
+        left_scroll.setMinimumWidth(400)
+        # 480 dejaba la columna «Título» de candidatos en «Gonzalo Plata - …» en un portátil (08-11-2026)
+        left_scroll.setMaximumWidth(430)
 
         # Seed Data - SIN GroupBox, directo al panel con labels pequeños y campos GRANDES
         lbl_section = QLabel("DATOS SEMILLA")
         lbl_section.setStyleSheet("color: #00d4ff; font-size: 11px; font-weight: bold; letter-spacing: 2px;")
         left_layout.addWidget(lbl_section)
 
-        # Estilo GRANDE para inputs - campos muy visibles
+        # Estilo GRANDE para inputs - campos muy visibles. Con 40 px de alto, 12 px de relleno vertical dejaban 14 px
+        # para letra de 15 px: se cortaban la «j» y la «p» («correo@eiemplo.com», 08-11-2026); con 8 px cabe entera
         input_style = """
             QLineEdit {
-                padding: 12px 15px;
+                padding: 8px 15px;
                 font-size: 15px;
                 background-color: #0a1628;
                 border: 1px solid #1e3a5f;
@@ -344,7 +346,7 @@ class ProfilingTab(QWidget):
         lbl_phone.setStyleSheet(label_style)
         col4.addWidget(lbl_phone)
         self.input_phone = QLineEdit()
-        self.input_phone.setPlaceholderText("Ej.: +593 9X XXX XXXX")
+        self.input_phone.setPlaceholderText("+593 9X XXX XXXX")
         self.input_phone.setStyleSheet(input_style)
         self.input_phone.setFixedHeight(40)
         col4.addWidget(self.input_phone)
@@ -500,6 +502,11 @@ class ProfilingTab(QWidget):
         cand_header.addWidget(self.lbl_stats)
 
         cand_header.addStretch()
+        right_layout.addLayout(cand_header)
+
+        # Los botones, en su propia fila: con «🗑 Descartados» ya no cabían junto al título en un portátil
+        # («Candidatos Encont», «Refinar búsqued»; capturas del 08-11-2026)
+        cand_header = QHBoxLayout()
 
         self.btn_confirm_selected = QPushButton("✅ Confirmar")
         self.btn_confirm_selected.setObjectName("btnSuccess")
@@ -530,6 +537,7 @@ class ProfilingTab(QWidget):
                                    "correos) como datos nuevos. Lo confirmado y lo descartado se conservan.")
         self.btn_refine.clicked.connect(self._on_refine)
         cand_header.addWidget(self.btn_refine)
+        cand_header.addStretch()
 
         right_layout.addLayout(cand_header)
 
@@ -618,6 +626,8 @@ class ProfilingTab(QWidget):
 
         splitter.addWidget(right_panel)
         splitter.setSizes([400, 700])
+        splitter.setStretchFactor(0, 0)          # el ancho que sobra, para los candidatos
+        splitter.setStretchFactor(1, 1)
 
         # Status
         self.lbl_status = QLabel("Estado: Listo para una nueva búsqueda")

@@ -239,7 +239,8 @@ class CorrelationTab(QWidget):
         header = self.table_correlations.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setStretchLastSection(True)
-        for col, width in enumerate((150, 230, 220, 80)):
+        # En un portátil (1536 px) 150+230+220+80 dejaba «Evidenc» cortada y una barra horizontal (08-11-2026)
+        for col, width in enumerate((130, 190, 170, 80)):
             self.table_correlations.setColumnWidth(col, width)
         self.table_correlations.setSelectionBehavior(QTableWidget.SelectRows)
         self.table_correlations.setSelectionMode(QTableWidget.SingleSelection)

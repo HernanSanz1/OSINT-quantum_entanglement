@@ -323,7 +323,7 @@ class ToolsTab(QWidget):
         bot_lay.addWidget(self.btn_check)
 
         self.btn_run = QPushButton("▶  Ejecutar")
-        self.btn_run.setObjectName("btnPrimary")
+        self.btn_run.setObjectName("btnRun")
         self.btn_run.setCursor(Qt.PointingHandCursor)
         self.btn_run.clicked.connect(self._run_tool)
         bot_lay.addWidget(self.btn_run)

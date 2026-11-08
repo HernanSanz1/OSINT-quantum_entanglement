@@ -78,6 +78,27 @@ QPushButton#btnVerify:hover {
     color: #ffffff;
 }
 
+/* «Ejecutar» de Herramientas: del tamaño de sus vecinos (Guía, Verificar Estado) y con el color de acción principal
+   (antes más pequeño y con otro borde, 08-11-2026) */
+QPushButton#btnRun {
+    background-color: rgba(0, 212, 255, 0.15);
+    border: 2px solid #00d4ff;
+    color: #ffffff;
+    border-radius: 12px;
+    padding: 10px 30px;
+    font-size: 15px;
+    font-weight: bold;
+}
+QPushButton#btnRun:hover {
+    background-color: rgba(0, 212, 255, 0.28);
+    border: 2px solid #00ffff;
+}
+QPushButton#btnRun:disabled {
+    background-color: transparent;
+    border: 2px solid #1E2D4A;
+    color: #5a6a7a;
+}
+
 /* Danger Button */
 QPushButton#btnDanger {
     border: 1px solid #ff3333;

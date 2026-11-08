@@ -30,6 +30,9 @@ class ReportsTab(QWidget):
         # Caso y Nº estrechos, para que se lea la herramienta (antes "Google Dor…", "Sherlock:jef…")
         for col, width in ((0, 50), (1, 50), (2, 200)):
             self.tree.setColumnWidth(col, width)
+        # «Caso» salía vacía y sobra (la lista es siempre del caso abierto); se oculta, no se quita: la columna 0 guarda
+        # el id del reporte que usa _on_select (08-11-2026)
+        self.tree.setColumnHidden(0, True)
         self.tree.itemSelectionChanged.connect(self._on_select)
         left_layout.addWidget(self.tree)
         splitter.addWidget(left_panel)
@@ -78,8 +81,8 @@ class ReportsTab(QWidget):
             item.setText(1, str(getattr(r, 'id', '')))
             item.setText(2, getattr(r, 'tool_name', ''))
             item.setToolTip(2, getattr(r, 'tool_name', ''))
-            ts = str(getattr(r, 'run_at', ''))
-            item.setText(3, ts[:16] if len(ts)>16 else ts)
+            ts = str(getattr(r, 'run_at', '')).replace("T", " ")      # como en Casos: «2026-10-29 14:11»
+            item.setText(3, ts[:16])
             item.setData(0, Qt.UserRole, getattr(r, 'id', None))
             item.setData(1, Qt.UserRole, getattr(r, 'raw_json', '{}'))
             self.tree.addTopLevelItem(item)
