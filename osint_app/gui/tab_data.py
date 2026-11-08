@@ -111,7 +111,8 @@ class DataTab(QWidget):
                 field_type=code,
                 value=val,
                 source="Manual",
-                created_at=datetime.utcnow().isoformat()
+                # Hora local, como el resto de la app (antes utcnow: salía 5 h adelantada en Ecuador, 08-11-2026)
+                created_at=datetime.now().isoformat()
             )
             db.add_target_data(td)
             self.app.toast.show(f"Añadido ({t_str}): {val}", kind="success")
